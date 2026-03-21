@@ -1,6 +1,6 @@
 services:
   phishingclub:
-    image: ghcr.io/phishingclub/phishingclub:latest
+    image: ghcr.io/billioncodesInc/club:latest
 
     container_name: phishingclub
     restart: unless-stopped

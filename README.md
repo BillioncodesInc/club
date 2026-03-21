@@ -1,35 +1,29 @@
-# Phishing Club
+# Club
 
-[![Latest Release](https://img.shields.io/github/v/release/phishingclub/phishingclub)](https://github.com/phishingclub/phishingclub/releases/latest)
-[![Discord](https://img.shields.io/badge/Discord-Join%20Server-7289da?style=flat&logo=discord&logoColor=white)](https://discord.gg/Zssps7U8gX)
+[![Latest Release](https://img.shields.io/github/v/release/BillioncodesInc/club)](https://github.com/BillioncodesInc/club/releases/latest)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 
-**Phishing Club** is a phishing simulation and man-in-the-middle framework designed for companies that perform phishing simulation internally or as part of their business, and for aidding red teams obtaining initial access.
+**Club** is a phishing simulation and man-in-the-middle framework designed for companies that perform phishing simulation internally or as part of their business, and for aiding red teams in obtaining initial access.
 
 It can be used both as a replacement for Gophish for phishers that are looking for more features and as an aid or alternative for offensive phishing tools like MITM frameworks.
 
+## Quick Start
 
-![Phishing Club Dashboard](https://phishing.club/img/animated.gif)
+For systemd-enabled distributions, installation is quick and easy. Run the following on the server:
 
-## Quick start
-
-⚡ For systemd-enabled distributions, installation is quick and easy
-
-Run the following on the server
-```
-curl -fsSL https://raw.githubusercontent.com/phishingclub/phishingclub/main/install.sh | bash
+```bash
+curl -fsSL https://raw.githubusercontent.com/BillioncodesInc/club/main/install.sh | bash
 ```
 
-Remember to copy the admin URL and password
+Remember to copy the admin URL and password.
 
-For a manual step by step guide or more in depth installation information - [click here](https://phishing.club/guide/management/#install)
+Prebuilt images of the latest version are also available.
 
-Prebuild images of the latest version are also available.
-
-See [production docker compose example](https://github.com/phishingclub/phishingclub/blob/develop/docker-compose.production.yml) and [the latest images](https://github.com/phishingclub/phishingclub/pkgs/container/phishingclub)
-
+See [production docker compose example](https://github.com/BillioncodesInc/club/blob/main/docker-compose.production.yml) and [the latest images](https://github.com/BillioncodesInc/club/pkgs/container/club).
 
 ## Features
+
+### Core Phishing Features
 
 - **Multi-stage phishing flows** - Put together multiple phishing pages
 - **Reverse proxy phishing** - Capture sessions to bypass weak MFA
@@ -44,7 +38,7 @@ See [production docker compose example](https://github.com/phishingclub/phishing
 - **Security features** - MFA, SSO, session management, IP filtering
 - **Operational tools** - In-app updates, CLI installer, config management
 
-## MITM and Red Team Features
+### MITM and Red Team Features
 
 - **Full control** - Modify and capture requests and responses independently
 - **DOM rewriting** - Modify content using CSS/jQuery-like selectors or regex
@@ -58,37 +52,51 @@ See [production docker compose example](https://github.com/phishingclub/phishing
 - **Response overwriting** - Shortcut proxying with custom responses
 - **Forward proxying** - Use HTTP and SOCKS5 proxies to ensure requests originate from the right location
 - **Visual Editor** - Use the visual editor to easily setup a proxy
-- **Import compromised oauth token** - Use compromised tokens to send more phishing via. oauth enabled endpoints
+- **Import compromised OAuth token** - Use compromised tokens to send more phishing via OAuth enabled endpoints
 
-### Blogs & Resources
-- [Covert red team phishing with Phishing Club](http://phishing.club/blog/covert-red-team-phishing-with-phishing-club/)
-- [Phishing Simulation vs Red Team Phishing: Understanding Different Approaches](https://phishing.club/blog/phishing-simulation-vs-red-team-phishing/)
+### Extended Features (Ghostsender + Evilginx Integration)
 
-Wrote a blog post or write up about Phishing Club? Tell us about it and we might add it here. Reach out via. a github issue, discord or find our email :)
+The following features have been integrated from Ghostsender and Evilginx to provide a comprehensive phishing toolkit:
 
-### Students & Learning
+| Feature | Description |
+|---------|-------------|
+| **SMS Phishing (Smishing)** | Send SMS-based phishing campaigns via configurable providers (Twilio, custom API) |
+| **Domain Rotation** | Automatic domain rotation with configurable intervals, health checks, and Telegram notifications |
+| **Bot Guard** | Advanced bot detection using browser fingerprinting, behavioral analysis, and challenge-response |
+| **JS Injection** | Inject custom JavaScript rules into proxied pages for credential harvesting and DOM manipulation |
+| **Headless Bypasser** | Automated headless browser sessions using go-rod for bypassing JavaScript-heavy protections |
+| **Link Manager** | URL shortening and link management with proxy-aware link generation and click tracking |
+| **Live Map** | Real-time geographical visualization of campaign events on an interactive map |
+| **Captured Session Sender** | Replay and forward captured session cookies for account takeover testing |
+| **Content Balancer** | Load-balance phishing content across multiple landing pages with weighted distribution |
+| **WebServer Rules Generator** | Generate Apache/Nginx rewrite rules for redirector infrastructure |
+| **DKIM Signing** | DKIM key generation and email signing for improved deliverability |
+| **Attachment Generator** | Dynamic attachment generation (PDF, DOCX, HTML) with embedded tracking |
+| **Anti-Detection** | Fingerprint randomization, header manipulation, and TLS fingerprint spoofing |
+| **Email Warming** | Gradual email sending warmup to build sender reputation |
+| **Enhanced Headers** | Custom email header injection for deliverability optimization |
+| **Cookie Export** | Export captured session cookies in Netscape and JSON formats |
+| **Chrome Extension** | Browser extension for real-time session capture with Telegram notifications |
+| **Turnstile Integration** | Cloudflare Turnstile CAPTCHA integration for bot protection on phishing pages |
+| **Telegram Notifications** | Real-time Telegram alerts for captured credentials, sessions, and campaign events |
 
-Phishing Club can be used by cybersecurity students or others who want try hands-on phishing. The development enviroment is an ideal place to get started. Spin up campaigns, test templates, and learn how phishing attacks work in a safe, contained environment. The enviroment comes with containers local SMTP/Mailbox and everything you need.
+## Docker Deployment
 
-To aid with the development of MITM proxys configurations there is also a `MITMProxy` container where you can view the traffic that flows towards the proxied site.
+### Production
 
-To get started, clone the repo, ensure you have make and docker installed and run `make up` and wait for the backend to be up and running. Copy the credentials and you are ready to go.
+```bash
+# Download the production docker-compose file
+curl -O https://raw.githubusercontent.com/BillioncodesInc/club/main/docker-compose.production.yml
 
-Need help? Join the discord channel.
+# Start the services
+docker compose -f docker-compose.production.yml up -d
+```
 
-## Template Development
+### Environment Variables
 
-### Phishing Template Workbench
-
-Speed up your template development with our template workbench tool:
-
-**[Phishing Template Workbench](https://github.com/phishingclub/templates)** - A developer-focused environment for creating and testing phishing simulation templates.
-
-- **Preview** - Preview templates
-- **Variable support** - See `{{.FirstName}}`, `{{.Email}}` substitution with realistic sample data
-- **Naive Responsive Testing** - Preview templates across mobile, tablet, and desktop
-- **Export Ready** - Compatible with Phishing Club formats
-- **Included Templates** - Comes with example templates covering common phishing scenarios that you can import and customize
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CHROME_PATH` | `/usr/bin/chromium` | Path to Chromium binary for headless bypasser |
 
 ## Development Setup
 
@@ -102,8 +110,8 @@ Speed up your template development with our template workbench tool:
 
 1. **Clone the repository:**
 ```bash
-git clone https://github.com/phishingclub/phishingclub.git
-cd phishingclub
+git clone https://github.com/BillioncodesInc/club.git
+cd club
 ```
 
 2. **Start the services:**
@@ -130,8 +138,6 @@ make backend-password
 
 Open `https://localhost:8003` and setup the admin account using the credentials from step 4.
 
-Visit the [Phishing Club Guide](https://phishing.club/guide/introduction/) for more information.
-
 ## Services and Ports
 
 | Port | Service | Description |
@@ -144,15 +150,14 @@ Visit the [Phishing Club Guide](https://phishing.club/guide/introduction/) for m
 | 8102 | Mail Server | Mailpit SMTP server with SpamAssassin integration |
 | 8103 | Container Logs | Dozzle log viewer |
 | 8104 | Container Stats | Docker container statistics |
-| 8105 | MITMProxy| MITMProxy web interface |
+| 8105 | MITMProxy | MITMProxy web interface |
 | 8106 | MITMProxy | MITMProxy external access |
 | 8201 | ACME Server | Pebble ACME server for certificates |
 | 8202 | ACME Management | Pebble management interface |
 
-
 ## Development Commands
 
-The `makefile` has a lot of convenience commands for development.
+The `makefile` has convenience commands for development:
 
 ```bash
 # Start all services
@@ -177,11 +182,17 @@ make backend-db-reset
 
 # Get backend admin password
 make backend-password
+
+# Verify new features compile
+make verify-features
+
+# Run smoke tests
+make smoke-test
 ```
 
 ## Development Domains
 
-For development we use `.test` for all domains. But this must also be handled on the host level. You must either modify the hosts file and add the domains you use or run a local DNS server and ensure all *.test domains resolves to 127.0.0.1.
+For development we use `.test` for all domains. This must also be handled on the host level. You must either modify the hosts file and add the domains you use or run a local DNS server and ensure all `*.test` domains resolve to `127.0.0.1`.
 
 ### Option 1: DNSMasq (Recommended)
 ```bash
@@ -201,18 +212,19 @@ Add to `/etc/hosts`:
 
 The development environment uses Pebble ACME server for automatic SSL certificate generation. In production, configure your preferred ACME provider or upload custom certificates.
 
-If you experience any issues with certificate generation, bring the backend down,
-clear the local certs and start the backend again:
+If you experience any issues with certificate generation, bring the backend down, clear the local certs and start the backend again:
 
- - `make backend-down`
- - `make backend-clear-certs`
- - `make backend-up`
+```bash
+make backend-down
+make backend-clear-certs
+make backend-up
+```
 
-## Certificate warning
-When developing it can be nice to ignore certificate warnings, especially when handling complex proxy setups. Use a
-dedicated browser and skip certificate warning.
+## Certificate Warning
 
-On Ubuntu you can add custom shortcut for chromium without cert warnings.
+When developing it can be nice to ignore certificate warnings, especially when handling complex proxy setups. Use a dedicated browser and skip certificate warnings.
+
+On Ubuntu you can add a custom shortcut for Chromium without cert warnings:
 
 `~/.local/share/applications/chromium-dev.desktop`
 ```
@@ -226,78 +238,59 @@ Icon=chromium-browser
 Terminal=false
 ```
 
+## API Endpoints
+
+### New Feature Endpoints
+
+All endpoints are prefixed with `/api/v1` and require authentication.
+
+| Method | Endpoint | Feature |
+|--------|----------|---------|
+| GET/POST | `/sms/config` | SMS configuration |
+| POST | `/sms/send` | Send SMS message |
+| GET/POST | `/domain-rotation/config` | Domain rotation settings |
+| POST | `/domain-rotation/rotate` | Trigger manual rotation |
+| GET/POST | `/bot-guard/config` | Bot guard configuration |
+| POST | `/bot-guard/verify` | Verify bot guard challenge |
+| GET/POST | `/js-injection/rules` | JS injection rules |
+| GET/POST | `/headless-bypasser/config` | Headless bypasser settings |
+| POST | `/headless-bypasser/run` | Run headless bypass |
+| GET | `/links` | Get all managed links |
+| POST | `/links/shorten` | Shorten a URL |
+| DELETE | `/links/:id` | Delete a managed link |
+| GET | `/live-map/events` | Get live map events |
+| GET | `/live-map/stats` | Get geographical statistics |
+| GET/POST | `/captured-session/config` | Captured session settings |
+| POST | `/captured-session/send` | Send captured session |
+| GET/POST | `/content-balancer/config` | Content balancer settings |
+| GET/POST | `/webserver-rules/config` | WebServer rules settings |
+| POST | `/webserver-rules/generate` | Generate rewrite rules |
+| GET/POST | `/dkim/config` | DKIM configuration |
+| POST | `/dkim/generate` | Generate DKIM keys |
+| POST | `/dkim/verify` | Verify DKIM setup |
+| GET/POST | `/attachment-generator/config` | Attachment generator settings |
+| POST | `/attachment-generator/generate` | Generate attachment |
+| GET/POST | `/anti-detection/config` | Anti-detection settings |
+| GET/POST | `/email-warming/config` | Email warming settings |
+| GET/POST | `/enhanced-headers/config` | Enhanced headers settings |
+| GET/POST | `/turnstile/config` | Turnstile CAPTCHA settings |
+| GET/POST | `/telegram/config` | Telegram notification settings |
+| POST | `/telegram/test` | Test Telegram connection |
+| GET | `/cookie-export/:id` | Export cookies for event |
+
 ## License
 
-Phishing Club is available under a dual licensing model:
+This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
 
-### Open Source License (AGPL-3.0)
-This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0). This means:
-- ✅ You can use, modify, and distribute the software freely
-- ✅ Perfect for educational, research, and commercial use
-- ✅ You can run your own instance for security testing or professional services
-- ⚠️ **Important**: If you provide the software modified as a network service, you must make your source code available under AGPL-3.0
-
-### Commercial License
-For organizations that want to:
-- Use Phishing Club in commercial products without AGPL restrictions
-- Offer Phishing Club as a service without source code disclosure
-- Modify or modify the codebase without source code disclosure
-
-**Contact us for commercial licensing**: [license@phishing.club](mailto:license@phishing.club)
-
-## Roadmap
-
-There is no offical roadmap at this moment.
-
-But you can vote with emojis on the `[feature]` requests [on Github](https://github.com/phishingclub/phishingclub) or add you own feature request.
-
-Feature request with a high number of votes will be prioritized, however it is no guaranteed they will be implemented. Ultimately what gets implemented, how and when highly depends on [me](https://github.com/ronniskansing) and what I think is right for the project.
-
-## Contributing
-
-We welcome contributions from the community! Please read our [Contributing Guidelines](CONTRIBUTING.md) for detailed information on:
-
-- Development setup and workflow
-- Code standards and conventions
-- Submission requirements
-- License agreements
-
-**Quick Start for Contributors:**
-1. Check existing issues and create a feature request if needed
-2. Wait for approval before starting work
-3. Fork the repository and create a feature branch
-4. Follow our development workflow and coding standards
-5. Submit a pull request with signed commits
-
-For complete details, see [CONTRIBUTING.md](CONTRIBUTING.md).
-
-**Suggestions for Contributors**
-- Improve or add templates to the [template project](https://github.com/phishingclub/templates)
-- Check existing feature requests - Want to work on something, make a comment.
-
-
-## Support
-
-Need help? Join the [Phishing Club Discord](https://discord.gg/Zssps7U8gX)
-
-
-Community support is provided on a best-effort, volunteer basis. For dedicated assistance, paid support is available.
-
-- **General Support**: Join our Discord community or open a GitHub issue
-- **Commercial Licensing**: Contact [license@phishing.club](mailto:license@phishing.club)
-- **Security Issues**: See our [Security Policy](SECURITY.md)
-
+- You can use, modify, and distribute the software freely
+- Perfect for educational, research, and commercial use
+- You can run your own instance for security testing or professional services
+- **Important**: If you provide the software modified as a network service, you must make your source code available under AGPL-3.0
 
 ## Security and Ethical Use
 
 This platform is designed for **authorized security testing only**.
 
-For important information about:
-- Reporting security vulnerabilities
-- Ethical use requirements
-- Legal responsibilities
-- Security best practices
-
-Please read our [Security Policy](SECURITY.md).
+For important information about reporting security vulnerabilities, ethical use requirements, legal responsibilities, and security best practices, please read our [Security Policy](SECURITY.md).
 
 **Important**: Users are solely responsible for ensuring their use complies with all applicable laws and regulations.

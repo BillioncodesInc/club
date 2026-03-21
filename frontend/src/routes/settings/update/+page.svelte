@@ -41,7 +41,7 @@
 	const installUpdate = async () => {
 		try {
 			if (!isUpdateLocal) {
-				window.open('https://github.com/phishingclub/phishingclub/releases', '_blank');
+				window.open('https://github.com/BillioncodesInc/club/releases', '_blank');
 			} else {
 				isUpdateAlertVisible = true;
 			}
@@ -89,7 +89,7 @@
 									</p>
 									<p class="mt-2">
 										<a
-											href="https://github.com/phishingclub/phishingclub/releases"
+											href="https://github.com/BillioncodesInc/club/releases"
 											target="_blank"
 											class="text-blue-600 dark:text-white hover:text-blue-700 dark:hover:text-gray-200 underline transition-colors duration-200"
 										>
@@ -150,7 +150,7 @@
 							</p>
 							<p class="mt-3">
 								<a
-									href="https://github.com/phishingclub/phishingclub/releases"
+									href="https://github.com/BillioncodesInc/club/releases"
 									target="_blank"
 									class="text-sm text-blue-600 dark:text-white hover:text-blue-700 dark:hover:text-gray-200 transition-colors duration-200"
 								>
