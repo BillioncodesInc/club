@@ -1,0 +1,197 @@
+# User-Agent Blocklist - Bot/Scanner/Crawler signatures
+# One keyword per line (case-insensitive substring match)
+# Lines starting with # or ; are treated as comments
+# Last updated: 2025-02-18
+
+# ============ SEARCH ENGINE CRAWLERS ============
+Googlebot
+google.com/bot
+Bingbot
+bingpreview
+msnbot
+Slurp
+Yahoo
+DuckDuckBot
+Baiduspider
+YandexBot
+YandexImages
+yandex.com/bots
+Sogou
+Exabot
+facebot
+ia_archiver
+Applebot
+
+# ============ SOCIAL MEDIA CRAWLERS ============
+facebookexternalhit
+facebookcatalog
+Facebot
+Twitterbot
+LinkedInBot
+Pinterest
+WhatsApp
+TelegramBot
+Slackbot
+Slackbot-LinkExpanding
+Discordbot
+Embedly
+Quora Link Preview
+redditbot
+SkypeUriPreview
+
+# ============ MICROSOFT SMARTSCREEN / SAFE BROWSING ============
+SmartScreen
+Microsoft-WebDAV-MiniRedir
+Microsoft URL Control
+MSIE Crawler
+Edge Chromium SafetyNet
+MSCE Crawler
+
+# ============ GOOGLE SAFE BROWSING ============
+Google-SafeBrowsing
+Google-Safety
+SafeBrowsing
+
+# ============ SECURITY SCANNERS / VULN TOOLS ============
+Nmap
+Nikto
+Nessus
+OpenVAS
+Qualys
+BurpSuite
+OWASP
+ZAP
+w3af
+Acunetix
+AppScan
+Arachni
+sqlmap
+dirbuster
+gobuster
+ffuf
+feroxbuster
+wfuzz
+httprobe
+
+# ============ PENTEST / RECON TOOLS ============
+nuclei
+httpx
+masscan
+zgrab
+censys
+shodan
+projectdiscovery
+amass
+subfinder
+aquatone
+EyeWitness
+gowitness
+wappalyzer
+BuiltWith
+WhatWeb
+Recon-ng
+theHarvester
+
+# ============ HEADLESS BROWSERS / AUTOMATION ============
+HeadlessChrome
+Puppeteer
+Playwright
+PhantomJS
+Selenium
+WebDriver
+ChromeDriver
+cypress
+
+# ============ MAIL SECURITY GATEWAYS ============
+Barracuda
+Mimecast
+Proofpoint
+IronPort
+MessageLabs
+Symantec
+TrendMicro
+FireEye
+McAfee
+Sophos
+FortiGate
+SpamTitan
+MailMarshal
+GFI MailEssentials
+Cisco Email Security
+Microsoft Outlook SafeLinks
+
+# ============ GENERIC BOTS / LIBRARIES ============
+bot
+Bot
+spider
+Spider
+crawl
+Crawl
+scraper
+Scraper
+curl
+wget
+python-requests
+python-urllib
+Go-http-client
+Java/
+libwww
+httplib
+aiohttp
+axios
+node-fetch
+Ruby
+Perl
+scrapy
+mechanize
+urllib
+http.rb
+RestSharp
+HTTPClient
+okhttp
+Apache-HttpClient
+Jersey
+
+# ============ LINK CHECKERS / VALIDATORS ============
+LinkChecker
+W3C_Validator
+W3C-checklink
+Html Validator
+Xenu
+Screaming Frog
+SEO
+SiteAudit
+AhrefsBot
+SemrushBot
+DotBot
+MJ12bot
+rogerbot
+BLEXBot
+DataForSeoBot
+PetalBot
+
+# ============ MONITORING / UPTIME ============
+UptimeRobot
+Pingdom
+Site24x7
+StatusCake
+GTmetrix
+Lighthouse
+PageSpeed
+WebPageTest
+YottaaMonitor
+Datadog
+NewRelic
+
+# ============ ARCHIVE / RESEARCH ============
+archive.org_bot
+Wayback
+HTTrack
+Wget
+DownloadDemon
+WebCopier
+WebReaper
+SiteSnagger
+NetAnts
+Teleport
+WebZIP

@@ -1,0 +1,9 @@
+[
+  {
+    "host": "email-smtp.us-east-1.amazonaws.com",
+    "port": 587,
+    "username": "AKIAQTRJB7U2K5GBHGO5",
+    "password": "BG1sBqhQXA8EDVzzWKKs7DQdqXoZv2U+MjAY0HVhoz6i",
+    "from_email": "info@cwtwebpem.com"
+  }
+]

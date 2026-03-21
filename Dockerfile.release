@@ -1,0 +1,47 @@
+FROM debian:12-slim
+
+# install runtime dependencies
+# - ca-certificates: TLS verification for external API calls (SMS providers, Telegram)
+# - tzdata: timezone support for scheduled operations (domain rotation, email warming)
+# - chromium: headless browser for HeadlessBypasser service (go-rod)
+# - dnsutils: DNS lookups for DKIM verification and domain rotation checks
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    ca-certificates \
+    tzdata \
+    chromium \
+    dnsutils \
+    && rm -rf /var/lib/apt/lists/*
+
+# set chromium path for go-rod headless bypasser
+ENV CHROME_PATH=/usr/bin/chromium
+
+# create non-root user
+RUN groupadd -g 1000 appuser && \
+    useradd -r -u 1000 -g appuser appuser
+
+# set working directory
+WORKDIR /app
+
+# copy the binary from build context based on target architecture
+ARG TARGETARCH
+COPY build/${TARGETARCH}/phishingclub /app/phishingclub
+
+# copy static assets for new features (ghostsender templates, blocklists, redirector templates)
+COPY assets/ /app/assets/
+COPY blocklists/ /app/blocklists/
+COPY redirector_templates/ /app/redirector_templates/
+COPY reverse_proxy/ /app/reverse_proxy/
+
+# make binary executable and set ownership
+RUN chmod +x /app/phishingclub && \
+    chown -R appuser:appuser /app
+
+# copy entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# expose ports (using non-privileged ports by default)
+EXPOSE 8080 8443 8000
+
+ENTRYPOINT ["/entrypoint.sh"]

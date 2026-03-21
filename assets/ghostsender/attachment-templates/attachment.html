@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>[COMPANY-U] Security Notice — Action Required</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #333; background: #fff; }
+    .notice-container { max-width: 640px; margin: 0 auto; padding: 32px; }
+    .brand-bar { display: flex; align-items: center; gap: 12px; padding-bottom: 20px; border-bottom: 2px solid #d83b01; margin-bottom: 24px; }
+    .brand-bar img { height: 24px; }
+    .brand-bar .badge { background: #d83b01; color: #fff; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; padding: 3px 10px; border-radius: 3px; }
+    .severity-banner { background: linear-gradient(135deg, #d83b01 0%, #a52a00 100%); color: #fff; border-radius: 6px; padding: 18px 24px; margin-bottom: 24px; display: flex; align-items: center; gap: 14px; }
+    .severity-banner .icon { font-size: 28px; flex-shrink: 0; }
+    .severity-banner h2 { font-size: 17px; font-weight: 600; }
+    .severity-banner p { font-size: 12px; opacity: 0.9; margin-top: 2px; }
+    .detail-card { background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 6px; margin-bottom: 20px; overflow: hidden; }
+    .detail-card .card-header { background: #eef1f5; padding: 10px 18px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #495057; border-bottom: 1px solid #e9ecef; }
+    .detail-card table { width: 100%; }
+    .detail-card td { padding: 10px 18px; font-size: 13px; border-bottom: 1px solid #f0f0f0; }
+    .detail-card td:first-child { width: 140px; color: #6c757d; font-weight: 500; }
+    .detail-card td:last-child { color: #212529; }
+    .detail-card tr:last-child td { border-bottom: none; }
+    .mono { font-family: 'Consolas', 'Courier New', monospace; font-size: 12px; }
+    .text-danger { color: #d83b01; font-weight: 600; }
+    .steps-list { counter-reset: steps; margin: 20px 0; padding: 0; list-style: none; }
+    .steps-list li { counter-increment: steps; position: relative; padding: 12px 16px 12px 48px; background: #f8f9fa; border-radius: 6px; margin-bottom: 8px; font-size: 14px; line-height: 1.5; }
+    .steps-list li::before { content: counter(steps); position: absolute; left: 14px; top: 12px; width: 24px; height: 24px; background: #0078d4; color: #fff; border-radius: 50%; font-size: 12px; font-weight: 700; text-align: center; line-height: 24px; }
+    .action-section { text-align: center; margin: 28px 0; }
+    .action-btn { display: inline-block; background: linear-gradient(135deg, #0078d4 0%, #005a9e 100%); color: #ffffff; text-decoration: none; padding: 14px 44px; border-radius: 6px; font-size: 15px; font-weight: 600; }
+    .action-btn:hover { opacity: 0.95; }
+    .deadline-box { background: #fff3cd; border: 1px solid #ffc107; border-left: 4px solid #ffc107; border-radius: 4px; padding: 14px 18px; margin-bottom: 24px; text-align: center; }
+    .deadline-box .time { font-size: 18px; font-weight: 700; color: #d83b01; }
+    .deadline-box p { font-size: 12px; color: #856404; margin-top: 4px; }
+    .qr-section { text-align: center; padding: 20px; background: #f8f9fa; border-radius: 6px; border: 1px dashed #dee2e6; margin-bottom: 24px; }
+    .qr-section p { font-size: 12px; color: #6c757d; margin-bottom: 10px; }
+    .footer { border-top: 1px solid #e9ecef; padding-top: 20px; margin-top: 24px; }
+    .footer p { font-size: 11px; color: #adb5bd; line-height: 1.7; }
+  </style>
+</head>
+<body>
+  <div class="notice-container">
+
+    <!-- Brand Bar -->
+    <div class="brand-bar">
+      <img src="[LOGO_URL]" alt="[COMPANY-U]" onerror="this.parentElement.querySelector('.brand-name').style.display='inline'">
+      <strong class="brand-name" style="display:none;font-size:16px;color:#333;">[COMPANY-U]</strong>
+      <span class="badge">[URGENCY_CODE]</span>
+    </div>
+
+    <!-- Severity Banner -->
+    <div class="severity-banner">
+      <span class="icon">&#128274;</span>
+      <div>
+        <h2>Account Security Alert — Immediate Action Required</h2>
+        <p>[PRIORITY_LEVEL] &bull; [COMPLIANCE_CODE] &bull; Ref: [REFERENCE_NUM]</p>
+      </div>
+    </div>
+
+    <!-- Account Details -->
+    <div class="detail-card">
+      <div class="card-header">Affected Account</div>
+      <table>
+        <tr>
+          <td>Account Email</td>
+          <td><strong>[EMAIL]</strong></td>
+        </tr>
+        <tr>
+          <td>Account Holder</td>
+          <td>[FULL_NAME]</td>
+        </tr>
+        <tr>
+          <td>Organization</td>
+          <td>[COMPANY-U] — [DOMAIN]</td>
+        </tr>
+        <tr>
+          <td>Department</td>
+          <td>[DEPARTMENT]</td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- Security Event Details -->
+    <div class="detail-card">
+      <div class="card-header">Security Event Details</div>
+      <table>
+        <tr>
+          <td>Event Type</td>
+          <td class="text-danger">Credential Verification Required</td>
+        </tr>
+        <tr>
+          <td>Detected</td>
+          <td>[DATE-2] at [TIME]</td>
+        </tr>
+        <tr>
+          <td>Session ID</td>
+          <td class="mono">[SESSION_ID]</td>
+        </tr>
+        <tr>
+          <td>Source IP</td>
+          <td class="mono">[IP_ADDRESS]</td>
+        </tr>
+        <tr>
+          <td>Verification Code</td>
+          <td class="mono" style="font-size:16px;font-weight:700;color:#0078d4;letter-spacing:2px;">[VERIFICATION_CODE]</td>
+        </tr>
+        <tr>
+          <td>Case Number</td>
+          <td class="mono">[CASE_NUM]</td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- Alert Message -->
+    <p style="font-size:14px;line-height:1.7;margin-bottom:20px;">
+      Our security systems have detected unusual activity associated with your <strong>[COMPANY-U]</strong> account
+      (<strong>[EMAIL]</strong>). To protect your account and maintain access to all [COMPANY-U] services,
+      you must verify your credentials before the deadline below.
+    </p>
+
+    <!-- Required Steps -->
+    <h3 style="font-size:14px;color:#333;margin-bottom:12px;">Required Steps:</h3>
+    <ol class="steps-list">
+      <li>Click the <strong>Verify Account</strong> button below to access the secure portal</li>
+      <li>Enter your current credentials and verification code: <strong class="mono" style="color:#0078d4;">[VERIFICATION_CODE]</strong></li>
+      <li>Follow the multi-factor authentication prompts</li>
+      <li>Complete the process before <strong class="text-danger">[DEADLINE]</strong></li>
+    </ol>
+
+    <!-- Deadline -->
+    <div class="deadline-box">
+      <div class="time">&#9200; Deadline: [DEADLINE] at [FUTURE-6HRS]</div>
+      <p>Failure to verify may result in temporary account suspension per [COMPLIANCE_CODE] policy.</p>
+    </div>
+
+    <!-- CTA -->
+    <div class="action-section">
+      <a href="[URL]" class="action-btn">&#128274;&nbsp; Verify Account Now</a>
+      <p style="margin-top:12px;font-size:12px;color:#9ca3af;">
+        Secure verification portal &bull; Auth: <span class="mono">[AUTH_TOKEN]</span>
+      </p>
+    </div>
+
+    [IF_QR_CODE]
+    <!-- QR Code Section -->
+    <div class="qr-section">
+      <p>Scan to verify on mobile device:</p>
+      <img src="cid:qrcode" width="150" height="150" alt="Verify via QR">
+    </div>
+    [/IF_QR_CODE]
+
+    <!-- Footer -->
+    <div class="footer">
+      <p>
+        <strong>[COMPANY-U]</strong> &bull; [DEPARTMENT]<br>
+        Security Team Contact: [IT_EMAIL] &bull; [PHONE]<br>
+        Case: <span class="mono">[CASE_NUM]</span> &bull; Ref: <span class="mono">[REFERENCE_NUM]</span>
+      </p>
+      <p style="margin-top:8px;font-size:10px;">
+        &copy; [YEAR] [COMPANY-U]. This is an automated security notification sent to [EMAIL].
+        If you did not initiate this request, please contact [IT_EMAIL] immediately.
+        <a href="[PRIVACY_URL]" style="color:#adb5bd;">Privacy Policy</a> &bull;
+        <a href="[HELP_URL]" style="color:#adb5bd;">Security Center</a>
+      </p>
+    </div>
+
+  </div>
+</body>
+</html>

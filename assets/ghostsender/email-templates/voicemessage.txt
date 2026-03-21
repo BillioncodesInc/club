@@ -1,0 +1,18 @@
+<p><span style="color: #888;"><em>Message generated and encrypted from {domain} | Timestamp: {date}</em></span></p>
+<hr />
+<div>
+    <h3>V&omicron;ice_Message | {domain}</h3>
+</div>
+<p>Hello</p>
+<p>You have received a new V&omicron;ice Message.</p>
+<div>
+    <p>Date/Time Received : {time}</p>
+    Duration : 00:00:35 id:2021-09-30-18:46:04:170t</div>
+<p>You can play V&omicron;ice Message's on your computer.</p>
+<hr />
+<p>Session ID: a1281 | {email}</p>
+
+
+MEDIO AMBIENTE: Antes de imprimir este mensaje, asegúrese de que es necesario. Proteger el medio ambiente está en nuestra mano. De esta manera ahorras agua, energía y recursos forestales. Reduce tu Huella de Carbono.
+AVISO LEGAL: Este mensaje y cualquier anexo son confidenciales y están legalmente protegidos, se dirige exclusivamente a su destinatario/a y puede contener información sometida al secreto profesional. No está autorizado el acceso a este mensaje por personas distintas a su destinatario. Si no es el destinatario/a final de este mensaje, le rogamos que nos lo comunique inmediatamente por esta misma vía y proceda a su destrucción.
+Cualquier uso, tratamiento, información, copia o distribución y cualquier acción u omisión basada en la información contenida en este mensaje queda prohibida, es ilegal y está tipificada como delito en el artículo 197 s.s. y 278 del vigente Código Penal. Asimismo, de conformidad con la Ley Orgánica 3/2018, del 5 de diciembre, de Protección de Datos Personales y Garantía de los Derechos Digitales, así como, de acuerdo con el REGLAMENTO (UE) 2016/679 de 27 de abril de 2016, relativo a la protección de las personas físicas en lo que respecta al tratamiento de datos personales y a la libre circulación de estos datos personales, informamos que su dirección de email forma parte de los ficheros de Fundación Cepaim, pudiendo ejercer en cualquier momento sus derechos de acceso, rectificación o supresión, limitación u oposición, así como su portabilidad solicitándolo por escrito a Fundación Cepaim, C/ Telegrafista Nº 12 - 30006, Murcia o vía correo electrónico a: protecciondedatos@cepaim.org

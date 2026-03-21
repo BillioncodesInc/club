@@ -1,0 +1,9 @@
+[
+  {
+    "type": "office365",
+    "email": "user@example.com",
+    "client_id": "YOUR_CLIENT_ID_HERE",
+    "client_secret": "YOUR_CLIENT_SECRET_HERE",
+    "tenant_id": "YOUR_TENANT_ID_HERE"
+  }
+]

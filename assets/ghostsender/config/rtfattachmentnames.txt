@@ -1,0 +1,4 @@
+[RAND1]-[DATE].rtf
+[WORDSNUM3]-[COMPANY].rtf
+[DATE]-[RAND1].rtf
+[COMPANY]-[RAND2].rtf

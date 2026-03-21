@@ -1,0 +1,79 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SharePoint Document Notification</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 600px;
+            margin: 20px auto;
+            background-color: #ffffff;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 20px;
+        }
+        .header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .logo {
+            width: 40px;
+            height: 40px;
+            margin-right: 10px;
+        }
+        .title {
+            font-size: 24px;
+            color: #0078d4;
+        }
+        .button {
+            display: inline-block;
+            background-color: #0078d4;
+            color: #ffffff;
+            padding: 10px 20px;
+            text-decoration: none;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .footer {
+            margin-top: 20px;
+            font-size: 12px;
+            color: #666666;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <img src="https://static2.sharepointonline.com/files/fabric/assets/brand-icons/product/svg/sharepoint_48x1.svg" alt="SharePoint Logo" class="logo">
+            <span class="title">SharePoint</span>
+        </div>
+        <p>A new document has been shared with you on SharePoint.</p>
+        <p><strong>Document Sent To:</strong> {{.Email}}</p>
+        <p><strong>Date Shared:</strong> {{currentDate}}</p>
+        <td align="center" style="padding-top: 30px;">
+            <table cellpadding="0" cellspacing="0">
+                <tbody>
+                    <tr>
+                        <td align="center" style="padding: 10px; background-color: white; border-radius: 4px;">
+                            {{qrCode .URL 200}}
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </td>
+        <p>If you have any questions, please contact the document owner or your IT support team.</p>
+        <p>Best regards,<br>SharePoint Team</p>
+        <div class="footer">
+            This is an automated message. Please do not reply to this email.
+        </div>
+    </div>
+</body>
+</html>

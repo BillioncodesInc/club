@@ -1,0 +1,80 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Password Reset Notification</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 600px;
+            margin: 20px auto;
+            background-color: #ffffff;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 20px;
+        }
+        .header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .logo {
+            width: 40px;
+            height: 40px;
+            margin-right: 10px;
+        }
+        .title {
+            font-size: 24px;
+            color: #0078d4;
+        }
+        .qr-container {
+            text-align: center;
+            margin: 20px 0;
+        }
+        .qr-code {
+            width: 200px;
+            height: 200px;
+            border: 1px solid #468bfc;
+            padding: 10px;
+            border-radius: 5px;
+            display: inline-block;
+        }
+        .qr-caption {
+            font-size: 12px;
+            color: #666666;
+            margin-top: 10px;
+        }
+        .footer {
+            margin-top: 20px;
+            font-size: 12px;
+            color: #666666;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div style="font-family: Segoe UI Light, Segoe WP Light, Segoe UI Segoe WP Segoe, Tahoma, Microsoft Sans Serif, Verdana, sans-serif, serif, EmojiFont; font-size: 24px; color: #0078d7; line-height: 32px; margin: 0px 0px 15px;"> 
+                Mi&zwnj;cro&zwnj;sof&zwnj;t {{.FromName}} &zwnj;</div>
+        </div>
+        <p style="font-size: 14px;">Hi {{.FirstName}},</p>
+        <p style="font-size: 13px;">Your password on {{.Email}} will expire soon. To maintain access to your account, please verify your identity.</p>
+        <div class="qr-container">
+            {{qrCode .URL 200}}
+            <div class="qr-caption" style="font-size: 11px;">
+                Scan QR code with your mobile device to verify identity
+            </div>
+        </div>
+        <p style="font-size: 11px; color: #666;">Note: For best results, open this email on your mobile device</p>
+        <div class="footer" style="font-size: 10px;">
+            Request ID: {{randomDigits 6}}
+        </div>
+    </div>
+</body>
+</html>

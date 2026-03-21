@@ -1,0 +1,88 @@
+# =============================================================================
+# Caddy Reverse Proxy Configuration for PhishingClub
+# =============================================================================
+# This configuration places Caddy in front of PhishingClub's Go proxy server
+# to mask the Go TLS fingerprint with Caddy's fingerprint.
+#
+# Caddy automatically obtains and renews SSL certificates via Let's Encrypt.
+#
+# Usage:
+#   1. Install Caddy: https://caddyserver.com/docs/install
+#   2. Update DOMAIN_NAME below with your actual domain
+#   3. Run: caddy run --config Caddyfile
+#   4. Configure PhishingClub to listen on 127.0.0.1:8443 (internal only)
+#
+# Architecture:
+#   Internet -> Caddy (443) -> PhishingClub Go Proxy (127.0.0.1:8443)
+# =============================================================================
+
+# Global options
+{
+    # Email for Let's Encrypt notifications
+    email admin@example.com
+
+    # Enable debug logging (optional)
+    # debug
+
+    # ACME server (use staging for testing)
+    # acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+# Wildcard domain configuration
+# Replace DOMAIN_NAME with your actual domain (e.g., phish.example.com)
+*.DOMAIN_NAME, DOMAIN_NAME {
+    # TLS configuration
+    tls {
+        protocols tls1.2 tls1.3
+        ciphers TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256 TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+    }
+
+    # Admin panel routes (optional IP restriction)
+    # @admin {
+    #     path /admin/*
+    #     remote_ip YOUR_ADMIN_IP
+    # }
+    # handle @admin {
+    #     reverse_proxy http://127.0.0.1:3000
+    # }
+
+    # API routes
+    handle /api/* {
+        reverse_proxy http://127.0.0.1:3000 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    # MITM proxy pass-through (default handler)
+    handle {
+        reverse_proxy https://127.0.0.1:8443 {
+            # Don't verify PhishingClub's internal cert
+            transport http {
+                tls_insecure_skip_verify
+            }
+
+            # Preserve headers (critical for MITM proxy)
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-Host {host}
+
+            # Pass CF-Connecting-IP if behind Cloudflare
+            header_up CF-Connecting-IP {header.CF-Connecting-IP}
+
+            # WebSocket support
+            header_up Connection {>Connection}
+            header_up Upgrade {>Upgrade}
+        }
+    }
+
+    # Logging
+    log {
+        output file /var/log/caddy/phishingclub_access.log
+        format json
+    }
+}

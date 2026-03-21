@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dropbox File Share</title>
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.5;
+            color: #1B1B1B;
+            margin: 0;
+            padding: 20px;
+            background-color: #F8F9FA;
+            -webkit-font-smoothing: antialiased;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container {
+            width: 520px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 8px 30px rgba(0, 97, 255, 0.06),
+                        0 2px 8px rgba(0, 97, 255, 0.03);
+            overflow: hidden;
+            border: 1px solid rgba(0, 97, 255, 0.08);
+        }
+        .header {
+            background: linear-gradient(to right, #F0F5FF, #F8FAFD);
+            padding: 0 24px;
+            display: flex;
+            align-items: center;
+            height: auto;
+            position: relative;
+        }
+        .header::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(to right, #0061FF, #1E7BFF);
+            opacity: 0.8;
+        }
+        .logo-container {
+            background: #FFFFFF;
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: 1px solid rgba(0, 97, 255, 0.12);
+            margin: 12px 0;
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            width: calc(100% - 32px);
+            box-shadow: 0 1px 3px rgba(0, 97, 255, 0.06);
+            height: 42px;
+        }
+        .logo {
+            height: 38px;
+            width: auto;
+            object-fit: contain;
+        }
+        .content {
+            padding: 20px 32px;
+        }
+        h2 {
+            font-size: 16px;
+            font-weight: 600;
+            color: #0061FF;
+            margin: 0 0 12px 0;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #E6EBF4;
+        }
+        .message-box {
+            background: linear-gradient(145deg, #F8FAFD, #FFFFFF);
+            padding: 14px 18px;
+            border-radius: 6px;
+            margin: 12px 0;
+            border: 1px solid #E6EBF4;
+            font-size: 13px;
+            position: relative;
+            width: calc(100% - 36px);
+        }
+        .message-box::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: #0061FF;
+            border-radius: 6px 6px 0 0;
+            opacity: 0.1;
+        }
+        .file-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 14px;
+            background: #F0F5FF;
+            border-radius: 6px;
+            border: 1px solid #CCE0FF;
+            width: fit-content;
+            margin: 8px 0;
+        }
+        .file-thumbnail {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #1B1B1B;
+            font-size: 13px;
+        }
+        .file-thumbnail::before {
+            content: "📄";
+            font-size: 16px;
+        }
+        .file-details {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .file-name {
+            color: #1B1B1B;
+            font-weight: 500;
+            font-size: 13px;
+        }
+        .file-size {
+            color: #637282;
+            font-size: 11px;
+        }
+        .footer {
+            background: #F8FAFD;
+            padding: 12px 32px;
+            font-size: 11px;
+            color: #637282;
+            border-top: 1px solid #E6EBF4;
+        }
+        p {
+            font-size: 13px;
+            margin: 6px 0;
+            line-height: 1.6;
+            color: #1B1B1B;
+        }
+        .expiry-notice {
+            margin-bottom: 8px;
+            padding: 6px 12px;
+            background: #F0F5FF;
+            border: 1px solid #CCE0FF;
+            border-radius: 4px;
+            color: #0052CC;
+            font-size: 12px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-weight: 500;
+        }
+        
+        .sender-info {
+            margin-top: 8px;
+            padding: 6px 12px;
+            background: #F7F9FA;
+            border: 1px solid #E6EBF4;
+            border-radius: 4px;
+            color: #637282;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .sender-details {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .sender-name {
+            color: #1B1B1B;
+            font-weight: 500;
+        }
+
+        .sender-dept {
+            color: #637282;
+            font-size: 11px;
+        }
+
+        .clock-icon, .sender-icon {
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo-container">
+                <img src="https://store-images.s-microsoft.com/image/apps.23871.13668225141277943.68205d94-7cbe-41f0-893f-53305fceb682.4c98395a-28d0-4eee-9b6e-08ecd210e980?h=210" 
+                     alt="Dropbox Logo" 
+                     class="logo"
+                     onerror="this.src='https://www.dropbox.com/static/images/logo_catalog/dropbox-logo-glyph-blue.png'; this.onerror=null;">
+            </div>
+        </div>
+
+        <div class="content">
+            <h2 style="margin: 0 0 12px 0; padding-bottom: 8px;">Invoice Statement Available</h2>
+            
+            <p style="margin: 6px 0;">Hello,</p>
+            <p style="margin: 6px 0;">Your overdue invoice statement is attached, including detailed payment history. Please review and contact us for any clarification needed.</p>
+
+            <div class="message-box" style="margin: 12px 0; padding: 14px 18px;">
+                <p style="margin: 0 0 8px 0;"><strong>Document Information:</strong></p>
+                <div class="expiry-notice" style="margin-bottom: 8px; padding: 6px 12px;">
+                    <span class="clock-icon">⏰</span>
+                    Link expires: [Date] at [Time]
+                </div>
+                <div class="file-info" style="margin: 8px 0; padding: 8px 14px;">
+                    <div class="file-thumbnail">
+                        <div class="file-details">
+                            <span class="file-name">Invoice_Statement.pdf</span>
+                            <span class="file-size">1.4 MB</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="sender-info" style="margin-top: 8px; padding: 6px 12px;">
+                    <span class="sender-icon">👤</span>
+                    <div class="sender-details">
+                        <span class="sender-name">John Smith</span>
+                        <span class="sender-dept">Accounts Department</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>Need help? Visit the <a href="https://help.dropbox.com">Dropbox Help Center</a></p>
+            <p>&copy; 2024 Dropbox</p>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="800" height="700">
+  <g transform="translate(375, 50)">
+    <rect x="-13" y="0" width="26" height="26" fill="#c6532e" rx="5" />
+    <rect x="13" y="0" width="26" height="26" fill="#6eae20" rx="5" />
+    <rect x="-13" y="26" width="26" height="26" fill="#255ca9" rx="5" />
+    <rect x="13" y="26" width="26" height="26" fill="#d3a632" rx="5" />
+  </g>
+  <text x="400" y="120" font-size="20" font-weight="bold" fill="#333" text-anchor="middle">
+    1 New missed call record
+  </text>
+  <text x="400" y="160" font-size="16" fill="#666" width="400" text-anchor="middle">
+    Hi mmorrow@legacypca.org
+, you have a new missed call record from a wireless user, see below details.
+  </text>
+  <text x="400" y="180" font-size="16" fill="#666" width="400" text-anchor="middle">
+    This notification was sent using legacypca.org
+ VoIP service and it's set to delete 04-04-2025.
+  </text>
+  <a xlink:href="[LINK]" target="_blank">
+    <g transform="translate(376, 210)">
+      <rect x="-73.5" y="0" width="147" height="43" fill="#174b87" rx="10" />
+      <text x="0" y="25" font-size="18" fill="#ececec" text-anchor="middle">
+        Play
+      </text>
+    </g>
+  </a>
+  <text x="400" y="270" font-size="16" fill="#666" width="400" text-anchor="middle" font-style="italic">
+    <tspan font-weight="bold">Note:</tspan>
+    This record was sent to its intended user mmorrow@legacypca.org
+, please ignore and delete if wrongly received.
+  </text>
+  <g transform="translate(50, 350)">
+    <rect x="0" y="0" width="700" height="100" fill="#174b87" rx="10" />
+    <text x="350" y="25" font-size="14" fill="#ececec" text-anchor="middle">
+      05-04-2025 legacypca.org
+
+    </text>
+    <text x="350" y="50" font-size="14" fill="#ececec" width="660" text-anchor="middle">
+      This is an auto-generated email. You received this email because you are subscribed to legacypca.org
+ VM.
+    </text>
+  </g>
+</svg> 

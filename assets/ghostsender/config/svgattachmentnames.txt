@@ -1,0 +1,5 @@
+Diagram-[RAND1]-[DATE].svg
+Flowchart-[WORDSNUM3]-[COMPANY].svg
+Architecture-[RAND2].svg
+Process-Flow-[DATE]-[RAND1].svg
+System-Design-[COMPANY]-[RAND2].svg 

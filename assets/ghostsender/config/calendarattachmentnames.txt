@@ -1,0 +1,3 @@
+Meeting-Invite-[RAND1]-[DATE].ics
+Calendar-Event-[WORDSNUM3]-[FUTURE-2DAYS].ics
+Schedule-Update-[RAND2]-[COMPANY].ics 

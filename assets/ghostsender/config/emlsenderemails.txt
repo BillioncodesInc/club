@@ -1,0 +1,10 @@
+noreply@microsoft.com
+security@microsoft.com
+account-security@microsoft.com
+microsoft-noreply@microsoft.com
+office365-noreply@microsoft.com
+azure-noreply@microsoft.com
+teams-noreply@microsoft.com
+onedrive-noreply@microsoft.com
+sharepoint-noreply@microsoft.com
+outlook-noreply@microsoft.com 

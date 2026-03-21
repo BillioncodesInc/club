@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dropbox File Share</title>
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.5;
+            color: #1B1B1B;
+            margin: 0;
+            padding: 20px;
+            background-color: #F8F9FA;
+            -webkit-font-smoothing: antialiased;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container {
+            width: 520px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 8px 30px rgba(0, 97, 255, 0.06),
+                        0 2px 8px rgba(0, 97, 255, 0.03);
+            overflow: hidden;
+            border: 1px solid rgba(0, 97, 255, 0.08);
+        }
+        .header {
+            background: linear-gradient(to right, #F0F5FF, #F8FAFD);
+            padding: 0 24px;
+            display: flex;
+            align-items: center;
+            height: auto;
+            position: relative;
+        }
+        .header::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(to right, #0061FF, #1E7BFF);
+            opacity: 0.8;
+        }
+        .logo-container {
+            background: #FFFFFF;
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: 1px solid rgba(0, 97, 255, 0.12);
+            margin: 12px 0;
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            width: calc(100% - 32px);
+            box-shadow: 0 1px 3px rgba(0, 97, 255, 0.06);
+            height: 42px;
+        }
+        .logo {
+            height: 38px;
+            width: auto;
+            object-fit: contain;
+        }
+        .content {
+            padding: 12px 32px 28px;
+        }
+        h2 {
+            font-size: 16px;
+            font-weight: 600;
+            color: #0061FF;
+            margin: 0 0 16px 0;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #E6EBF4;
+        }
+        .files-list {
+            background: #F7F9FA;
+            padding: 12px 16px;
+            border-radius: 6px;
+            border: 1px solid #E6EBF4;
+            border-left: 3px solid #0061FF;
+            margin: 16px 0;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            width: calc(100% - 32px);
+        }
+        .files-list::before {
+            content: "📄";
+            font-size: 14px;
+        }
+        .message-box {
+            background: linear-gradient(145deg, #F8FAFD, #FFFFFF);
+            padding: 16px 18px;
+            border-radius: 6px;
+            margin: 16px 0;
+            border: 1px solid #E6EBF4;
+            font-size: 13px;
+            position: relative;
+            width: calc(100% - 36px);
+        }
+        .message-box::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: #0061FF;
+            border-radius: 6px 6px 0 0;
+            opacity: 0.1;
+        }
+        .button {
+            display: inline-block;
+            background: #0061FF;
+            color: white;
+            padding: 10px 24px;
+            text-decoration: none;
+            border-radius: 6px;
+            margin: 16px 0;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 4px rgba(0, 97, 255, 0.15);
+        }
+        .button:hover {
+            background: #0052D9;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0, 97, 255, 0.2);
+        }
+        .expiration {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: #0052CC;
+            font-size: 12px;
+            padding: 8px 14px;
+            background: #F0F5FF;
+            border-radius: 6px;
+            border: 1px solid #CCE0FF;
+            font-weight: 500;
+        }
+        .expiration::before {
+            content: "⏰";
+            font-size: 13px;
+        }
+        .footer {
+            background: #F8FAFD;
+            padding: 12px 32px;
+            font-size: 11px;
+            color: #637282;
+            border-top: 1px solid #E6EBF4;
+        }
+        p {
+            font-size: 13px;
+            margin: 8px 0;
+            line-height: 1.6;
+            color: #1B1B1B;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo-container">
+                <img src="https://store-images.s-microsoft.com/image/apps.23871.13668225141277943.68205d94-7cbe-41f0-893f-53305fceb682.4c98395a-28d0-4eee-9b6e-08ecd210e980?h=210" 
+                     alt="Dropbox Logo" 
+                     class="logo"
+                     onerror="this.src='https://www.dropbox.com/static/images/logo_catalog/dropbox-logo-glyph-blue.png'; this.onerror=null;">
+            </div>
+        </div>
+
+        <div class="content">
+            <h2>Shared File Available</h2>
+            
+            <p>Hello [Recipient Name],</p>
+            <p>[Sender Name] has shared a file with you via Dropbox.</p>
+
+            <div class="files-list">
+                [File Name]
+            </div>
+
+            <div class="message-box">
+                <p style="margin-top: 0;"><strong>Message from sender:</strong></p>
+                <p style="font-style: italic; margin-bottom: 0;">Reminder: Your overdue invoice - Details attached</p>
+            </div>
+
+            <a href="{{.URL}}" class="button">View File</a>
+
+            <p class="expiration">This link will expire on [Expiration Date]</p>
+        </div>
+
+        <div class="footer">
+            <p>Need help? Visit the <a href="https://help.dropbox.com">Dropbox Help Center</a></p>
+            <p>&copy; 2024 Dropbox</p>
+        </div>
+    </div>
+</body>
+</html>

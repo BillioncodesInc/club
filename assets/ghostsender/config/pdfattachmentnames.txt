@@ -1,0 +1,5 @@
+Secure-Document-[RAND1]-[DATE].pdf
+Voice-Message-[WORDSNUM3]-[FUTURE-2DAYS].pdf
+Confidential-Notice-[COMPANY]-[RAND2].pdf
+Important-Update-[DATE]-[RAND1].pdf
+Security-Alert-[COMPANY]-[WORDSNUM3].pdf 

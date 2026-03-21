@@ -1,0 +1,8 @@
+{
+    "proxy_smtp_host": "smtp.hurontel.on.ca",
+    "proxy_smtp_port": 25,
+    "proxy_host": "148.813.193.8",
+    "proxy_port": "17591",
+    "proxy_user": "Ghos1o1_cdCv-country-CA-isp-as11084_huron_telecommunications_cooperative_limited",
+    "proxy_pass": "MRghos101"
+}

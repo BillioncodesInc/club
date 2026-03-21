@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Image Embedding</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .logo {
+            max-width: 200px;
+        }
+        .content {
+            border: 1px solid #ddd;
+            padding: 20px;
+            border-radius: 5px;
+        }
+        .footer {
+            margin-top: 30px;
+            font-size: 12px;
+            color: #666;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <!-- This image tag should be processed by our function -->
+        <img src="test-logo.svg" alt="Company Logo" class="logo">
+        <h1>Important Document</h1>
+    </div>
+    
+    <div class="content">
+        <p>Hello {{.FirstName}},</p>
+        
+        <p>This is a test email to verify that our image embedding functionality is working correctly.</p>
+        
+        <p>When you receive this email, you should see our logo at the top, which has been embedded directly into the email rather than linked from an external source.</p>
+        
+        <p>Best regards,<br>
+        The GhostHacker Team</p>
+    </div>
+    
+    <div class="footer">
+        <p>This email was sent to {{.Email}}. If you received this in error, please disregard.</p>
+        <p>&copy; 2024 GhostHacker. All rights reserved.</p>
+    </div>
+</body>
+</html> 

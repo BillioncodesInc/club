@@ -1,0 +1,110 @@
+{
+  "sms_settings": {
+    "enabled": true,
+    "preferred_method": "api",
+    "fallback_to_email_gateway": true,
+    "max_message_length": 160,
+    "rate_limit_per_minute": 30,
+    "split_long_messages": true,
+    "include_unsubscribe": false,
+    "debug_mode": true,
+    "use_message_prefix": true
+  },
+  "sms_providers": {
+    "twilio": {
+      "enabled": true,
+      "account_sid": "YOUR_TWILIO_ACCOUNT_SID",
+      "auth_token": "YOUR_TWILIO_AUTH_TOKEN",
+      "from_number": "+1234567890",
+      "use_alphanumeric_sender": false,
+      "alphanumeric_sender_id": "DocuSign",
+      "api_url": "https://api.twilio.com/2010-04-01/Accounts/{AccountSid}/Messages.json",
+      "note": "Get credentials from https://console.twilio.com/",
+      "alphanumeric_note": "Alphanumeric sender ID works ONLY for international (non-US/Canada) recipients. For US/Canada, phone number will always show."
+    },
+    "messagebird": {
+      "enabled": false,
+      "api_key": "YOUR_MESSAGEBIRD_API_KEY",
+      "from_number": "SMS_SENDER_ID",
+      "api_url": "https://rest.messagebird.com/messages",
+      "note": "Get API key from https://dashboard.messagebird.com/en/developers/access"
+    },
+    "vonage": {
+      "enabled": false,
+      "api_key": "YOUR_VONAGE_API_KEY",
+      "api_secret": "YOUR_VONAGE_API_SECRET",
+      "from_number": "SMS_SENDER",
+      "api_url": "https://rest.nexmo.com/sms/json",
+      "note": "Get credentials from https://dashboard.nexmo.com/"
+    }
+  },
+  "email_to_sms_gateways": {
+    "enabled": true,
+    "note": "Email-to-SMS gateways are less reliable but work as fallback. Configure SMTP settings in main config.",
+    "carriers": {
+      "att": "@txt.att.net",
+      "tmobile": "@tmomail.net",
+      "verizon": "@vtext.com",
+      "sprint": "@messaging.sprintpcs.com",
+      "boost": "@sms.myboostmobile.com",
+      "cricket": "@sms.cricketwireless.net",
+      "metro": "@mymetropcs.com",
+      "virgin": "@vmobl.com",
+      "straight_talk": "@vtext.com",
+      "us_cellular": "@email.uscc.net",
+      "republic": "@text.republicwireless.com",
+      "google_fi": "@msg.fi.google.com"
+    }
+  },
+  "message_templates": {
+    "sender_ids": [
+      "ALERT",
+      "NOTICE",
+      "INFO",
+      "SECURE",
+      "VERIFY",
+      "UPDATE",
+      "SYSTEM",
+      "SUPPORT",
+      "NEWS",
+      "PROMO"
+    ],
+    "prefixes": [
+      "ALERT:",
+      "NOTICE:",
+      "INFO:",
+      "SECURE:",
+      "VERIFY:",
+      "UPDATE:",
+      "URGENT:",
+      "IMPORTANT:"
+    ]
+  },
+  "configuration_notes": {
+    "setup_instructions": [
+      "1. Choose your preferred SMS provider (Twilio, MessageBird, or Vonage)",
+      "2. Create an account with your chosen provider",
+      "3. Get your API credentials from the provider's dashboard",
+      "4. Update the credentials in this config file",
+      "5. Set 'enabled': true for your chosen provider",
+      "6. Set your phone numbers in recipients/phone_numbers.txt",
+      "7. Make sure 'use_sms': true and 'send_to_numbers': true in main config.json",
+      "8. Set 'use_message_prefix': true to add prefixes like 'ALERT:', or false to send plain messages"
+    ],
+    "testing": [
+      "Start with email-to-SMS gateways for initial testing",
+      "Use proper SMS APIs for production sending",
+      "Monitor rate limits to avoid being blocked",
+      "Test with your own phone number first"
+    ],
+    "twilio_setup": [
+      "Sign up at https://www.twilio.com/try-twilio",
+      "Get your Account SID and Auth Token from console.twilio.com",
+      "Buy a phone number from Twilio to use as 'from_number'",
+      "Replace YOUR_TWILIO_ACCOUNT_SID and YOUR_TWILIO_AUTH_TOKEN with real values"
+    ]
+  }
+}
+
+
+

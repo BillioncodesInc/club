@@ -1,0 +1,10 @@
+/build
+.rules
+.DS_Store
+*.swp
+*.swo
+*~
+.env
+/data/
+/docker/data/
+frontend/node_modules/

@@ -1,0 +1,5 @@
+Secure-Archive-[DATE]-[RAND1].zip
+Documents-Package-[COMPANY]-[RAND2].zip
+Confidential-Files-[WORDSNUM3]-[FUTURE-2DAYS].zip
+Invoice-Attachments-[DATE]-[RAND1].zip
+Financial-Records-[WORDSNUM2]-[COMPANY].zip 

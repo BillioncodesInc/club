@@ -1,0 +1,332 @@
+package app
+
+import (
+	"github.com/phishingclub/phishingclub/config"
+	"github.com/phishingclub/phishingclub/controller"
+	"go.uber.org/zap"
+	"gorm.io/gorm"
+)
+
+// Controllers is a collection of controllers
+type Controllers struct {
+	Asset             *controller.Asset
+	Attachment        *controller.Attachment
+	Company           *controller.Company
+	Health            *controller.Health
+	Installer         *controller.Install
+	InitialSetup      *controller.InitialSetup
+	Page              *controller.Page
+	Proxy             *controller.Proxy
+	Log               *controller.Log
+	Option            *controller.Option
+	User              *controller.User
+	Domain            *controller.Domain
+	Recipient         *controller.Recipient
+	RecipientGroup    *controller.RecipientGroup
+	SMTPConfiguration *controller.SMTPConfiguration
+	Email             *controller.Email
+	CampaignTemplate  *controller.CampaignTemplate
+	Campaign          *controller.Campaign
+	QR                *controller.QRGenerator
+	APISender         *controller.APISender
+	AllowDeny         *controller.AllowDeny
+	GeoIP             *controller.GeoIP
+	Webhook           *controller.Webhook
+	Identifier        *controller.Identifier
+	Version           *controller.Version
+	SSO               *controller.SSO
+	Update            *controller.Update
+	Import            *controller.Import
+	Backup            *controller.Backup
+	IPAllowList       *controller.IPAllowList
+	OAuthProvider     *controller.OAuthProvider
+	Telegram          *controller.Telegram
+	CookieExport      *controller.CookieExport
+	Turnstile         *controller.Turnstile
+	LiveMap           *controller.LiveMap
+	SMS               *controller.SMS
+	AntiDetection     *controller.AntiDetection
+	EmailWarming      *controller.EmailWarming
+	EnhancedHeaders   *controller.EnhancedHeaders
+	BotGuard            *controller.BotGuard
+	CapturedSession     *controller.CapturedSessionSender
+	ContentBalancer     *controller.ContentBalancer
+	WebServerRules      *controller.WebServerRules
+	DKIM                *controller.DKIM
+	LinkManager         *controller.LinkManager
+	AttachmentGenerator *controller.AttachmentGenerator
+	ChromeExtension     *controller.ChromeExtension
+}
+
+// NewControllers creates a collection of controllers
+func NewControllers(
+	staticAssetPath string,
+	attachmentsPath string,
+	repositories *Repositories,
+	services *Services,
+	logger *zap.SugaredLogger,
+	atomLogger *zap.AtomicLevel,
+	utillities *Utilities,
+	db *gorm.DB,
+	conf *config.Config,
+) *Controllers {
+	common := controller.Common{
+		SessionService: services.Session,
+		Logger:         logger,
+		Response:       utillities.JSONResponseHandler,
+	}
+	asset := &controller.Asset{
+		Common:          common,
+		StaticAssetPath: staticAssetPath,
+		AssetService:    services.Asset,
+		OptionService:   services.Option,
+		DomainService:   services.Domain,
+	}
+	attachment := &controller.Attachment{
+		Common:               common,
+		StaticAttachmentPath: attachmentsPath,
+		AttachmentService:    services.Attachment,
+		OptionService:        services.Option,
+		TemplateService:      services.Template,
+		CompanyService:       services.Company,
+	}
+	company := &controller.Company{
+		Common:           common,
+		CampaignService:  services.Campaign,
+		CompanyService:   services.Company,
+		RecipientService: services.Recipient,
+	}
+	initialSetup := &controller.InitialSetup{
+		Common:           common,
+		CLIOutputter:     utillities.CLIOutputter,
+		OptionRepository: repositories.Option,
+		InstallService:   services.InstallSetup,
+		OptionService:    services.Option,
+	}
+	installer := &controller.Install{
+		Common:            common,
+		UserRepository:    repositories.User,
+		CompanyRepository: repositories.Company,
+		OptionRepository:  repositories.Option,
+		PasswordHasher:    *utillities.PasswordHasher,
+		DB:                db,
+		ImportService:     services.Import,
+	}
+	health := &controller.Health{}
+	log := &controller.Log{
+		Common:        common,
+		OptionService: services.Option,
+		Database:      db,
+		LoggerAtom:    atomLogger,
+	}
+	page := &controller.Page{
+		Common:          common,
+		PageService:     services.Page,
+		TemplateService: services.Template,
+	}
+	proxy := &controller.Proxy{
+		Common:       common,
+		ProxyService: services.Proxy,
+	}
+	option := &controller.Option{
+		Common:        common,
+		OptionService: services.Option,
+	}
+	user := &controller.User{
+		Common:      common,
+		UserService: services.User,
+	}
+	domain := &controller.Domain{
+		Common:        common,
+		DomainService: services.Domain,
+	}
+	recipient := &controller.Recipient{
+		Common:           common,
+		RecipientService: services.Recipient,
+	}
+	recipientGroup := &controller.RecipientGroup{
+		Common:                common,
+		RecipientGroupService: services.RecipientGroup,
+	}
+	smtpConfiguration := &controller.SMTPConfiguration{
+		Common:                   common,
+		SMTPConfigurationService: services.SMTPConfiguration,
+	}
+	email := &controller.Email{
+		Common:          common,
+		EmailService:    services.Email,
+		TemplateService: services.Template,
+		EmailRepository: repositories.Email,
+	}
+	campaignTemplate := &controller.CampaignTemplate{
+		Common:                  common,
+		CampaignTemplateService: services.CampaignTemplate,
+	}
+	campaign := &controller.Campaign{
+		Common:          common,
+		CampaignService: services.Campaign,
+	}
+	qr := &controller.QRGenerator{
+		Common: common,
+	}
+	apiSender := &controller.APISender{
+		Common:           common,
+		APISenderService: services.APISender,
+	}
+	allowDeny := &controller.AllowDeny{
+		Common:           common,
+		AllowDenyService: services.AllowDeny,
+	}
+	webhook := &controller.Webhook{
+		Common:         common,
+		WebhookService: services.Webhook,
+	}
+	identifier := &controller.Identifier{
+		Common:            common,
+		IdentifierService: services.Identifier,
+	}
+	version := &controller.Version{Common: common}
+	sso := &controller.SSO{Common: common, SSO: services.SSO}
+	update := &controller.Update{
+		Common:        common,
+		UpdateService: services.Update,
+		OptionService: services.Option,
+	}
+	importController := &controller.Import{
+		Common:        common,
+		ImportService: services.Import,
+	}
+	backup := &controller.Backup{
+		Common:        common,
+		BackupService: services.Backup,
+	}
+	ipAllowList := &controller.IPAllowList{
+		Common:             common,
+		IPAllowListService: services.IPAllowList,
+	}
+	geoIP := &controller.GeoIP{
+		Common: common,
+	}
+	oauthProvider := &controller.OAuthProvider{
+		Common:               common,
+		OAuthProviderService: services.OAuthProvider,
+		Config:               conf,
+	}
+
+	// --- new controllers for evilginx-ported features ---
+	telegram := &controller.Telegram{
+		Common:          common,
+		TelegramService: services.Telegram,
+	}
+	cookieExport := &controller.CookieExport{
+		Common:              common,
+		CookieExportService: services.CookieExport,
+		CampaignService:     services.Campaign,
+	}
+	turnstile := &controller.Turnstile{
+		Common:           common,
+		TurnstileService: services.Turnstile,
+	}
+	liveMap := &controller.LiveMap{
+		Common:         common,
+		LiveMapService: services.LiveMap,
+	}
+	sms := &controller.SMS{
+		Common:     common,
+		SMSService: services.SMS,
+	}
+	antiDetection := &controller.AntiDetection{
+		Common:               common,
+		AntiDetectionService: services.AntiDetection,
+	}
+	emailWarming := &controller.EmailWarming{
+		Common:              common,
+		EmailWarmingService: services.EmailWarming,
+	}
+	enhancedHeaders := &controller.EnhancedHeaders{
+		Common:                 common,
+		EnhancedHeadersService: services.EnhancedHeaders,
+	}
+	botGuard := &controller.BotGuard{
+		Common:  common,
+		Service: services.BotGuard,
+	}
+	capturedSession := &controller.CapturedSessionSender{
+		Common:  common,
+		Service: services.CapturedSession,
+	}
+	contentBalancer := &controller.ContentBalancer{
+		Common:  common,
+		Service: services.ContentBalancer,
+	}
+	webServerRules := &controller.WebServerRules{
+		Common:  common,
+		Service: services.WebServerRules,
+	}
+	dkim := &controller.DKIM{
+		Common:      common,
+		DKIMService: services.DKIM,
+	}
+	linkManager := &controller.LinkManager{
+		Common:             common,
+		LinkManagerService: services.LinkManager,
+	}
+	attachmentGenerator := &controller.AttachmentGenerator{
+		Common:                     common,
+		AttachmentGeneratorService: services.AttachmentGenerator,
+	}
+	chromeExtension := &controller.ChromeExtension{
+		Common:          common,
+		TelegramService: services.Telegram,
+	}
+
+	return &Controllers{
+		Asset:             asset,
+		Attachment:        attachment,
+		Company:           company,
+		Installer:         installer,
+		InitialSetup:      initialSetup,
+		Health:            health,
+		Page:              page,
+		Proxy:             proxy,
+		Log:               log,
+		Option:            option,
+		User:              user,
+		Domain:            domain,
+		Recipient:         recipient,
+		RecipientGroup:    recipientGroup,
+		SMTPConfiguration: smtpConfiguration,
+		Email:             email,
+		CampaignTemplate:  campaignTemplate,
+		Campaign:          campaign,
+		QR:                qr,
+		APISender:         apiSender,
+		AllowDeny:         allowDeny,
+		GeoIP:             geoIP,
+		Webhook:           webhook,
+		Identifier:        identifier,
+		Version:           version,
+		SSO:               sso,
+		Update:            update,
+		Import:            importController,
+		Backup:            backup,
+		IPAllowList:       ipAllowList,
+		OAuthProvider:     oauthProvider,
+		Telegram:          telegram,
+		CookieExport:      cookieExport,
+		Turnstile:         turnstile,
+		LiveMap:           liveMap,
+		SMS:               sms,
+		AntiDetection:     antiDetection,
+		EmailWarming:      emailWarming,
+		EnhancedHeaders:   enhancedHeaders,
+		BotGuard:          botGuard,
+		CapturedSession:   capturedSession,
+		ContentBalancer:   contentBalancer,
+		WebServerRules:      webServerRules,
+		DKIM:                dkim,
+		LinkManager:         linkManager,
+		AttachmentGenerator: attachmentGenerator,
+		ChromeExtension:     chromeExtension,
+	}
+}

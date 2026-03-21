@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+   <title></title>
+</head>
+
+<body>
+   <table style='font-family: Helvetica, Arial, "Sans Serif"; widows: 1; border-collapse: collapse; max-width: 640px; background-color: rgb(255, 255, 255);'>
+       <tbody>
+           <tr>
+               <td style="padding: 0px 24px 30px;">
+                   <table align="center" border="0" cellpadding="0" cellspacing="0" style="color: rgb(255, 255, 255); background-color: rgb(33, 78, 159);" width="100%">
+                       <tbody>
+                           <tr>
+                               <td align="center" style="padding: 28px 36px 36px; border-radius: 2px; font-size: 16px; width: 904px; text-align: center;"><img height="75" src="https://na2.docusign.net/member/Images/email/docInvite-white.png" style="width: 75px; height: 75px;" width="75">
+                                   <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                       <tbody>
+                                           <tr>
+                                               <td align="center" style="padding-top: 24px; border: none;"> [EMAIL*]  You have a new document to review and sign.</td>
+                                           </tr>
+                                       </tbody>
+                                   </table>
+                                   <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                       <tbody>
+                                           <tr>
+                                               <td align="center" style="padding-top: 30px;">
+                                                   <table cellpadding="0" cellspacing="0">
+                                                       <tbody>
+                                                           <tr>
+                                                               <td align="center" style="padding: 10px; background-color: white; border-radius: 4px; width: 80px; height: 80px;">
+                                                                   [QR_CODE]
+                                                               </td>
+                                                           </tr>
+                                                       </tbody>
+                                                   </table>
+                                               </td>
+                                           </tr>
+                                       </tbody>
+                                   </table>
+                               </td>
+                           </tr>
+                       </tbody>
+                   </table>
+               </td>
+           </tr>
+           <tr>
+               <td style="padding: 0px 24px 40px; color: rgb(255, 255, 255); font-size: 16px;"><span style="font-size: 15px; color: rgb(51, 51, 51); line-height: 20px;">Please indicate your acceptance by returning a signed copy of this proposal.</span></td>
+           </tr>
+           <tr>
+               <td style="padding: 0px 24px 12px; font-size: 11px; color: rgb(102, 102, 102);">
+                   <table border="0" cellpadding="0" cellspacing="0">
+                       <tbody>
+                           <tr>
+                               <td style="vertical-align: top;" valign="top">
+                                   <div style="padding: 2px 5px 0px 0px;">Powered by</div>
+                               </td>
+                               <td><img alt="DocuSign" height="19" src="https://na2.docusign.net//Signing/Images/logo.png" style="border: none;"></td>
+                           </tr>
+                       </tbody>
+                   </table>
+               </td>
+           </tr>
+       </tbody>
+   </table>
+   <p><span style="color: rgb(33, 33, 33);font-size: 14px;">Powered by<br><br><strong>Do Not Share This Email<br></strong>This email contains a secure link to DocuSign. Please do not share this email, link, or access code with<br>others.<br></span></p>
+   <p><span style="color: rgb(33, 33, 33);font-size: 14px;"><strong>About DocuSign<br></strong>Sign documents electronically in just minutes. It&apos;s safe, secure, and legally binding. Whether you&apos;re in<br>an office, at home, on-the-go -- or even across the globe -- All you need to do is log in with your<br>corresponding email and password. DocuSign provides a professional trusted solution for Digital<br>Transaction ManagementTM.This message was sent to you by Brian Long who is using the DocuSign Electronic Signature</span></p>
+   <p><span style="color: rgb(33, 33, 33);font-size: 14px;"><br></span></p>
+</body>
+
+</html>

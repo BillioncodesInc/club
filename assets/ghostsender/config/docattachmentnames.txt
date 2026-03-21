@@ -1,0 +1,4 @@
+Document-[RAND1]-[DATE].doc
+Company-Policy-[WORDSNUM3]-[COMPANY].doc
+Confidential-Doc-[RAND2].doc
+Invoice-[DATE]-[RAND1].doc 

@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Invoice [INVOICE_NUM] — [COMPANY-U]</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #333; background: #fff; }
+    .invoice-container { max-width: 700px; margin: 0 auto; padding: 40px; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; padding-bottom: 24px; border-bottom: 3px solid #0078d4; }
+    .header-logo img { max-height: 32px; }
+    .header-info { text-align: right; }
+    .header-info h1 { font-size: 28px; font-weight: 700; color: #0078d4; text-transform: uppercase; letter-spacing: 2px; }
+    .header-info .invoice-num { font-size: 13px; color: #666; margin-top: 4px; font-family: monospace; }
+    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 32px; }
+    .meta-block { background: #f8f9fa; border-radius: 6px; padding: 16px 20px; }
+    .meta-block h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #0078d4; margin-bottom: 8px; font-weight: 600; }
+    .meta-block p { font-size: 14px; line-height: 1.7; color: #333; }
+    .meta-block .highlight { font-weight: 600; color: #1a1a1a; }
+    .items-table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+    .items-table thead th { background: #0078d4; color: #fff; padding: 10px 16px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; text-align: left; }
+    .items-table thead th:last-child { text-align: right; }
+    .items-table tbody td { padding: 12px 16px; border-bottom: 1px solid #e9ecef; font-size: 14px; }
+    .items-table tbody td:last-child { text-align: right; font-family: monospace; }
+    .items-table tfoot td { padding: 10px 16px; font-size: 14px; }
+    .items-table tfoot .total-row td { font-weight: 700; font-size: 16px; border-top: 2px solid #0078d4; color: #0078d4; }
+    .alert-box { background: #fff3cd; border: 1px solid #ffc107; border-left: 4px solid #ffc107; border-radius: 4px; padding: 14px 18px; margin-bottom: 24px; }
+    .alert-box p { font-size: 13px; color: #856404; }
+    .alert-box strong { color: #664d03; }
+    .action-section { text-align: center; margin: 32px 0; }
+    .action-btn { display: inline-block; background: linear-gradient(135deg, #0078d4 0%, #005a9e 100%); color: #ffffff; text-decoration: none; padding: 14px 40px; border-radius: 6px; font-size: 15px; font-weight: 600; letter-spacing: 0.3px; }
+    .qr-section { text-align: center; padding: 20px; background: #f8f9fa; border-radius: 6px; border: 1px dashed #dee2e6; margin-bottom: 24px; }
+    .qr-section p { font-size: 12px; color: #6c757d; margin-bottom: 10px; }
+    .footer { border-top: 1px solid #e9ecef; padding-top: 20px; margin-top: 32px; }
+    .footer p { font-size: 11px; color: #adb5bd; line-height: 1.6; }
+    .footer .ref { font-family: monospace; color: #868e96; }
+  </style>
+</head>
+<body>
+  <div class="invoice-container">
+
+    <!-- Header -->
+    <div class="header">
+      <div class="header-logo">
+        <img src="[LOGO_URL]" alt="[COMPANY-U]" onerror="this.parentElement.innerHTML='<strong style=font-size:18px;color:#0078d4>[COMPANY-U]</strong>'">
+      </div>
+      <div class="header-info">
+        <h1>Invoice</h1>
+        <div class="invoice-num">[INVOICE_NUM]</div>
+      </div>
+    </div>
+
+    <!-- Billing Info Grid -->
+    <div class="meta-grid">
+      <div class="meta-block">
+        <h3>Billed To</h3>
+        <p>
+          <span class="highlight">[FULL_NAME]</span><br>
+          [EMAIL]<br>
+          [COMPANY-U]<br>
+          [DOMAIN]
+        </p>
+      </div>
+      <div class="meta-block">
+        <h3>Invoice Details</h3>
+        <p>
+          <strong>Date:</strong> [DATE-2]<br>
+          <strong>Due Date:</strong> <span style="color:#d83b01;">[DEADLINE]</span><br>
+          <strong>Order:</strong> [ORDER_NUM]<br>
+          <strong>Account:</strong> [ACCOUNT_NUM]
+        </p>
+      </div>
+    </div>
+
+    <!-- Line Items -->
+    <table class="items-table">
+      <thead>
+        <tr>
+          <th>Description</th>
+          <th>Ref</th>
+          <th style="text-align:right;">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>[COMPANY-U] [DOCUMENT_TYPE] Services — [CONTRACT_TYPE] Plan</td>
+          <td style="font-family:monospace;font-size:12px;">[PRODUCT_CODE]</td>
+          <td>[RANDOM_AMOUNT_HIGH]</td>
+        </tr>
+        <tr>
+          <td>[SYSTEM_NAME] License — [COMPLIANCE_CODE] Compliant</td>
+          <td style="font-family:monospace;font-size:12px;">[PRODUCT_CODE]</td>
+          <td>[RANDOM_AMOUNT]</td>
+        </tr>
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="2" style="text-align:right;color:#6c757d;font-size:13px;">Subtotal</td>
+          <td style="text-align:right;font-family:monospace;">[RANDOM_AMOUNT_HIGH]</td>
+        </tr>
+        <tr>
+          <td colspan="2" style="text-align:right;color:#6c757d;font-size:13px;">Tax</td>
+          <td style="text-align:right;font-family:monospace;">[RANDOM_AMOUNT]</td>
+        </tr>
+        <tr class="total-row">
+          <td colspan="2" style="text-align:right;">Total Due</td>
+          <td style="text-align:right;font-family:monospace;">[RANDOM_AMOUNT_HIGH]</td>
+        </tr>
+      </tfoot>
+    </table>
+
+    <!-- Payment Notice -->
+    <div class="alert-box">
+      <p>
+        <strong>&#9888; Payment Required by [DEADLINE]</strong><br>
+        Please review this invoice and process payment before the due date to avoid any disruption to your [COMPANY-U] services.
+        Payment method: <strong>[PAYMENT_METHOD]</strong>
+      </p>
+    </div>
+
+    <!-- Action Button -->
+    <div class="action-section">
+      <a href="[URL]" class="action-btn">View Invoice &amp; Pay Securely</a>
+      <p style="margin-top:12px;font-size:12px;color:#9ca3af;">
+        Secure payment portal &bull; Transaction ID: <span style="font-family:monospace;">[TRANSACTION_ID]</span>
+      </p>
+    </div>
+
+    [IF_QR_CODE]
+    <!-- QR Code -->
+    <div class="qr-section">
+      <p>Scan to pay via mobile:</p>
+      <img src="cid:qrcode" width="150" height="150" alt="QR Code">
+    </div>
+    [/IF_QR_CODE]
+
+    <!-- Footer -->
+    <div class="footer">
+      <p>
+        <strong>[COMPANY-U]</strong> &bull; [DEPARTMENT]<br>
+        Contact: [SUPPORT_EMAIL] &bull; [PHONE]<br>
+        Invoice: <span class="ref">[INVOICE_NUM]</span> &bull; Reference: <span class="ref">[REFERENCE_NUM]</span>
+      </p>
+      <p style="margin-top:8px;font-size:10px;">
+        &copy; [YEAR] [COMPANY-U]. This invoice was generated automatically.
+        If you believe you received this in error, contact [SUPPORT_EMAIL].
+        <a href="[PRIVACY_URL]" style="color:#adb5bd;">Privacy</a> &bull;
+        <a href="[TERMS_URL]" style="color:#adb5bd;">Terms</a>
+      </p>
+    </div>
+
+  </div>
+</body>
+</html>

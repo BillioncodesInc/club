@@ -1,0 +1,4 @@
+Financial-[RAND1]-[DATE].xls
+Budget-[WORDSNUM3]-[COMPANY].xls
+Report-[RAND2]-Q[RAND1].xls
+Statement-[DATE]-[RAND1].xls 

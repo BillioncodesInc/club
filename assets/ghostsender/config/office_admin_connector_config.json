@@ -1,0 +1,14 @@
+{
+  "connectors": [
+    {
+      "smtp_host": "puffincanna-com.mail.protection.outlook.com",
+      "smtp_port": 25,
+      "from_email": "sender@yourdomain.com"
+    },
+    {
+      "smtp_host": "another-domain.mail.protection.outlook.com",
+      "smtp_port": 25,
+      "from_email": "another@domain.com"
+    }
+  ]
+}

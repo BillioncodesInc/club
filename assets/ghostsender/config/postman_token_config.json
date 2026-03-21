@@ -1,0 +1,4 @@
+{
+  "postman_token": "YOUR_MICROSOFT_GRAPH_ACCESS_TOKEN_HERE",
+  "sender_email": "user@example.com"
+} 

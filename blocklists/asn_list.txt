@@ -1,0 +1,100 @@
+# ASN Blocklist - Security Scanners, Cloud Providers, and Crawlers
+# One ASN per line. Can use "AS" prefix or just the number.
+# Lines starting with # or ; are treated as comments
+# Last updated: 2025-02-18
+
+# ============ CLOUD PROVIDERS (scanner infrastructure) ============
+# Google Cloud / GCP
+AS15169
+AS396982
+# Amazon AWS
+AS14618
+AS16509
+AS8987
+# Microsoft Azure
+AS8075
+AS8068
+AS12076
+# DigitalOcean
+AS14061
+# Linode / Akamai Cloud
+AS63949
+# Vultr
+AS20473
+# OVH / OVHcloud
+AS16276
+# Hetzner
+AS24940
+# Contabo
+AS51167
+# Scaleway
+AS12876
+
+# ============ SECURITY VENDORS / SCANNERS ============
+# Palo Alto Networks / Cortex
+AS22781
+# CrowdStrike
+AS394699
+# Zscaler
+AS22616
+AS62044
+# Proofpoint
+AS26211
+# Mimecast
+AS55002
+# Barracuda
+AS14627
+# Sophos
+AS24998
+# Fortinet / FortiGuard
+AS30342
+# Symantec / Broadcom
+AS21345
+# Trend Micro
+AS25478
+# Cisco / Talos
+AS36351
+AS109
+
+# ============ WEB CRAWLERS / BOTS ============
+# Cloudflare (scanners, not legitimate CDN traffic)
+AS13335
+# Facebook / Meta
+AS32934
+# Twitter / X
+AS13414
+# LinkedIn
+AS14413
+# Apple (iCloud Private Relay / scanners)
+AS714
+AS6185
+# Baidu
+AS55967
+# Yandex
+AS13238
+AS208722
+
+# ============ HOSTING / VPS (commonly used by scanners) ============
+# ColoCrossing
+AS36352
+# QuadraNet
+AS8100
+# Psychz Networks
+AS40676
+# M247
+AS9009
+# Leaseweb
+AS60781
+AS28753
+# 1and1 IONOS
+AS8560
+# GoDaddy Hosting
+AS26496
+# HostGator / Endurance
+AS46606
+# DreamHost
+AS26347
+# Rackspace
+AS27357
+# Oracle Cloud
+AS31898
