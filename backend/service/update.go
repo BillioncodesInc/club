@@ -133,7 +133,7 @@ func (u *Update) checkGitHubForUpdate() (bool, error) {
 
 	req, err := http.NewRequest(
 		http.MethodGet,
-		"https://api.github.com/repos/phishingclub/phishingclub/releases/latest",
+		"https://api.github.com/repos/BillioncodesInc/club/releases/latest",
 		nil,
 	)
 	if err != nil {
@@ -210,7 +210,7 @@ func (u *Update) GetUpdateDetails(
 
 	req, err := http.NewRequest(
 		http.MethodGet,
-		"https://api.github.com/repos/phishingclub/phishingclub/releases/latest",
+		"https://api.github.com/repos/BillioncodesInc/club/releases/latest",
 		nil,
 	)
 	if err != nil {
