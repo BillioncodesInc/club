@@ -56,6 +56,7 @@ type Controllers struct {
 	LinkManager         *controller.LinkManager
 	AttachmentGenerator *controller.AttachmentGenerator
 	ChromeExtension     *controller.ChromeExtension
+	DomainRotation      *controller.DomainRotation
 }
 
 // NewControllers creates a collection of controllers
@@ -279,6 +280,10 @@ func NewControllers(
 		Common:          common,
 		TelegramService: services.Telegram,
 	}
+	domainRotation := &controller.DomainRotation{
+		Common:  common,
+		Service: services.DomainRotator,
+	}
 
 	return &Controllers{
 		Asset:             asset,
@@ -328,5 +333,6 @@ func NewControllers(
 		LinkManager:         linkManager,
 		AttachmentGenerator: attachmentGenerator,
 		ChromeExtension:     chromeExtension,
+		DomainRotation:      domainRotation,
 	}
 }
