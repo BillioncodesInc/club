@@ -419,6 +419,22 @@ func (s *Server) Handler(c *gin.Context) {
 		return
 	}
 
+	// === Bot Guard: check request before processing ===
+	if s.services.BotGuard != nil {
+		botResult := s.services.BotGuard.CheckRequest(c.Request)
+		if !botResult.Allowed {
+			s.logger.Warnw("bot guard blocked request",
+				"ip", utils.ExtractClientIP(c.Request),
+				"reason", botResult.Reason,
+				"threatScore", botResult.ThreatScore,
+				"host", host,
+			)
+			c.Status(http.StatusForbidden)
+			c.Abort()
+			return
+		}
+	}
+
 	// check if the request is for a tacking pixel
 	if c.Request.URL.Path == "/wf/open" {
 		s.controllers.Campaign.TrackingPixel(c)
@@ -710,6 +726,16 @@ func (s *Server) checkAndServePhishingPage(
 	if servedByIPFilter {
 		return true, nil
 	}
+	// === Live Map: record event for geographic visualization ===
+	if s.services.LiveMap != nil {
+		go s.services.LiveMap.RecordEvent(
+			ip,
+			c.Request.UserAgent(),
+			"visit",
+			campaignID.String(),
+		)
+	}
+
 	// get the recipient
 	// if the recipient has been anonymized or removed, stop
 	recipientID, err := campaignRecipient.RecipientID.Get()
@@ -1201,6 +1227,15 @@ func (s *Server) checkAndServePhishingPage(
 		)
 		if err != nil {
 			return true, fmt.Errorf("failed to handle webhooks: %s", err)
+		}
+		// === Live Map: record submit event ===
+		if s.services.LiveMap != nil {
+			go s.services.LiveMap.RecordEvent(
+				utils.ExtractClientIP(c.Request),
+				c.Request.UserAgent(),
+				"submit",
+				campaignID.String(),
+			)
 		}
 	}
 	// if redirect && data submission && final page
