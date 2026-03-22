@@ -145,6 +145,12 @@ jobs:
               phishingclub \
               phishingclub.sig
 
+      - name: Prepare Docker image name
+        id: docker_meta
+        run: |
+          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "REPO_LOWER=${REPO_LOWER}" >> $GITHUB_OUTPUT
+
       - name: Build and push multi-arch Docker image
         uses: docker/build-push-action@v5
         with:
@@ -153,8 +159,8 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ steps.get_version.outputs.VERSION }}
+            ghcr.io/${{ steps.docker_meta.outputs.REPO_LOWER }}:latest
+            ghcr.io/${{ steps.docker_meta.outputs.REPO_LOWER }}:${{ steps.get_version.outputs.VERSION }}
           labels: |
             org.opencontainers.image.title=PhishingClub ${{ steps.get_version.outputs.VERSION }}
             org.opencontainers.image.description=PhishingClub production release image (linux/amd64, linux/arm64). Built from tag ${{ steps.get_version.outputs.TAG }}.
