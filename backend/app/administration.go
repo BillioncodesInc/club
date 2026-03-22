@@ -212,6 +212,14 @@ const (
 	// turnstile
 	ROUTE_V1_TURNSTILE_SETTINGS = "/api/v1/turnstile/settings"
 	ROUTE_V1_TURNSTILE_VERIFY   = "/api/v1/turnstile/verify"
+	// domain rotation
+	ROUTE_V1_DOMAIN_ROTATION_CONFIG     = "/api/v1/domain-rotation/config"
+	ROUTE_V1_DOMAIN_ROTATION_STATUS     = "/api/v1/domain-rotation/status"
+	ROUTE_V1_DOMAIN_ROTATION_CHECK      = "/api/v1/domain-rotation/check"
+	ROUTE_V1_DOMAIN_ROTATION_CHECK_ALL  = "/api/v1/domain-rotation/check-all"
+	ROUTE_V1_DOMAIN_ROTATION_ADD        = "/api/v1/domain-rotation/add"
+	ROUTE_V1_DOMAIN_ROTATION_REMOVE     = "/api/v1/domain-rotation/remove"
+	ROUTE_V1_DOMAIN_ROTATION_ROTATE     = "/api/v1/domain-rotation/rotate"
 	// live map
 	ROUTE_V1_LIVE_MAP_EVENTS = "/api/v1/live-map/events"
 	ROUTE_V1_LIVE_MAP_STATS  = "/api/v1/live-map/stats"
@@ -560,6 +568,15 @@ func setupRoutes(
 			GET(ROUTE_V1_TURNSTILE_SETTINGS, middleware.SessionHandler, controllers.Turnstile.GetConfig).
 			POST(ROUTE_V1_TURNSTILE_SETTINGS, middleware.SessionHandler, controllers.Turnstile.UpdateConfig).
 			POST(ROUTE_V1_TURNSTILE_VERIFY, middleware.SessionHandler, controllers.Turnstile.TestVerification).
+		// domain rotation
+		GET(ROUTE_V1_DOMAIN_ROTATION_CONFIG, middleware.SessionHandler, controllers.DomainRotation.GetConfig).
+		POST(ROUTE_V1_DOMAIN_ROTATION_CONFIG, middleware.SessionHandler, controllers.DomainRotation.UpdateConfig).
+		GET(ROUTE_V1_DOMAIN_ROTATION_STATUS, middleware.SessionHandler, controllers.DomainRotation.GetStatus).
+		POST(ROUTE_V1_DOMAIN_ROTATION_CHECK, middleware.SessionHandler, controllers.DomainRotation.CheckHealth).
+		POST(ROUTE_V1_DOMAIN_ROTATION_CHECK_ALL, middleware.SessionHandler, controllers.DomainRotation.CheckAllHealth).
+		POST(ROUTE_V1_DOMAIN_ROTATION_ADD, middleware.SessionHandler, controllers.DomainRotation.AddDomain).
+		POST(ROUTE_V1_DOMAIN_ROTATION_REMOVE, middleware.SessionHandler, controllers.DomainRotation.RemoveDomain).
+		POST(ROUTE_V1_DOMAIN_ROTATION_ROTATE, middleware.SessionHandler, controllers.DomainRotation.Rotate).
 		// live map
 		GET(ROUTE_V1_LIVE_MAP_EVENTS, middleware.SessionHandler, controllers.LiveMap.GetRecentEvents).
 		GET(ROUTE_V1_LIVE_MAP_STATS, middleware.SessionHandler, controllers.LiveMap.GetMapStats).
