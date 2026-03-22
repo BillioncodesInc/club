@@ -81,15 +81,16 @@
 				iconAnchor: [6, 6]
 			});
 			const marker = L.marker([event.latitude, event.longitude], { icon }).addTo(map);
-			const time = new Date(event.createdAt).toLocaleString();
+			// Backend sends: timestamp, ipAddress, campaignId, eventType, city, country
+			const time = new Date(event.timestamp).toLocaleString();
 			marker.bindPopup(`
 				<div style="font-size: 12px; min-width: 180px;">
 					<strong>${event.eventType || 'visit'}</strong><br/>
-					<span style="color: #666;">IP:</span> ${event.ip || 'N/A'}<br/>
+					<span style="color: #666;">IP:</span> ${event.ipAddress || 'N/A'}<br/>
 					<span style="color: #666;">Country:</span> ${event.country || 'N/A'}<br/>
 					<span style="color: #666;">City:</span> ${event.city || 'N/A'}<br/>
 					<span style="color: #666;">Time:</span> ${time}<br/>
-					<span style="color: #666;">Campaign:</span> ${event.campaignName || 'N/A'}
+					<span style="color: #666;">Campaign:</span> ${event.campaignId || 'N/A'}
 				</div>
 			`);
 			markers.push(marker);
@@ -182,35 +183,39 @@
 
 {#if stats}
 	<div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-		{#if stats.topCountries && stats.topCountries.length > 0}
+		<div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+			<h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Summary</h3>
+			<div class="space-y-2">
+				<div class="flex items-center justify-between text-sm">
+					<span class="text-gray-600 dark:text-gray-400">Total Events</span>
+					<span class="font-medium text-gray-900 dark:text-gray-100">{stats.totalEvents || 0}</span>
+				</div>
+				<div class="flex items-center justify-between text-sm">
+					<span class="text-gray-600 dark:text-gray-400">Active Countries</span>
+					<span class="font-medium text-gray-900 dark:text-gray-100">{stats.activeCountries || 0}</span>
+				</div>
+				<div class="flex items-center justify-between text-sm">
+					<span class="text-gray-600 dark:text-gray-400">Active Cities</span>
+					<span class="font-medium text-gray-900 dark:text-gray-100">{stats.activeCities || 0}</span>
+				</div>
+			</div>
+		</div>
+		{#if stats.eventsByCountry && Object.keys(stats.eventsByCountry).length > 0}
 			<div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-				<h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Top Countries (7d)</h3>
+				<h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Top Countries</h3>
 				<div class="space-y-2">
-					{#each stats.topCountries.slice(0, 10) as country}
+					{#each Object.entries(stats.eventsByCountry).sort((a, b) => b[1] - a[1]).slice(0, 10) as [country, count]}
 						<div class="flex items-center justify-between text-sm">
-							<span class="text-gray-600 dark:text-gray-400">{country.country || 'Unknown'}</span>
-							<span class="font-medium text-gray-900 dark:text-gray-100">{country.count}</span>
+							<span class="text-gray-600 dark:text-gray-400">{country || 'Unknown'}</span>
+							<span class="font-medium text-gray-900 dark:text-gray-100">{count}</span>
 						</div>
 					{/each}
 				</div>
 			</div>
 		{/if}
-		{#if stats.topCities && stats.topCities.length > 0}
+		{#if stats.eventsByType && Object.keys(stats.eventsByType).length > 0}
 			<div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-				<h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Top Cities (7d)</h3>
-				<div class="space-y-2">
-					{#each stats.topCities.slice(0, 10) as city}
-						<div class="flex items-center justify-between text-sm">
-							<span class="text-gray-600 dark:text-gray-400">{city.city || 'Unknown'}</span>
-							<span class="font-medium text-gray-900 dark:text-gray-100">{city.count}</span>
-						</div>
-					{/each}
-				</div>
-			</div>
-		{/if}
-		{#if stats.eventsByType}
-			<div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-				<h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Events by Type (7d)</h3>
+				<h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Events by Type</h3>
 				<div class="space-y-2">
 					{#each Object.entries(stats.eventsByType) as [type, count]}
 						<div class="flex items-center justify-between text-sm">
