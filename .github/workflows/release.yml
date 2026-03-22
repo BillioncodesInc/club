@@ -38,6 +38,7 @@ jobs:
           echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
           echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
           echo "HASH=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "REPO_LC=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
 
       - name: Build frontend files
         working-directory: frontend
@@ -153,8 +154,8 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ steps.get_version.outputs.VERSION }}
+            ghcr.io/${{ steps.get_version.outputs.REPO_LC }}:latest
+            ghcr.io/${{ steps.get_version.outputs.REPO_LC }}:${{ steps.get_version.outputs.VERSION }}
           labels: |
             org.opencontainers.image.title=PhishingClub ${{ steps.get_version.outputs.VERSION }}
             org.opencontainers.image.description=PhishingClub production release image (linux/amd64, linux/arm64). Built from tag ${{ steps.get_version.outputs.TAG }}.

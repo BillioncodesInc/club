@@ -38,6 +38,7 @@ jobs:
         run: |
           echo "VERSION=test-$(date +%Y%m%d-%H%M%S)" >> $GITHUB_OUTPUT
           echo "HASH=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "REPO_LC=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
 
       - name: Build frontend files
         working-directory: frontend
@@ -172,7 +173,7 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ghcr.io/${{ github.repository }}:test-latest
+            ghcr.io/${{ steps.get_version.outputs.REPO_LC }}:test-latest
           labels: |
             org.opencontainers.image.title=PhishingClub-Test ${{ steps.get_version.outputs.VERSION }}
             org.opencontainers.image.description=PhishingClub test build image (linux/amd64, linux/arm64). Not for production deployment.
