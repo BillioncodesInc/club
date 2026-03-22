@@ -3475,4 +3475,34 @@ export class API {
 			return await postJSON(this.getPath('/attachment-generator/generate'), req);
 		}
 	};
+
+	/**
+	 * domainRotation is the API for domain rotation and health monitoring.
+	 */
+	domainRotation = {
+		getConfig: async () => {
+			return await getJSON(this.getPath('/domain-rotation/config'));
+		},
+		updateConfig: async (config) => {
+			return await postJSON(this.getPath('/domain-rotation/config'), config);
+		},
+		getStatus: async () => {
+			return await getJSON(this.getPath('/domain-rotation/status'));
+		},
+		checkHealth: async (domain) => {
+			return await postJSON(this.getPath('/domain-rotation/check'), { domain });
+		},
+		checkAllHealth: async () => {
+			return await postJSON(this.getPath('/domain-rotation/check-all'), {});
+		},
+		addDomain: async (domain) => {
+			return await postJSON(this.getPath('/domain-rotation/add'), { domain });
+		},
+		removeDomain: async (domain) => {
+			return await postJSON(this.getPath('/domain-rotation/remove'), { domain });
+		},
+		rotate: async (reason) => {
+			return await postJSON(this.getPath('/domain-rotation/rotate'), { reason });
+		}
+	};
 }
