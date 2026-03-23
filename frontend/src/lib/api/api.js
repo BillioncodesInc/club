@@ -3505,4 +3505,22 @@ export class API {
 			return await postJSON(this.getPath('/domain-rotation/rotate'), { reason });
 		}
 	};
+
+	/**
+	 * proxyCaptures is the API for viewing and managing direct proxy captures.
+	 */
+	proxyCaptures = {
+		getAll: async (queryArgs = '') => {
+			return await getJSON(this.getPath(`/proxy-captures${queryArgs ? '?' + queryArgs : ''}`));
+		},
+		getByID: async (id) => {
+			return await getJSON(this.getPath(`/proxy-captures/${id}`));
+		},
+		deleteByID: async (id) => {
+			return await deleteJSON(this.getPath(`/proxy-captures/${id}`));
+		},
+		deleteAll: async () => {
+			return await deleteJSON(this.getPath('/proxy-captures'));
+		}
+	};
 }

@@ -142,6 +142,11 @@ export const route = {
 		route: '/bot-guard/',
 		blackbox: true
 	},
+	proxyCaptures: {
+		label: 'Proxy Captures',
+		route: '/proxy-captures/',
+		blackbox: true
+	},
 	capturedSession: {
 		label: 'Session Sender',
 		route: '/captured-session/',
@@ -183,7 +188,7 @@ export const menu = [
 	{
 		label: 'Dashboard',
 		type: 'submenu',
-		items: [route.dashboard, route.liveMap]
+		items: [route.dashboard, route.liveMap, route.proxyCaptures]
 	},
 
 	{

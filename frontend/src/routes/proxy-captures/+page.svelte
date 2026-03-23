@@ -1,0 +1,341 @@
+<script>
+	import { api } from '$lib/api/apiProxy.js';
+	import { onMount } from 'svelte';
+	import { addToast } from '$lib/store/toast';
+	import HeadTitle from '$lib/components/HeadTitle.svelte';
+	import Table from '$lib/components/table/Table.svelte';
+	import TableRow from '$lib/components/table/TableRow.svelte';
+	import TableCell from '$lib/components/table/TableCell.svelte';
+	import TableCellEmpty from '$lib/components/table/TableCellEmpty.svelte';
+	import TableCellAction from '$lib/components/table/TableCellAction.svelte';
+	import TableDeleteButton from '$lib/components/table/TableDeleteButton2.svelte';
+	import Headline from '$lib/components/Headline.svelte';
+	import { newTableURLParams } from '$lib/service/tableURLParams';
+	import TableDropDownEllipsis from '$lib/components/table/TableDropDownEllipsis.svelte';
+	import DeleteAlert from '$lib/components/modal/DeleteAlert.svelte';
+	import BigButton from '$lib/components/BigButton.svelte';
+
+	// local state
+	let captures = [];
+	let capturesHasNextPage = false;
+	const tableURLParams = newTableURLParams();
+	let isTableLoading = false;
+	let isDeleteAlertVisible = false;
+	let isDeleteAllAlertVisible = false;
+	let deleteValues = { id: null, ip: null };
+	let expandedRow = null;
+
+	const refreshCaptures = async () => {
+		try {
+			isTableLoading = true;
+			const params = new URLSearchParams({
+				page: tableURLParams.currentPage,
+				perPage: tableURLParams.perPage,
+				sortBy: tableURLParams.sortBy || 'created_at',
+				sortOrder: tableURLParams.sortOrder || 'desc',
+				search: tableURLParams.search || ''
+			});
+			const res = await api.proxyCaptures.getAll(params.toString());
+			if (res.success) {
+				captures = res.data.rows || [];
+				capturesHasNextPage = res.data.hasNextPage || false;
+				return;
+			}
+			throw res.error;
+		} catch (e) {
+			addToast('Failed to load proxy captures', 'Error');
+			console.error('failed to load proxy captures', e);
+		} finally {
+			isTableLoading = false;
+		}
+	};
+
+	onMount(() => {
+		refreshCaptures();
+		tableURLParams.onChange(refreshCaptures);
+		return () => {
+			tableURLParams.unsubscribe();
+		};
+	});
+
+	const openDeleteAlert = (capture) => {
+		isDeleteAlertVisible = true;
+		deleteValues.id = capture.ID;
+		deleteValues.ip = capture.IPAddress;
+	};
+
+	const openDeleteAllAlert = () => {
+		isDeleteAllAlertVisible = true;
+	};
+
+	const deleteCapture = async (id) => {
+		const action = api.proxyCaptures.deleteByID(id);
+		action
+			.then((res) => {
+				if (res.success) {
+					refreshCaptures();
+					return;
+				}
+				throw res.error;
+			})
+			.catch((e) => {
+				addToast('Failed to delete capture', 'Error');
+				console.error('failed to delete capture', e);
+			});
+		return action;
+	};
+
+	const deleteAllCaptures = async () => {
+		const action = api.proxyCaptures.deleteAll();
+		action
+			.then((res) => {
+				if (res.success) {
+					refreshCaptures();
+					return;
+				}
+				throw res.error;
+			})
+			.catch((e) => {
+				addToast('Failed to delete all captures', 'Error');
+				console.error('failed to delete all captures', e);
+			});
+		return action;
+	};
+
+	const toggleExpand = (id) => {
+		expandedRow = expandedRow === id ? null : id;
+	};
+
+	const formatDate = (dateStr) => {
+		if (!dateStr) return '';
+		const d = new Date(dateStr);
+		return d.toLocaleString();
+	};
+
+	const maskPassword = (pw) => {
+		if (!pw) return '';
+		if (pw.length <= 4) return '****';
+		return pw.substring(0, 2) + '****' + pw.substring(pw.length - 2);
+	};
+
+	let showPasswords = {};
+	const togglePassword = (id) => {
+		showPasswords[id] = !showPasswords[id];
+		showPasswords = showPasswords;
+	};
+
+	const copyToClipboard = (text) => {
+		navigator.clipboard.writeText(text).then(() => {
+			addToast('Copied to clipboard', 'Success');
+		}).catch(() => {
+			addToast('Failed to copy', 'Error');
+		});
+	};
+</script>
+
+<HeadTitle title="Proxy Captures" />
+
+<main>
+	<Headline>Proxy Captures</Headline>
+	<p style="margin-bottom: 1rem; opacity: 0.7;">
+		Credentials and cookies captured from direct proxy visits (without a campaign link).
+	</p>
+	<BigButton on:click={openDeleteAllAlert}>Delete all captures</BigButton>
+
+	<Table
+		columns={[
+			{ column: 'Time', size: 'small' },
+			{ column: 'IP Address', size: 'small' },
+			{ column: 'Username', size: 'medium' },
+			{ column: 'Password', size: 'small' },
+			{ column: 'Domain', size: 'small' }
+		]}
+		sortable={['Time', 'IP Address', 'Username']}
+		hasData={!!captures.length}
+		hasNextPage={capturesHasNextPage}
+		plural="Captures"
+		pagination={tableURLParams}
+		isGhost={isTableLoading}
+	>
+		{#each captures as capture}
+			<TableRow>
+				<TableCell value={formatDate(capture.CreatedAt)} />
+				<TableCell value={capture.IPAddress || ''} />
+				<TableCell value={capture.Username || '-'} />
+				<TableCell>
+					{#if capture.Password}
+						<span style="display: flex; align-items: center; gap: 0.5rem;">
+							<code>{showPasswords[capture.ID] ? capture.Password : maskPassword(capture.Password)}</code>
+							<button
+								class="small-btn"
+								on:click|stopPropagation={() => togglePassword(capture.ID)}
+								title={showPasswords[capture.ID] ? 'Hide' : 'Show'}
+							>
+								{showPasswords[capture.ID] ? 'Hide' : 'Show'}
+							</button>
+							<button
+								class="small-btn"
+								on:click|stopPropagation={() => copyToClipboard(capture.Password)}
+								title="Copy"
+							>
+								Copy
+							</button>
+						</span>
+					{:else}
+						<span>-</span>
+					{/if}
+				</TableCell>
+				<TableCell value={capture.TargetDomain || capture.PhishDomain || ''} />
+				<TableCellEmpty />
+				<TableCellAction>
+					<TableDropDownEllipsis>
+						<button class="dropdown-item" on:click={() => toggleExpand(capture.ID)}>
+							{expandedRow === capture.ID ? 'Collapse' : 'Details'}
+						</button>
+						{#if capture.Cookies}
+							<button class="dropdown-item" on:click={() => copyToClipboard(capture.Cookies)}>
+								Copy Cookies
+							</button>
+						{/if}
+						{#if capture.CapturedData}
+							<button class="dropdown-item" on:click={() => copyToClipboard(capture.CapturedData)}>
+								Copy All Data
+							</button>
+						{/if}
+						<TableDeleteButton on:click={() => openDeleteAlert(capture)} />
+					</TableDropDownEllipsis>
+				</TableCellAction>
+			</TableRow>
+
+			{#if expandedRow === capture.ID}
+				<tr class="expanded-row">
+					<td colspan="7">
+						<div class="capture-details">
+							<div class="detail-grid">
+								<div class="detail-item">
+									<span class="detail-label">Session ID</span>
+									<span class="detail-value"><code>{capture.SessionID || '-'}</code></span>
+								</div>
+								<div class="detail-item">
+									<span class="detail-label">User Agent</span>
+									<span class="detail-value" style="word-break: break-all;">{capture.UserAgent || '-'}</span>
+								</div>
+								<div class="detail-item">
+									<span class="detail-label">Phish Domain</span>
+									<span class="detail-value"><code>{capture.PhishDomain || '-'}</code></span>
+								</div>
+								<div class="detail-item">
+									<span class="detail-label">Target Domain</span>
+									<span class="detail-value"><code>{capture.TargetDomain || '-'}</code></span>
+								</div>
+								{#if capture.Cookies}
+									<div class="detail-item full-width">
+										<span class="detail-label">Cookies</span>
+										<pre class="detail-pre">{capture.Cookies}</pre>
+									</div>
+								{/if}
+								{#if capture.CapturedData}
+									<div class="detail-item full-width">
+										<span class="detail-label">All Captured Data</span>
+										<pre class="detail-pre">{(() => {
+											try {
+												return JSON.stringify(JSON.parse(capture.CapturedData), null, 2);
+											} catch {
+												return capture.CapturedData;
+											}
+										})()}</pre>
+									</div>
+								{/if}
+							</div>
+						</div>
+					</td>
+				</tr>
+			{/if}
+		{/each}
+	</Table>
+
+	<DeleteAlert
+		list={[]}
+		name={deleteValues.ip}
+		onClick={() => deleteCapture(deleteValues.id)}
+		bind:isVisible={isDeleteAlertVisible}
+	/>
+	<DeleteAlert
+		list={[]}
+		name={'all proxy captures'}
+		onClick={() => deleteAllCaptures()}
+		bind:isVisible={isDeleteAllAlertVisible}
+	/>
+</main>
+
+<style>
+	.small-btn {
+		padding: 2px 8px;
+		font-size: 0.75rem;
+		border: 1px solid var(--border-color, #ccc);
+		border-radius: 4px;
+		background: var(--bg-secondary, #f5f5f5);
+		color: var(--text-primary, #333);
+		cursor: pointer;
+		white-space: nowrap;
+	}
+	.small-btn:hover {
+		background: var(--bg-hover, #e0e0e0);
+	}
+	.expanded-row td {
+		padding: 1rem 1.5rem;
+		background: var(--bg-secondary, #f9f9f9);
+		border-bottom: 1px solid var(--border-color, #e0e0e0);
+	}
+	.capture-details {
+		max-width: 100%;
+	}
+	.detail-grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0.75rem;
+	}
+	.detail-item {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+	.detail-item.full-width {
+		grid-column: 1 / -1;
+	}
+	.detail-label {
+		font-weight: 600;
+		font-size: 0.8rem;
+		opacity: 0.7;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+	.detail-value {
+		font-size: 0.9rem;
+	}
+	.detail-pre {
+		background: var(--bg-code, #1e1e1e);
+		color: var(--text-code, #d4d4d4);
+		padding: 0.75rem;
+		border-radius: 6px;
+		font-size: 0.8rem;
+		overflow-x: auto;
+		max-height: 200px;
+		white-space: pre-wrap;
+		word-break: break-all;
+	}
+	.dropdown-item {
+		display: block;
+		width: 100%;
+		padding: 0.5rem 1rem;
+		text-align: left;
+		border: none;
+		background: none;
+		cursor: pointer;
+		font-size: 0.875rem;
+		color: var(--text-primary, #333);
+	}
+	.dropdown-item:hover {
+		background: var(--bg-hover, #f0f0f0);
+	}
+</style>

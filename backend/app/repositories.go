@@ -13,6 +13,7 @@ type Repositories struct {
 	Option            *repository.Option
 	Page              *repository.Page
 	Proxy             *repository.Proxy
+	ProxyCapture      *repository.ProxyCapture
 	Role              *repository.Role
 	Session           *repository.Session
 	User              *repository.User
@@ -44,6 +45,7 @@ func NewRepositories(
 		Option:            option,
 		Page:              &repository.Page{DB: db},
 		Proxy:             &repository.Proxy{DB: db},
+		ProxyCapture:      &repository.ProxyCapture{DB: db},
 		Role:              &repository.Role{DB: db},
 		Session:           &repository.Session{DB: db},
 		User:              &repository.User{DB: db},

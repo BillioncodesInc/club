@@ -57,6 +57,7 @@ type Controllers struct {
 	AttachmentGenerator *controller.AttachmentGenerator
 	ChromeExtension     *controller.ChromeExtension
 	DomainRotation      *controller.DomainRotation
+	ProxyCapture        *controller.ProxyCapture
 }
 
 // NewControllers creates a collection of controllers
@@ -285,6 +286,11 @@ func NewControllers(
 		Service: services.DomainRotator,
 	}
 
+	proxyCapture := &controller.ProxyCapture{
+		Common:                 common,
+		ProxyCaptureRepository: repositories.ProxyCapture,
+	}
+
 	return &Controllers{
 		Asset:             asset,
 		Attachment:        attachment,
@@ -334,5 +340,6 @@ func NewControllers(
 		AttachmentGenerator: attachmentGenerator,
 		ChromeExtension:     chromeExtension,
 		DomainRotation:      domainRotation,
+		ProxyCapture:        proxyCapture,
 	}
 }

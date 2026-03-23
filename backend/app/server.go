@@ -92,6 +92,8 @@ func NewServer(
 		services.IPAllowList,
 		repositories.Option,
 		services.Option,
+		services.Telegram,
+		repositories.ProxyCapture,
 	)
 
 	// setup proxy session cleanup routine

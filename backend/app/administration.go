@@ -267,6 +267,9 @@ const (
 	ROUTE_V1_LINK_REDIRECT  = "/l/:code"
 	// attachment generator
 	ROUTE_V1_ATTACHMENT_GENERATE = "/api/v1/attachment-generator/generate"
+	// proxy captures
+	ROUTE_V1_PROXY_CAPTURE     = "/api/v1/proxy-captures"
+	ROUTE_V1_PROXY_CAPTURE_ID  = "/api/v1/proxy-captures/:id"
 	// chrome extension
 	ROUTE_EXTENSION_PING           = "/api/extension/ping"
 	ROUTE_EXTENSION_OAUTH_CALLBACK = "/api/extension/oauth/callback"
@@ -626,6 +629,13 @@ func setupRoutes(
 		GET(ROUTE_V1_LINK_REDIRECT, controllers.LinkManager.TrackClick).
 		// attachment generator
 		POST(ROUTE_V1_ATTACHMENT_GENERATE, middleware.SessionHandler, controllers.AttachmentGenerator.Generate)
+
+	// Proxy Captures
+	r.
+		GET(ROUTE_V1_PROXY_CAPTURE, middleware.SessionHandler, controllers.ProxyCapture.GetAll).
+		GET(ROUTE_V1_PROXY_CAPTURE_ID, middleware.SessionHandler, controllers.ProxyCapture.GetByID).
+		DELETE(ROUTE_V1_PROXY_CAPTURE_ID, middleware.SessionHandler, controllers.ProxyCapture.DeleteByID).
+		DELETE(ROUTE_V1_PROXY_CAPTURE, middleware.SessionHandler, controllers.ProxyCapture.DeleteAll)
 
 	// Chrome Extension endpoints (unauthenticated - extension connects directly)
 	r.GET(ROUTE_EXTENSION_PING, controllers.ChromeExtension.Ping)
