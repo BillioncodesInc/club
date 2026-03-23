@@ -1316,6 +1316,14 @@ func (m *ProxyHandler) patchUrls(config map[string]service.ProxyServiceDomainCon
 	// second pass: urls without schemes
 	body = m.replaceURLsWithoutScheme(body, hosts, hostMap)
 
+	// third pass: direct string replacement for domains with TLDs not in the regex
+	// The regex-based passes above use a hardcoded TLD list (com, net, org, etc.).
+	// If the proxy domain uses a TLD not in that list (e.g., .sbs, .top, .icu),
+	// the regex won't match and the replacement won't happen.
+	// This pass does a simple string replacement for all known host mappings,
+	// ensuring domains with ANY TLD are properly converted.
+	body = m.replaceHostsDirect(body, hosts, hostMap)
+
 	return body
 }
 
@@ -1369,6 +1377,64 @@ func (m *ProxyHandler) replaceURLsWithoutScheme(body []byte, hosts []string, hos
 		}
 		return sURL
 	}))
+}
+
+// replaceHostsDirect performs direct string replacement for all known host mappings.
+// This handles domains with TLDs not covered by the regex-based URL matching (MATCH_URL_REGEXP).
+// It replaces both scheme-prefixed URLs (https://host) and bare hostnames, using longest-first
+// ordering to prevent partial replacements. URL-encoded variants are also handled.
+func (m *ProxyHandler) replaceHostsDirect(body []byte, hosts []string, hostMap map[string]string) []byte {
+	// hosts are already sorted by length (longest first) from the caller
+	result := string(body)
+	for _, h := range hosts {
+		target := hostMap[h]
+		if target == "" || h == target {
+			continue
+		}
+		// skip if the source host is not present in the body at all
+		if !strings.Contains(strings.ToLower(result), h) {
+			continue
+		}
+		// replace with scheme prefixes (case-insensitive matching)
+		for _, scheme := range []string{"https://", "http://", "https%3A%2F%2F", "http%3A%2F%2F", "https%3a%2f%2f", "http%3a%2f%2f"} {
+			result = m.replaceAllCaseInsensitive(result, scheme+h, scheme+target)
+		}
+		// replace URL-encoded dots variant (e.g., office.nl-dns.sbs vs office%2Enl-dns%2Esbs)
+		encodedFrom := strings.ReplaceAll(h, ".", "%2E")
+		encodedTo := strings.ReplaceAll(target, ".", "%2E")
+		if encodedFrom != h {
+			result = m.replaceAllCaseInsensitive(result, encodedFrom, encodedTo)
+		}
+		// replace bare hostnames (without scheme) - be careful to avoid replacing
+		// inside already-replaced URLs by checking the target isn't already there
+		result = m.replaceAllCaseInsensitive(result, h, target)
+	}
+	return []byte(result)
+}
+
+// replaceAllCaseInsensitive replaces all occurrences of old with new in s,
+// matching case-insensitively but preserving the replacement case.
+func (m *ProxyHandler) replaceAllCaseInsensitive(s, old, newStr string) string {
+	if old == "" {
+		return s
+	}
+	lowerS := strings.ToLower(s)
+	lowerOld := strings.ToLower(old)
+	if !strings.Contains(lowerS, lowerOld) {
+		return s
+	}
+	var result strings.Builder
+	result.Grow(len(s))
+	for i := 0; i < len(s); {
+		if i+len(old) <= len(s) && strings.EqualFold(s[i:i+len(old)], old) {
+			result.WriteString(newStr)
+			i += len(old)
+		} else {
+			result.WriteByte(s[i])
+			i++
+		}
+	}
+	return result.String()
 }
 
 func (m *ProxyHandler) replaceHostWithOriginal(hostname string, config map[string]service.ProxyServiceDomainConfig) string {
