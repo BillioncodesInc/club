@@ -1092,21 +1092,39 @@ func (m *ProxyHandler) createMinimalConfig(phishDomain, targetDomain string) map
 	config := make(map[string]service.ProxyServiceDomainConfig)
 	var fullConfigYAML *service.ProxyServiceConfigYAML
 
-	dbDomain := &database.Domain{}
-	if err := m.DomainRepository.DB.Where("name = ?", phishDomain).First(dbDomain).Error; err == nil {
-		if dbDomain.ProxyID != nil {
-			dbProxy := &database.Proxy{}
-			if err := m.ProxyRepository.DB.Where("id = ?", *dbDomain.ProxyID).First(dbProxy).Error; err == nil {
-				if configYAML, err := m.parseProxyConfig(dbProxy.ProxyConfig); err == nil {
-					fullConfigYAML = configYAML
-					// Restore: add config for all hosts
-					for host, hostConfig := range fullConfigYAML.Hosts {
-						if hostConfig != nil {
-							config[host] = *hostConfig
+	// Try to find the domain in the database - first try exact match, then try
+	// stripping subdomain prefixes (e.g., live.nl-dns.sbs -> nl-dns.sbs) because
+	// proxy subdomains are not stored as separate database entries.
+	domainsToTry := []string{phishDomain}
+	parts := strings.SplitN(phishDomain, ".", 2)
+	if len(parts) == 2 {
+		// e.g., "live.nl-dns.sbs" -> try "nl-dns.sbs" as well
+		domainsToTry = append(domainsToTry, parts[1])
+		// Also try stripping two levels: e.g., "aadcdn.msauth.nl-dns.sbs" -> "nl-dns.sbs"
+		subParts := strings.SplitN(parts[1], ".", 2)
+		if len(subParts) == 2 {
+			domainsToTry = append(domainsToTry, subParts[1])
+		}
+	}
+
+	for _, domainName := range domainsToTry {
+		dbDomain := &database.Domain{}
+		if err := m.DomainRepository.DB.Where("name = ?", domainName).First(dbDomain).Error; err == nil {
+			if dbDomain.ProxyID != nil {
+				dbProxy := &database.Proxy{}
+				if err := m.ProxyRepository.DB.Where("id = ?", *dbDomain.ProxyID).First(dbProxy).Error; err == nil {
+					if configYAML, err := m.parseProxyConfig(dbProxy.ProxyConfig); err == nil {
+						fullConfigYAML = configYAML
+						// Restore: add config for all hosts
+						for host, hostConfig := range fullConfigYAML.Hosts {
+							if hostConfig != nil {
+								config[host] = *hostConfig
+							}
 						}
 					}
 				}
 			}
+			break // found a match, stop trying
 		}
 	}
 
