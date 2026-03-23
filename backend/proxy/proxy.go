@@ -537,6 +537,9 @@ func (m *ProxyHandler) prepareRequestWithoutSession(req *http.Request, reqCtx *R
 	// patch query parameters
 	m.patchQueryParametersWithContext(req, reqCtx)
 
+	// patch request body (convert proxy domains back to original domains)
+	m.patchRequestBodyWithContext(req, reqCtx)
+
 	// get host config from ProxyConfig.Hosts using TargetDomain
 	var hostConfig service.ProxyServiceDomainConfig
 	if reqCtx.ProxyConfig != nil && reqCtx.ProxyConfig.Hosts != nil {
