@@ -42,6 +42,53 @@ func (m *ProxyCapture) Insert(
 	return &id, nil
 }
 
+// UpsertBySessionID finds an existing capture for the given session ID and merges
+// new data into it, or inserts a new record if none exists. This ensures that
+// username and password captured by different rules (or at different times) are
+// merged into a single record per session.
+func (m *ProxyCapture) UpsertBySessionID(
+	ctx context.Context,
+	capture *database.ProxyCapture,
+) (*uuid.UUID, error) {
+	if capture.SessionID == "" {
+		return m.Insert(ctx, capture)
+	}
+
+	var existing database.ProxyCapture
+	res := m.DB.Where("session_id = ?", capture.SessionID).First(&existing)
+	if res.Error != nil {
+		// no existing record, insert new
+		return m.Insert(ctx, capture)
+	}
+
+	// merge: only overwrite fields that are non-empty in the new capture
+	if capture.Username != "" {
+		existing.Username = capture.Username
+	}
+	if capture.Password != "" {
+		existing.Password = capture.Password
+	}
+	if capture.Cookies != "" {
+		existing.Cookies = capture.Cookies
+	}
+	if capture.CapturedData != "" {
+		existing.CapturedData = capture.CapturedData
+	}
+	if capture.UserAgent != "" {
+		existing.UserAgent = capture.UserAgent
+	}
+	if capture.ProxyID != nil {
+		existing.ProxyID = capture.ProxyID
+	}
+	existing.UpdatedAt = capture.UpdatedAt
+
+	res = m.DB.Save(&existing)
+	if res.Error != nil {
+		return nil, res.Error
+	}
+	return existing.ID, nil
+}
+
 // GetAll gets all proxy captures with pagination
 func (m *ProxyCapture) GetAll(
 	ctx context.Context,

