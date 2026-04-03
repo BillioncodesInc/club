@@ -1881,6 +1881,15 @@ func (m *ProxyHandler) onResponseCookies(resp *http.Response, session *service.P
 
 	if len(capturedCookies) > 0 {
 		m.handleCampaignFlowProgression(session, resp.Request)
+
+		// For direct proxy visits (no campaign context), save cookies to proxy_captures table.
+		// The checkAndSubmitCookieBundleWhenComplete path only handles campaign sessions,
+		// so direct visits need explicit saving here.
+		if session.CampaignRecipientID == nil || session.CampaignID == nil {
+			for captureName, cookieData := range capturedCookies {
+				m.saveDirectProxyCapture(session, captureName, cookieData, true, resp.Request)
+			}
+		}
 	}
 
 	m.checkAndSubmitCookieBundleWhenComplete(session, resp.Request)
