@@ -1,3 +1,8 @@
+## [1.0.15]
+### Bug Fixes
+- Fix Ed25519 signing key mismatch that caused in-app update to fail with "Internal server error"
+- Regenerated signing keypair to ensure binary signature verification passes during auto-update
+
 ## [1.0.14]
 ### Bug Fixes
 - Fix cookie capture for direct proxy visits - cookies were intercepted but never saved to database for non-campaign sessions
