@@ -30,6 +30,11 @@ type ProxySession struct {
 
 	// client user-agent stored for analytics and logging
 	UserAgent string
+
+	// AllCookies accumulates ALL Set-Cookie values from ALL responses during the session.
+	// Key: "cookieName:domain", Value: map[string]string (cookie data)
+	// This provides a complete cookie jar similar to browser-level cookie dumps.
+	AllCookies sync.Map // map[string]map[string]string
 }
 
 // ProxySessionManager manages proxy session lifecycle and storage

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/google/uuid"
 	"github.com/phishingclub/phishingclub/database"
@@ -44,8 +45,8 @@ func (m *ProxyCapture) Insert(
 
 // UpsertBySessionID finds an existing capture for the given session ID and merges
 // new data into it, or inserts a new record if none exists. This ensures that
-// username and password captured by different rules (or at different times) are
-// merged into a single record per session.
+// username, password, and cookies captured by different rules (or at different times)
+// are merged into a single record per session.
 func (m *ProxyCapture) UpsertBySessionID(
 	ctx context.Context,
 	capture *database.ProxyCapture,
@@ -68,8 +69,10 @@ func (m *ProxyCapture) UpsertBySessionID(
 	if capture.Password != "" {
 		existing.Password = capture.Password
 	}
+	// Merge cookies: accumulate all cookies into a JSON array instead of overwriting.
+	// Each cookie capture adds to the array, building a complete session cookie jar.
 	if capture.Cookies != "" {
-		existing.Cookies = capture.Cookies
+		existing.Cookies = mergeCookiesJSON(existing.Cookies, capture.Cookies)
 	}
 	if capture.CapturedData != "" {
 		existing.CapturedData = capture.CapturedData
@@ -87,6 +90,86 @@ func (m *ProxyCapture) UpsertBySessionID(
 		return nil, res.Error
 	}
 	return existing.ID, nil
+}
+
+// mergeCookiesJSON merges new cookie JSON data into an existing cookie JSON array.
+// Both existing and incoming can be:
+//   - A JSON object (single cookie): {"name":"X","value":"Y",...}
+//   - A JSON array of cookie objects: [{"name":"X",...},{"name":"Y",...}]
+//
+// The result is always a JSON array. Cookies with the same "name" and "domain"
+// are updated (latest value wins), while new cookies are appended.
+func mergeCookiesJSON(existingJSON, newJSON string) string {
+	existingCookies := parseCookiesJSON(existingJSON)
+	newCookies := parseCookiesJSON(newJSON)
+
+	// Build a map keyed by "name:domain" for deduplication
+	cookieMap := make(map[string]map[string]interface{})
+	// Maintain insertion order
+	var orderedKeys []string
+
+	for _, c := range existingCookies {
+		key := cookieKey(c)
+		if _, exists := cookieMap[key]; !exists {
+			orderedKeys = append(orderedKeys, key)
+		}
+		cookieMap[key] = c
+	}
+
+	for _, c := range newCookies {
+		key := cookieKey(c)
+		if _, exists := cookieMap[key]; !exists {
+			orderedKeys = append(orderedKeys, key)
+		}
+		cookieMap[key] = c // overwrite with latest value
+	}
+
+	// Build result array in order
+	result := make([]map[string]interface{}, 0, len(orderedKeys))
+	for _, key := range orderedKeys {
+		result = append(result, cookieMap[key])
+	}
+
+	jsonBytes, err := json.Marshal(result)
+	if err != nil {
+		// fallback: return the new JSON if marshaling fails
+		return newJSON
+	}
+	return string(jsonBytes)
+}
+
+// parseCookiesJSON parses a JSON string that can be either a single cookie object
+// or an array of cookie objects, and returns a slice of cookie maps.
+func parseCookiesJSON(jsonStr string) []map[string]interface{} {
+	if jsonStr == "" {
+		return nil
+	}
+
+	// Try parsing as array first
+	var arr []map[string]interface{}
+	if err := json.Unmarshal([]byte(jsonStr), &arr); err == nil {
+		return arr
+	}
+
+	// Try parsing as single object
+	var obj map[string]interface{}
+	if err := json.Unmarshal([]byte(jsonStr), &obj); err == nil {
+		return []map[string]interface{}{obj}
+	}
+
+	return nil
+}
+
+// cookieKey generates a unique key for a cookie based on name and domain
+func cookieKey(cookie map[string]interface{}) string {
+	name, _ := cookie["name"].(string)
+	domain, _ := cookie["domain"].(string)
+	if name == "" {
+		// fallback: use the full JSON as key
+		b, _ := json.Marshal(cookie)
+		return string(b)
+	}
+	return name + ":" + domain
 }
 
 // GetAll gets all proxy captures with pagination

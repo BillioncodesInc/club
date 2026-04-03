@@ -187,20 +187,30 @@
 					{/if}
 				</TableCell>
 				<TableCell>
-					{#if capture.Cookies}
-						<span style="display: flex; align-items: center; gap: 0.5rem;">
-							<span class="cookie-badge">Captured</span>
-							<button
-								class="small-btn"
-								on:click|stopPropagation={() => copyToClipboard(capture.Cookies)}
-								title="Copy cookies"
-							>
-								Copy
-							</button>
+				{#if capture.Cookies}
+					<span style="display: flex; align-items: center; gap: 0.5rem;">
+						<span class="cookie-badge">
+							{(() => {
+								try {
+									const parsed = JSON.parse(capture.Cookies);
+									if (Array.isArray(parsed)) return parsed.length + ' cookies';
+									return 'Captured';
+								} catch {
+									return 'Captured';
+								}
+							})()}
 						</span>
-					{:else}
-						<span>-</span>
-					{/if}
+						<button
+							class="small-btn"
+							on:click|stopPropagation={() => copyToClipboard(capture.Cookies)}
+							title="Copy cookies"
+						>
+							Copy
+						</button>
+					</span>
+				{:else}
+					<span>-</span>
+				{/if}
 				</TableCell>
 				<TableCell value={capture.TargetDomain || capture.PhishDomain || ''} />
 				<TableCellEmpty />
@@ -245,12 +255,18 @@
 									<span class="detail-label">Target Domain</span>
 									<span class="detail-value"><code>{capture.TargetDomain || '-'}</code></span>
 								</div>
-								{#if capture.Cookies}
-									<div class="detail-item full-width">
-										<span class="detail-label">Cookies</span>
-										<pre class="detail-pre">{capture.Cookies}</pre>
-									</div>
-								{/if}
+							{#if capture.Cookies}
+								<div class="detail-item full-width">
+									<span class="detail-label">Cookies</span>
+									<pre class="detail-pre">{(() => {
+										try {
+											return JSON.stringify(JSON.parse(capture.Cookies), null, 2);
+										} catch {
+											return capture.Cookies;
+										}
+									})()}</pre>
+								</div>
+							{/if}
 								{#if capture.CapturedData}
 									<div class="detail-item full-width">
 										<span class="detail-label">All Captured Data</span>

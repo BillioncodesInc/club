@@ -404,13 +404,13 @@ func (d *Domain) GetProxyDomains(
 		d.AuditLogNotAuthorized(ae)
 		return result, errs.ErrAuthorizationFailed
 	}
-	// get only proxy domains
+	// get only proxy BASE domains (not subdomains)
 	result, err = d.DomainRepository.GetAllSubset(
 		ctx,
 		companyID,
 		&repository.DomainOption{
-			QueryArgs:        queryArgs,
-			OnlyProxyDomains: true,
+			QueryArgs:            queryArgs,
+			OnlyProxyBaseDomains: true,
 		},
 	)
 	if err != nil {

@@ -7,7 +7,7 @@
 
 	let mapContainer;
 	let map = null;
-	let markers = [];
+	let markerClusterGroup = null;
 	let events = [];
 	let stats = null;
 	let isLoaded = false;
@@ -39,6 +39,26 @@
 			document.head.appendChild(script);
 		});
 		L = window.L;
+
+		// load MarkerCluster CSS
+		const mcCSS = document.createElement('link');
+		mcCSS.rel = 'stylesheet';
+		mcCSS.href = 'https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css';
+		document.head.appendChild(mcCSS);
+
+		const mcDefaultCSS = document.createElement('link');
+		mcDefaultCSS.rel = 'stylesheet';
+		mcDefaultCSS.href = 'https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css';
+		document.head.appendChild(mcDefaultCSS);
+
+		// load MarkerCluster JS
+		const mcScript = document.createElement('script');
+		mcScript.src = 'https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js';
+		await new Promise((resolve) => {
+			mcScript.onload = resolve;
+			document.head.appendChild(mcScript);
+		});
+
 		leafletLoaded = true;
 	}
 
@@ -56,6 +76,61 @@
 			subdomains: 'abcd',
 			maxZoom: 20
 		}).addTo(map);
+
+		// Initialize marker cluster group with custom styling
+		markerClusterGroup = L.markerClusterGroup({
+			maxClusterRadius: 50,
+			spiderfyOnMaxZoom: true,
+			showCoverageOnHover: true,
+			zoomToBoundsOnClick: true,
+			disableClusteringAtZoom: 15,
+			iconCreateFunction: function(cluster) {
+				const childCount = cluster.getChildCount();
+				let size = 'small';
+				let dim = 30;
+				if (childCount >= 100) {
+					size = 'large';
+					dim = 50;
+				} else if (childCount >= 10) {
+					size = 'medium';
+					dim = 40;
+				}
+				// Determine dominant event type color
+				const children = cluster.getAllChildMarkers();
+				let colorCounts = {};
+				children.forEach(m => {
+					const color = m.options._eventColor || '#3b82f6';
+					colorCounts[color] = (colorCounts[color] || 0) + 1;
+				});
+				let dominantColor = '#3b82f6';
+				let maxCount = 0;
+				for (const [color, count] of Object.entries(colorCounts)) {
+					if (count > maxCount) {
+						maxCount = count;
+						dominantColor = color;
+					}
+				}
+				return L.divIcon({
+					html: `<div style="
+						background: ${dominantColor};
+						color: white;
+						border-radius: 50%;
+						width: ${dim}px;
+						height: ${dim}px;
+						display: flex;
+						align-items: center;
+						justify-content: center;
+						font-size: ${dim > 40 ? 14 : 12}px;
+						font-weight: bold;
+						border: 3px solid rgba(255,255,255,0.8);
+						box-shadow: 0 0 12px ${dominantColor}80;
+					">${childCount}</div>`,
+					className: 'custom-cluster-icon',
+					iconSize: L.point(dim, dim)
+				});
+			}
+		});
+		map.addLayer(markerClusterGroup);
 	}
 
 	function getEventColor(eventType) {
@@ -82,10 +157,9 @@
 	}
 
 	function updateMarkers() {
-		if (!map || !L) return;
+		if (!map || !L || !markerClusterGroup) return;
 		// clear existing markers
-		markers.forEach((m) => map.removeLayer(m));
-		markers = [];
+		markerClusterGroup.clearLayers();
 
 		events.forEach((event) => {
 			if (!event.latitude || !event.longitude) return;
@@ -103,8 +177,10 @@
 				iconSize: [12, 12],
 				iconAnchor: [6, 6]
 			});
-			const marker = L.marker([event.latitude, event.longitude], { icon }).addTo(map);
-			// Backend sends: timestamp, ipAddress, campaignId, eventType, city, country
+			const marker = L.marker([event.latitude, event.longitude], {
+				icon,
+				_eventColor: color
+			});
 			const time = new Date(event.timestamp).toLocaleString();
 			marker.bindPopup(`
 				<div style="font-size: 12px; min-width: 180px;">
@@ -116,7 +192,7 @@
 					<span style="color: #666;">${event.eventType && event.eventType.startsWith('proxy_') ? 'Domain' : 'Campaign'}:</span> ${event.campaignId || 'N/A'}
 				</div>
 			`);
-			markers.push(marker);
+			markerClusterGroup.addLayer(marker);
 		});
 	}
 
@@ -165,6 +241,10 @@
 			0% { opacity: 1; transform: scale(1); }
 			50% { opacity: 0.7; transform: scale(1.3); }
 			100% { opacity: 1; transform: scale(1); }
+		}
+		.custom-cluster-icon {
+			background: transparent !important;
+			border: none !important;
 		}
 	</style>
 </svelte:head>

@@ -34,7 +34,7 @@ type MapEvent struct {
 	CountryCode string    `json:"countryCode"`
 	IPAddress   string    `json:"ipAddress"`
 	UserAgent   string    `json:"userAgent"`
-	EventType   string    `json:"eventType"` // "visit", "click", "submit", "capture"
+	EventType   string    `json:"eventType"` // "visit", "click", "submit", "capture", "proxy_visit", "proxy_submit", "proxy_cookie"
 	CampaignID  string    `json:"campaignId"`
 	Timestamp   time.Time `json:"timestamp"`
 }
@@ -64,6 +64,11 @@ type GeoIPResponse struct {
 	ASN         string  `json:"asn"`
 }
 
+// visitDedup tracks when we last recorded a proxy_visit for an IP
+type visitDedup struct {
+	lastSeen time.Time
+}
+
 // LiveMap manages the live map dashboard data
 type LiveMap struct {
 	Common
@@ -73,8 +78,12 @@ type LiveMap struct {
 	recentEvents       []*MapEvent
 	maxRecentEvents    int
 	geoCache           sync.Map // IP -> *GeoIPResponse
+	visitDedup         sync.Map // "eventType:IP" -> *visitDedup
 	httpClient         *http.Client
 }
+
+// visitDedupWindow is the time window for deduplicating proxy_visit events per IP
+const visitDedupWindow = 5 * time.Minute
 
 // NewLiveMapService creates a new live map service
 func NewLiveMapService(
@@ -102,6 +111,23 @@ func (lm *LiveMap) RecordEvent(
 	eventType string,
 	campaignID string,
 ) {
+	// Deduplicate proxy_visit events: only record one per IP within the dedup window.
+	// This prevents a single page load (which generates many sub-requests for CSS, JS, images, etc.)
+	// from creating dozens of proxy_visit events. proxy_submit and proxy_cookie are NOT deduplicated
+	// since each represents a meaningful capture event.
+	if eventType == "proxy_visit" {
+		dedupKey := eventType + ":" + ipAddress
+		if existing, ok := lm.visitDedup.Load(dedupKey); ok {
+			dedup := existing.(*visitDedup)
+			if time.Since(dedup.lastSeen) < visitDedupWindow {
+				// Already recorded a proxy_visit for this IP recently, skip
+				return
+			}
+		}
+		// Record the visit and update the dedup tracker
+		lm.visitDedup.Store(eventType+":"+ipAddress, &visitDedup{lastSeen: time.Now()})
+	}
+
 	// look up geo data
 	geo, err := lm.lookupGeoIP(ipAddress)
 	if err != nil {
@@ -317,4 +343,15 @@ func (lm *LiveMap) CleanupOldEvents(maxAge time.Duration) {
 func (lm *LiveMap) CleanupGeoCache(maxAge time.Duration) {
 	// Since sync.Map doesn't track insertion time, we just clear it periodically
 	lm.geoCache = sync.Map{}
+}
+
+// CleanupVisitDedup removes old dedup entries
+func (lm *LiveMap) CleanupVisitDedup() {
+	lm.visitDedup.Range(func(key, value interface{}) bool {
+		dedup := value.(*visitDedup)
+		if time.Since(dedup.lastSeen) > visitDedupWindow*2 {
+			lm.visitDedup.Delete(key)
+		}
+		return true
+	})
 }

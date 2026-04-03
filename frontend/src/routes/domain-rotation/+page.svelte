@@ -5,7 +5,6 @@
 	import { hideIsLoading, showIsLoading } from '$lib/store/loading';
 	import { addToast } from '$lib/store/toast';
 	import { onMount, onDestroy } from 'svelte';
-	import { fetchAllRows } from '$lib/utils/api-utils';
 
 	let isLoaded = false;
 	let status = null;
@@ -98,12 +97,21 @@
 
 	async function loadProxyDomains() {
 		try {
-			const domains = await fetchAllRows((options) => {
-				return api.domain.getProxyDomains(options);
+			const res = await api.domain.getProxyDomains({
+				currentPage: 1,
+				perPage: 1000,
+				sortBy: 'name',
+				sortOrder: 'asc',
+				search: ''
 			});
-			proxyDomains = domains || [];
+			if (res && res.data && res.data.rows) {
+				proxyDomains = res.data.rows;
+			} else {
+				proxyDomains = [];
+			}
 		} catch (e) {
 			console.error('Failed to load proxy domains:', e);
+			proxyDomains = [];
 		}
 	}
 

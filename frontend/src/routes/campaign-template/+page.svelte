@@ -150,9 +150,21 @@
 			return api.domain.getAllSubsetWithoutProxies(options, contextCompanyID);
 		});
 		// fetch proxy domains (base domains from proxy YAML configs)
-		const proxyDomains = await fetchAllRows((options) => {
-			return api.domain.getProxyDomains(options, contextCompanyID);
-		});
+		let proxyDomains = [];
+		try {
+			const proxyRes = await api.domain.getProxyDomains({
+				currentPage: 1,
+				perPage: 1000,
+				sortBy: 'name',
+				sortOrder: 'asc',
+				search: ''
+			}, contextCompanyID);
+			if (proxyRes && proxyRes.data && proxyRes.data.rows) {
+				proxyDomains = proxyRes.data.rows;
+			}
+		} catch (e) {
+			console.error('Failed to load proxy domains:', e);
+		}
 		// merge both lists
 		const allDomains = [...regularDomains, ...proxyDomains];
 		domainMap = BiMap.FromArrayOfObjects(allDomains);

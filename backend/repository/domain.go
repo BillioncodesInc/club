@@ -24,9 +24,10 @@ var domainAllowedColumns = assignTableToColumns(database.DOMAIN_TABLE, []string{
 // DomainOption is for deciding if we should load full domain entities
 type DomainOption struct {
 	*vo.QueryArgs
-	WithCompany         bool
-	ExcludeProxyDomains bool
-	OnlyProxyDomains    bool
+	WithCompany             bool
+	ExcludeProxyDomains     bool
+	OnlyProxyDomains        bool
+	OnlyProxyBaseDomains    bool
 }
 
 // Domain is a Domain repository
@@ -153,6 +154,11 @@ func (r *Domain) GetAllSubset(
 	// only include proxy domains if requested
 	if options.OnlyProxyDomains {
 		db = db.Where("proxy_id IS NOT NULL")
+	}
+	// only include proxy BASE domains (where domain name matches the proxy's start_url)
+	if options.OnlyProxyBaseDomains {
+		db = db.Where("proxy_id IS NOT NULL").
+			Where("EXISTS (SELECT 1 FROM proxies WHERE proxies.id = domains.proxy_id AND proxies.start_url = domains.name)")
 	}
 	db, err := useQuery(db, database.DOMAIN_TABLE, options.QueryArgs, domainAllowedColumns...)
 	if err != nil {
