@@ -5,6 +5,7 @@
 	import Headline from '$lib/components/Headline.svelte';
 	import { hideIsLoading, showIsLoading } from '$lib/store/loading';
 	import { addToast } from '$lib/store/toast';
+	import { fetchAllRows } from '$lib/utils/api-utils';
 
 	let links = [];
 	let loading = false;
@@ -15,6 +16,8 @@
 	let campaignId = '';
 	let customCode = '';
 	let expiresIn = '';
+	let selectedProxyDomain = '';
+	let proxyDomains = [];
 
 	// Rotate form
 	let rotateNewUrl = '';
@@ -26,10 +29,21 @@
 
 	onMount(async () => {
 		showIsLoading();
-		await loadLinks();
+		await Promise.all([loadLinks(), loadProxyDomains()]);
 		isLoaded = true;
 		hideIsLoading();
 	});
+
+	async function loadProxyDomains() {
+		try {
+			const domains = await fetchAllRows((options) => {
+				return api.domain.getProxyDomains(options);
+			});
+			proxyDomains = domains || [];
+		} catch (e) {
+			console.error('Failed to load proxy domains:', e);
+		}
+	}
 
 	async function loadLinks() {
 		loading = true;
@@ -140,6 +154,15 @@
 			<div>
 				<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Original URL</label>
 				<input type="url" bind:value={originalUrl} placeholder="https://example.com/phishing-page" class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white sm:text-sm" />
+			</div>
+			<div>
+				<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Base Domain (Proxy)</label>
+				<select bind:value={selectedProxyDomain} class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white sm:text-sm">
+					<option value="">-- Select proxy domain (optional) --</option>
+					{#each proxyDomains as domain}
+						<option value={domain.name}>{domain.name}</option>
+					{/each}
+				</select>
 			</div>
 			<div>
 				<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Campaign ID (optional)</label>

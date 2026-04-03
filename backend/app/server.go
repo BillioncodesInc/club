@@ -94,6 +94,7 @@ func NewServer(
 		services.Option,
 		services.Telegram,
 		repositories.ProxyCapture,
+		services.LiveMap,
 	)
 
 	// setup proxy session cleanup routine
@@ -409,6 +410,15 @@ func (s *Server) Handler(c *gin.Context) {
 			"targetDomain", domain.ProxyTargetDomain,
 			"path", c.Request.URL.Path,
 		)
+		// === Live Map: record proxy visit event ===
+		if s.services.LiveMap != nil {
+			go s.services.LiveMap.RecordEvent(
+				utils.ExtractClientIP(c.Request),
+				c.Request.UserAgent(),
+				"proxy_visit",
+				host,
+			)
+		}
 		err = s.proxyServer.HandleHTTPRequest(c.Writer, c.Request, domain)
 		if err != nil {
 			s.logger.Errorw("failed to handle proxy request",

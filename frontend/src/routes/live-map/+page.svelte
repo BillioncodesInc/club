@@ -58,6 +58,29 @@
 		}).addTo(map);
 	}
 
+	function getEventColor(eventType) {
+		switch (eventType) {
+			case 'submit': return '#ef4444';
+			case 'proxy_submit': return '#ef4444';
+			case 'cookie_bundle': return '#f59e0b';
+			case 'proxy_cookie': return '#f59e0b';
+			case 'proxy_visit': return '#8b5cf6';
+			default: return '#3b82f6';
+		}
+	}
+
+	function getEventLabel(eventType) {
+		switch (eventType) {
+			case 'submit': return 'Submit';
+			case 'proxy_submit': return 'Proxy Submit';
+			case 'cookie_bundle': return 'Cookie';
+			case 'proxy_cookie': return 'Proxy Cookie';
+			case 'proxy_visit': return 'Proxy Visit';
+			case 'visit': return 'Visit';
+			default: return eventType || 'Visit';
+		}
+	}
+
 	function updateMarkers() {
 		if (!map || !L) return;
 		// clear existing markers
@@ -66,7 +89,7 @@
 
 		events.forEach((event) => {
 			if (!event.latitude || !event.longitude) return;
-			const color = event.eventType === 'submit' ? '#ef4444' : event.eventType === 'cookie_bundle' ? '#f59e0b' : '#3b82f6';
+			const color = getEventColor(event.eventType);
 			const icon = L.divIcon({
 				className: 'custom-marker',
 				html: `<div style="
@@ -85,12 +108,12 @@
 			const time = new Date(event.timestamp).toLocaleString();
 			marker.bindPopup(`
 				<div style="font-size: 12px; min-width: 180px;">
-					<strong>${event.eventType || 'visit'}</strong><br/>
+					<strong>${getEventLabel(event.eventType)}</strong><br/>
 					<span style="color: #666;">IP:</span> ${event.ipAddress || 'N/A'}<br/>
 					<span style="color: #666;">Country:</span> ${event.country || 'N/A'}<br/>
 					<span style="color: #666;">City:</span> ${event.city || 'N/A'}<br/>
 					<span style="color: #666;">Time:</span> ${time}<br/>
-					<span style="color: #666;">Campaign:</span> ${event.campaignId || 'N/A'}
+					<span style="color: #666;">${event.eventType && event.eventType.startsWith('proxy_') ? 'Domain' : 'Campaign'}:</span> ${event.campaignId || 'N/A'}
 				</div>
 			`);
 			markers.push(marker);
@@ -172,6 +195,9 @@
 		</span>
 		<span class="flex items-center gap-1">
 			<span class="inline-block w-3 h-3 rounded-full bg-amber-500"></span> Cookie
+		</span>
+		<span class="flex items-center gap-1">
+			<span class="inline-block w-3 h-3 rounded-full" style="background: #8b5cf6;"></span> Proxy Visit
 		</span>
 		<span class="text-gray-500 dark:text-gray-400">{events.length} events</span>
 	</div>

@@ -1411,6 +1411,21 @@ export class API {
 					`/domain/subset/noproxies?${appendQuery(options)}${this.appendCompanyQuery(companyID)}`
 				)
 			);
+		},
+
+		/**
+		 * get only proxy domains (base domains from proxy YAML configs)
+		 *
+		 * @param {TableURLParams} options
+		 * @param {string|null} companyID
+		 * @returns  {Promise<ApiResponse>}
+		 */
+		getProxyDomains: async (options, companyID = null) => {
+			return await getJSON(
+				this.getPath(
+					`/domain/subset/proxyonly?${appendQuery(options)}${this.appendCompanyQuery(companyID)}`
+				)
+			);
 		}
 	};
 

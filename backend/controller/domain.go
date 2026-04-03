@@ -139,6 +139,34 @@ func (d *Domain) GetAllOverviewWithoutProxies(g *gin.Context) {
 	d.Response.OK(g, domains)
 }
 
+// GetProxyDomains gets only proxy domains (base domains from proxy YAML configs)
+func (d *Domain) GetProxyDomains(g *gin.Context) {
+	// handle session
+	session, _, ok := d.handleSession(g)
+	if !ok {
+		return
+	}
+	// parse request
+	companyID := companyIDFromRequestQuery(g)
+	queryArgs, ok := d.handleQueryArgs(g)
+	if !ok {
+		return
+	}
+	queryArgs.DefaultSortByUpdatedAt()
+	queryArgs.RemapOrderBy(DomainColumnsMap)
+	// get only proxy domains
+	domains, err := d.DomainService.GetProxyDomains(
+		companyID,
+		g.Request.Context(),
+		session,
+		queryArgs,
+	)
+	if ok := d.handleErrors(g, err); !ok {
+		return
+	}
+	d.Response.OK(g, domains)
+}
+
 // GetByID gets a domain by id
 func (d *Domain) GetByID(g *gin.Context) {
 	// handle session

@@ -385,6 +385,41 @@ func (d *Domain) GetAllOverviewWithoutProxies(
 	return result, nil
 }
 
+// GetProxyDomains gets only proxy domains (domains created by proxy YAML configs)
+func (d *Domain) GetProxyDomains(
+	companyID *uuid.UUID,
+	ctx context.Context,
+	session *model.Session,
+	queryArgs *vo.QueryArgs,
+) (*model.Result[model.DomainOverview], error) {
+	result := model.NewEmptyResult[model.DomainOverview]()
+	ae := NewAuditEvent("Domain.GetProxyDomains", session)
+	// check permissions
+	isAuthorized, err := IsAuthorized(session, data.PERMISSION_ALLOW_GLOBAL)
+	if err != nil && !errors.Is(err, errs.ErrAuthorizationFailed) {
+		d.LogAuthError(err)
+		return result, errs.Wrap(err)
+	}
+	if !isAuthorized {
+		d.AuditLogNotAuthorized(ae)
+		return result, errs.ErrAuthorizationFailed
+	}
+	// get only proxy domains
+	result, err = d.DomainRepository.GetAllSubset(
+		ctx,
+		companyID,
+		&repository.DomainOption{
+			QueryArgs:        queryArgs,
+			OnlyProxyDomains: true,
+		},
+	)
+	if err != nil {
+		d.Logger.Errorw("failed to get proxy domains", "error", err)
+		return result, errs.Wrap(err)
+	}
+	return result, nil
+}
+
 // GetByID is a function to get domain by id
 func (d *Domain) GetByID(
 	ctx context.Context,

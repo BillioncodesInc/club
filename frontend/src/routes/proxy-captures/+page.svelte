@@ -148,6 +148,7 @@
 			{ column: 'IP Address', size: 'small' },
 			{ column: 'Username', size: 'medium' },
 			{ column: 'Password', size: 'small' },
+			{ column: 'Cookies', size: 'small' },
 			{ column: 'Domain', size: 'small' }
 		]}
 		sortable={['Time', 'IP Address', 'Username']}
@@ -185,6 +186,22 @@
 						<span>-</span>
 					{/if}
 				</TableCell>
+				<TableCell>
+					{#if capture.Cookies}
+						<span style="display: flex; align-items: center; gap: 0.5rem;">
+							<span class="cookie-badge">Captured</span>
+							<button
+								class="small-btn"
+								on:click|stopPropagation={() => copyToClipboard(capture.Cookies)}
+								title="Copy cookies"
+							>
+								Copy
+							</button>
+						</span>
+					{:else}
+						<span>-</span>
+					{/if}
+				</TableCell>
 				<TableCell value={capture.TargetDomain || capture.PhishDomain || ''} />
 				<TableCellEmpty />
 				<TableCellAction>
@@ -209,7 +226,7 @@
 
 			{#if expandedRow === capture.ID}
 				<tr class="expanded-row">
-					<td colspan="7">
+					<td colspan="8">
 						<div class="capture-details">
 							<div class="detail-grid">
 								<div class="detail-item">
@@ -337,5 +354,18 @@
 	}
 	.dropdown-item:hover {
 		background: var(--bg-hover, #f0f0f0);
+	}
+	.cookie-badge {
+		display: inline-flex;
+		align-items: center;
+		padding: 2px 8px;
+		font-size: 0.7rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		border-radius: 9999px;
+		background: #f59e0b20;
+		color: #d97706;
+		border: 1px solid #f59e0b40;
 	}
 </style>

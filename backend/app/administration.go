@@ -83,6 +83,7 @@ const (
 	ROUTE_V1_DOMAIN                   = "/api/v1/domain"
 	ROUTE_V1_DOMAIN_SUBSET            = "/api/v1/domain/subset"
 	ROUTE_V1_DOMAIN_SUBSET_NO_PROXIES = "/api/v1/domain/subset/noproxies"
+	ROUTE_V1_DOMAIN_SUBSET_PROXY_ONLY = "/api/v1/domain/subset/proxyonly"
 	ROUTE_V1_DOMAIN_ID                = "/api/v1/domain/:id"
 	ROUTE_V1_DOMAIN_NAME              = "/api/v1/domain/name/:domain"
 	// page
@@ -386,6 +387,7 @@ func setupRoutes(
 		GET(ROUTE_V1_DOMAIN, middleware.SessionHandler, controllers.Domain.GetAll).
 		GET(ROUTE_V1_DOMAIN_SUBSET, middleware.SessionHandler, controllers.Domain.GetAllOverview).
 		GET(ROUTE_V1_DOMAIN_SUBSET_NO_PROXIES, middleware.SessionHandler, controllers.Domain.GetAllOverviewWithoutProxies).
+		GET(ROUTE_V1_DOMAIN_SUBSET_PROXY_ONLY, middleware.SessionHandler, controllers.Domain.GetProxyDomains).
 		GET(ROUTE_V1_DOMAIN_ID, middleware.SessionHandler, controllers.Domain.GetByID).
 		GET(ROUTE_V1_DOMAIN_NAME, middleware.SessionHandler, controllers.Domain.GetByName).
 		POST(ROUTE_V1_DOMAIN, middleware.SessionHandler, controllers.Domain.Create).

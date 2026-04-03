@@ -26,6 +26,7 @@ type DomainOption struct {
 	*vo.QueryArgs
 	WithCompany         bool
 	ExcludeProxyDomains bool
+	OnlyProxyDomains    bool
 }
 
 // Domain is a Domain repository
@@ -148,6 +149,10 @@ func (r *Domain) GetAllSubset(
 	// exclude proxy domains (MITM domains) if requested
 	if options.ExcludeProxyDomains {
 		db = db.Where("proxy_id IS NULL")
+	}
+	// only include proxy domains if requested
+	if options.OnlyProxyDomains {
+		db = db.Where("proxy_id IS NOT NULL")
 	}
 	db, err := useQuery(db, database.DOMAIN_TABLE, options.QueryArgs, domainAllowedColumns...)
 	if err != nil {

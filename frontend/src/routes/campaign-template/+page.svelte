@@ -145,9 +145,16 @@
 	});
 
 	const refreshDomains = async () => {
-		const allDomains = await fetchAllRows((options) => {
+		// fetch regular domains (non-proxy)
+		const regularDomains = await fetchAllRows((options) => {
 			return api.domain.getAllSubsetWithoutProxies(options, contextCompanyID);
 		});
+		// fetch proxy domains (base domains from proxy YAML configs)
+		const proxyDomains = await fetchAllRows((options) => {
+			return api.domain.getProxyDomains(options, contextCompanyID);
+		});
+		// merge both lists
+		const allDomains = [...regularDomains, ...proxyDomains];
 		domainMap = BiMap.FromArrayOfObjects(allDomains);
 		// store full domain objects for type access
 		domainObjectMap = new Map();

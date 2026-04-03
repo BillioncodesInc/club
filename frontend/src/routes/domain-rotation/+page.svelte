@@ -5,6 +5,7 @@
 	import { hideIsLoading, showIsLoading } from '$lib/store/loading';
 	import { addToast } from '$lib/store/toast';
 	import { onMount, onDestroy } from 'svelte';
+	import { fetchAllRows } from '$lib/utils/api-utils';
 
 	let isLoaded = false;
 	let status = null;
@@ -12,6 +13,7 @@
 	let isChecking = false;
 	let isRotating = false;
 	let refreshInterval = null;
+	let proxyDomains = [];
 
 	async function fetchStatus() {
 		try {
@@ -94,9 +96,20 @@
 		return 'bg-red-500';
 	}
 
+	async function loadProxyDomains() {
+		try {
+			const domains = await fetchAllRows((options) => {
+				return api.domain.getProxyDomains(options);
+			});
+			proxyDomains = domains || [];
+		} catch (e) {
+			console.error('Failed to load proxy domains:', e);
+		}
+	}
+
 	onMount(async () => {
 		showIsLoading();
-		await Promise.all([fetchStatus(), fetchConfig()]);
+		await Promise.all([fetchStatus(), fetchConfig(), loadProxyDomains()]);
 		isLoaded = true;
 		hideIsLoading();
 		refreshInterval = setInterval(fetchStatus, 60000);
@@ -169,6 +182,40 @@
 			{isRotating ? 'Rotating...' : 'Force Rotate'}
 		</button>
 	</div>
+
+	<!-- Available Proxy Base Domains -->
+	{#if proxyDomains.length > 0}
+		<div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden mb-6">
+			<div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+				<h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300">Available Proxy Base Domains</h3>
+				<span class="text-xs text-gray-500 dark:text-gray-400">{proxyDomains.length} proxy domains from YAML configs</span>
+			</div>
+			<div class="overflow-x-auto">
+				<table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+					<thead class="bg-gray-50 dark:bg-gray-900/50">
+						<tr>
+							<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Domain</th>
+							<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Type</th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+						{#each proxyDomains as domain}
+							<tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+								<td class="px-4 py-3 text-sm font-medium text-gray-900 dark:text-gray-100">
+									{domain.name}
+								</td>
+								<td class="px-4 py-3 text-sm">
+									<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400">
+										Proxy
+									</span>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		</div>
+	{/if}
 
 	<!-- Domain pool table -->
 	<div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
