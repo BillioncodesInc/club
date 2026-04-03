@@ -1,6 +1,6 @@
 ## [1.0.15]
 ### Bug Fixes
-- Fix Ed25519 signing key mismatch that caused in-app update to fail with "Internal server error"
+- Fix Ed25519 signing key mismatch that caused in-app update to fail during signature verification
 - Regenerated signing keypair to ensure binary signature verification passes during auto-update
 
 ## [1.0.14]
