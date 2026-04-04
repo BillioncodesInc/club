@@ -58,6 +58,7 @@ type Controllers struct {
 	ChromeExtension     *controller.ChromeExtension
 	DomainRotation      *controller.DomainRotation
 	ProxyCapture        *controller.ProxyCapture
+	OpenGraphConfig     *controller.OpenGraphConfig
 }
 
 // NewControllers creates a collection of controllers
@@ -290,6 +291,11 @@ func NewControllers(
 		Common:                 common,
 		ProxyCaptureRepository: repositories.ProxyCapture,
 	}
+	openGraphConfig := &controller.OpenGraphConfig{
+		Common:                    common,
+		OpenGraphConfigRepository: repositories.OpenGraphConfig,
+		// OnConfigChanged will be set by the server after proxy handler is created
+	}
 
 	return &Controllers{
 		Asset:             asset,
@@ -341,5 +347,6 @@ func NewControllers(
 		ChromeExtension:     chromeExtension,
 		DomainRotation:      domainRotation,
 		ProxyCapture:        proxyCapture,
+		OpenGraphConfig:     openGraphConfig,
 	}
 }

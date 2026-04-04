@@ -3535,7 +3535,23 @@ export class API {
 			return await deleteJSON(this.getPath(`/proxy-captures/${id}`));
 		},
 		deleteAll: async () => {
-			return await deleteJSON(this.getPath('/proxy-captures'));
-		}
-	};
+				return await deleteJSON(this.getPath('/proxy-captures'));
+			}
+		};
+
+		/**
+		 * OpenGraph configuration API
+		 */
+		this.openGraphConfig = {
+			getByProxyID: async (proxyId) => {
+				return await getJSON(this.getPath(`/opengraph/${proxyId}`));
+			},
+			upsert: async (proxyId, data) => {
+				return await putJSON(this.getPath(`/opengraph/${proxyId}`), data);
+			},
+			delete: async (proxyId) => {
+				return await deleteJSON(this.getPath(`/opengraph/${proxyId}`));
+			}
+		};
+	}
 }

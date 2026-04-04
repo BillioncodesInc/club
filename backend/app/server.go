@@ -95,7 +95,11 @@ func NewServer(
 		services.Telegram,
 		repositories.ProxyCapture,
 		services.LiveMap,
+		repositories.OpenGraphConfig,
 	)
+
+	// wire up OpenGraph config change callback to reload proxy cache
+	controllers.OpenGraphConfig.OnConfigChanged = proxyServer.ReloadOpenGraphConfigs
 
 	// setup proxy session cleanup routine
 	go func() {

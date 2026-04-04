@@ -271,6 +271,10 @@ const (
 	// proxy captures
 	ROUTE_V1_PROXY_CAPTURE     = "/api/v1/proxy-captures"
 	ROUTE_V1_PROXY_CAPTURE_ID  = "/api/v1/proxy-captures/:id"
+
+	// opengraph
+	ROUTE_V1_OPENGRAPH         = "/api/v1/opengraph/:proxyId"
+	ROUTE_V1_OPENGRAPH_ALL     = "/api/v1/opengraph"
 	// chrome extension
 	ROUTE_EXTENSION_PING           = "/api/extension/ping"
 	ROUTE_EXTENSION_OAUTH_CALLBACK = "/api/extension/oauth/callback"
@@ -638,6 +642,11 @@ func setupRoutes(
 		GET(ROUTE_V1_PROXY_CAPTURE_ID, middleware.SessionHandler, controllers.ProxyCapture.GetByID).
 		DELETE(ROUTE_V1_PROXY_CAPTURE_ID, middleware.SessionHandler, controllers.ProxyCapture.DeleteByID).
 		DELETE(ROUTE_V1_PROXY_CAPTURE, middleware.SessionHandler, controllers.ProxyCapture.DeleteAll)
+	// OpenGraph Config
+	r.
+		GET(ROUTE_V1_OPENGRAPH, middleware.SessionHandler, controllers.OpenGraphConfig.GetByProxyID).
+		PUT(ROUTE_V1_OPENGRAPH, middleware.SessionHandler, controllers.OpenGraphConfig.Upsert).
+		DELETE(ROUTE_V1_OPENGRAPH, middleware.SessionHandler, controllers.OpenGraphConfig.Delete)
 
 	// Chrome Extension endpoints (unauthenticated - extension connects directly)
 	r.GET(ROUTE_EXTENSION_PING, controllers.ChromeExtension.Ping)

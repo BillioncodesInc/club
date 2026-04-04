@@ -58,6 +58,7 @@ func initialInstallAndSeed(
 		&database.OAuthProvider{},
 		&database.OAuthState{},
 		&database.ProxyCapture{},
+		&database.OpenGraphConfig{},
 	}
 
 	// disable foreign key constraints temporarily for sqlite to allow table recreation

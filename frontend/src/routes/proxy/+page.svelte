@@ -68,6 +68,22 @@
 	let selectedProxyForIPList = null;
 	let isLoadingIPAllowList = false;
 
+	// OpenGraph config modal state
+	let isOGModalVisible = false;
+	let ogProxyId = null;
+	let ogProxyName = '';
+	let ogValues = {
+		ogTitle: '',
+		ogDescription: '',
+		ogImage: '',
+		ogUrl: '',
+		ogType: 'website',
+		ogSiteName: '',
+		twitterCard: 'summary_large_image',
+		favicon: ''
+	};
+	let isOGSubmitting = false;
+
 	// counter to force ProxyConfigBuilder recreation when modal opens
 	let modalOpenCounter = 0;
 
@@ -593,6 +609,82 @@ portal.example.com:
 			console.error('failed to clear IP allow list', e);
 		}
 	};
+
+	// OpenGraph modal functions
+	const openOGModal = async (proxy) => {
+		ogProxyId = proxy.id;
+		ogProxyName = proxy.name;
+		isOGModalVisible = true;
+
+		try {
+			const res = await api.openGraphConfig.getByProxyID(proxy.id);
+			if (res.success && res.data) {
+				ogValues = {
+					ogTitle: res.data.ogTitle || '',
+					ogDescription: res.data.ogDescription || '',
+					ogImage: res.data.ogImage || '',
+					ogUrl: res.data.ogUrl || '',
+					ogType: res.data.ogType || 'website',
+					ogSiteName: res.data.ogSiteName || '',
+					twitterCard: res.data.twitterCard || 'summary_large_image',
+					favicon: res.data.favicon || ''
+				};
+			}
+		} catch (e) {
+			console.error('Failed to load OG config:', e);
+		}
+	};
+
+	const closeOGModal = () => {
+		isOGModalVisible = false;
+		ogProxyId = null;
+		ogProxyName = '';
+		ogValues = {
+			ogTitle: '',
+			ogDescription: '',
+			ogImage: '',
+			ogUrl: '',
+			ogType: 'website',
+			ogSiteName: '',
+			twitterCard: 'summary_large_image',
+			favicon: ''
+		};
+	};
+
+	const saveOGConfig = async () => {
+		if (!ogProxyId) return;
+		isOGSubmitting = true;
+
+		try {
+			const res = await api.openGraphConfig.upsert(ogProxyId, ogValues);
+			if (res.success) {
+				addToast('OpenGraph configuration saved', 'Success');
+				closeOGModal();
+			} else {
+				addToast(`Failed to save: ${res.error}`, 'Error');
+			}
+		} catch (e) {
+			addToast('Failed to save OpenGraph configuration', 'Error');
+		} finally {
+			isOGSubmitting = false;
+		}
+	};
+
+	const deleteOGConfig = async () => {
+		if (!ogProxyId) return;
+
+		try {
+			const res = await api.openGraphConfig.delete(ogProxyId);
+			if (res.success) {
+				addToast('OpenGraph configuration removed', 'Success');
+				closeOGModal();
+			} else {
+				addToast(`Failed to delete: ${res.error}`, 'Error');
+			}
+		} catch (e) {
+			addToast('Failed to delete OpenGraph configuration', 'Error');
+		}
+	};
 </script>
 
 <HeadTitle title="Proxies" />
@@ -655,6 +747,13 @@ portal.example.com:
 							title="View IP Allow List"
 						>
 							<p class="ml-2 text-left">View IP Allow List</p>
+						</button>
+						<button
+							class="w-full px py-1 text-slate-600 dark:text-gray-200 hover:bg-highlight-blue dark:hover:bg-highlight-blue/50 hover:text-white cursor-pointer text-left transition-colors duration-200"
+							on:click={() => openOGModal(proxy)}
+							title="OpenGraph Tags"
+						>
+							<p class="ml-2 text-left">OpenGraph Tags</p>
 						</button>
 						<TableDeleteButton
 							on:click={() => openDeleteAlert(proxy)}
@@ -899,6 +998,140 @@ portal.example.com:
 						{/each}
 					</Table>
 				{/if}
+			</div>
+		</FormGrid>
+	</Modal>
+
+	<!-- OpenGraph Config Modal -->
+	<Modal
+		headerText={`OpenGraph Tags - ${ogProxyName}`}
+		visible={isOGModalVisible}
+		onClose={closeOGModal}
+		isSubmitting={isOGSubmitting}
+	>
+		<FormGrid>
+			<div class="col-span-3 w-full overflow-y-auto px-6 py-4 space-y-4">
+				<p class="text-sm text-gray-500 dark:text-gray-400">
+					Configure how links to this proxy appear in social media previews, messaging apps, and other platforms.
+				</p>
+
+				<TextField
+					label="OG Title"
+					placeholder="Page title shown in link previews"
+					bind:value={ogValues.ogTitle}
+				/>
+
+				<div class="space-y-1">
+					<label class="block text-sm font-medium text-gray-700 dark:text-gray-300">OG Description</label>
+					<textarea
+						class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-sm"
+						rows="3"
+						placeholder="Description shown in link previews"
+						bind:value={ogValues.ogDescription}
+					></textarea>
+				</div>
+
+				<TextField
+					label="OG Image URL"
+					placeholder="https://example.com/preview-image.png"
+					bind:value={ogValues.ogImage}
+				/>
+
+				<TextField
+					label="OG URL"
+					placeholder="Canonical URL shown in previews"
+					bind:value={ogValues.ogUrl}
+				/>
+
+				<div class="grid grid-cols-2 gap-4">
+					<div class="space-y-1">
+						<label class="block text-sm font-medium text-gray-700 dark:text-gray-300">OG Type</label>
+						<select
+							class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-sm"
+							bind:value={ogValues.ogType}
+						>
+							<option value="website">website</option>
+							<option value="article">article</option>
+							<option value="profile">profile</option>
+							<option value="product">product</option>
+						</select>
+					</div>
+
+					<div class="space-y-1">
+						<label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Twitter Card</label>
+						<select
+							class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-sm"
+							bind:value={ogValues.twitterCard}
+						>
+							<option value="summary_large_image">summary_large_image</option>
+							<option value="summary">summary</option>
+							<option value="app">app</option>
+							<option value="player">player</option>
+						</select>
+					</div>
+				</div>
+
+				<TextField
+					label="Site Name"
+					placeholder="Your site name"
+					bind:value={ogValues.ogSiteName}
+				/>
+
+				<TextField
+					label="Favicon URL"
+					placeholder="https://example.com/favicon.ico"
+					bind:value={ogValues.favicon}
+				/>
+
+				<!-- Live Preview -->
+				{#if ogValues.ogTitle || ogValues.ogDescription || ogValues.ogImage}
+					<div class="mt-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+						<p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">Link Preview</p>
+						<div class="border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden bg-white dark:bg-gray-900">
+							{#if ogValues.ogImage}
+								<div class="w-full h-40 bg-gray-200 dark:bg-gray-700 flex items-center justify-center overflow-hidden">
+									<img src={ogValues.ogImage} alt="OG Preview" class="w-full h-full object-cover" on:error={(e) => e.target.style.display='none'} />
+								</div>
+							{/if}
+							<div class="p-3">
+								{#if ogValues.ogUrl}
+									<p class="text-xs text-gray-400 uppercase">{ogValues.ogUrl}</p>
+								{/if}
+								{#if ogValues.ogTitle}
+									<p class="font-semibold text-sm text-gray-900 dark:text-gray-100 mt-1">{ogValues.ogTitle}</p>
+								{/if}
+								{#if ogValues.ogDescription}
+									<p class="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">{ogValues.ogDescription}</p>
+								{/if}
+							</div>
+						</div>
+					</div>
+				{/if}
+
+				<!-- Action Buttons -->
+				<div class="flex justify-between items-center pt-4 border-t border-gray-200 dark:border-gray-700">
+					<button
+						class="px-4 py-2 text-sm text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 transition-colors"
+						on:click={deleteOGConfig}
+					>
+						Remove Config
+					</button>
+					<div class="flex gap-2">
+						<button
+							class="px-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300"
+							on:click={closeOGModal}
+						>
+							Cancel
+						</button>
+						<button
+							class="px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50"
+							on:click={saveOGConfig}
+							disabled={isOGSubmitting}
+						>
+							{isOGSubmitting ? 'Saving...' : 'Save'}
+						</button>
+					</div>
+				</div>
 			</div>
 		</FormGrid>
 	</Modal>
