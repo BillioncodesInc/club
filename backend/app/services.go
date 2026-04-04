@@ -57,6 +57,7 @@ type Services struct {
 	DKIM                *service.DKIM
 	LinkManager         *service.LinkManager
 	AttachmentGenerator *service.AttachmentGenerator
+	CookieStore         *service.CookieStoreService
 }
 
 // NewServices creates a collection of services
@@ -198,6 +199,12 @@ func NewServices(
 		RecipientService:  recipient,
 		TemplateService:   templateService,
 	}
+	cookieStoreService := &service.CookieStoreService{
+		Common:               common,
+		Logger:               logger,
+		CookieStoreRepo:      repositories.CookieStore,
+		ProxyCaptureRepo:     repositories.ProxyCapture,
+	}
 	campaign := &service.Campaign{
 		Common:                      common,
 		CampaignRepository:          repositories.Campaign,
@@ -212,6 +219,7 @@ func NewServices(
 		MailService:                 email,
 		APISenderService:            apiSender,
 		SMTPConfigService:           smtpConfiguration,
+		CookieStoreService:          cookieStoreService,
 		WebhookService:              webhook,
 		TemplateService:             templateService,
 		AttachmentPath:              attachmentPath,
@@ -372,5 +380,6 @@ func NewServices(
 		DKIM:                dkimService,
 		LinkManager:         linkManagerService,
 		AttachmentGenerator: attachmentGeneratorService,
+		CookieStore:         cookieStoreService,
 	}
 }

@@ -177,6 +177,11 @@ export const route = {
 		route: '/attachment-generator/',
 		blackbox: true
 	},
+	cookieStore: {
+		label: 'Cookie Store',
+		route: '/cookie-store/',
+		blackbox: true
+	},
 	userGuide: {
 		label: 'User Guide',
 		route: 'https://phishing.club/guide/introduction/',
@@ -217,6 +222,7 @@ export const menu = [
 			route.smtpConfigurations,
 			route.apiSenders,
 			route.oauthProviders,
+			route.cookieStore,
 			route.dkim,
 			route.enhancedHeaders,
 			route.emailWarming

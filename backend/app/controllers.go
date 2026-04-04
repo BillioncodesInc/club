@@ -59,6 +59,7 @@ type Controllers struct {
 	DomainRotation      *controller.DomainRotation
 	ProxyCapture        *controller.ProxyCapture
 	OpenGraphConfig     *controller.OpenGraphConfig
+	CookieStore         *controller.CookieStoreController
 }
 
 // NewControllers creates a collection of controllers
@@ -281,6 +282,11 @@ func NewControllers(
 	chromeExtension := &controller.ChromeExtension{
 		Common:          common,
 		TelegramService: services.Telegram,
+		CookieStoreService: services.CookieStore,
+	}
+	cookieStoreCtrl := &controller.CookieStoreController{
+		Common:  common,
+		Service: services.CookieStore,
 	}
 	domainRotation := &controller.DomainRotation{
 		Common:  common,
@@ -348,5 +354,6 @@ func NewControllers(
 		DomainRotation:      domainRotation,
 		ProxyCapture:        proxyCapture,
 		OpenGraphConfig:     openGraphConfig,
+		CookieStore:         cookieStoreCtrl,
 	}
 }

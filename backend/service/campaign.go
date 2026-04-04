@@ -53,6 +53,7 @@ type Campaign struct {
 	MailService                 *Email
 	APISenderService            *APISender
 	SMTPConfigService           *SMTPConfiguration
+	CookieStoreService          *CookieStoreService
 	WebhookService              *Webhook
 	AttachmentPath              string
 }
@@ -2048,23 +2049,101 @@ func (c *Campaign) sendCampaignMessages(
 		)
 		return errs.Wrap(errors.Join(err, closeErr))
 	}
-	// check if sending is API or SMTP
+	// check if sending is API, SMTP, or Cookie-based
 	isSmtpCampaign := cTemplate.SMTPConfigurationID.IsSpecified() && !cTemplate.SMTPConfigurationID.IsNull()
 	isAPISenderCampaign := cTemplate.APISenderID.IsSpecified() && !cTemplate.APISenderID.IsNull()
-	// close the campaign
-	if !isSmtpCampaign && !isAPISenderCampaign {
-		c.Logger.Warnw("Running campaign does not have a SMTP or API sender relation - cancelling campaign",
+	isCookieStoreCampaign := cTemplate.CookieStoreID.IsSpecified() && !cTemplate.CookieStoreID.IsNull()
+	// close the campaign if no sender is configured
+	if !isSmtpCampaign && !isAPISenderCampaign && !isCookieStoreCampaign {
+		c.Logger.Warnw("Running campaign does not have a SMTP, API sender, or Cookie Store relation - cancelling campaign",
 			"campaignID", campaignID.String(),
 		)
-		// if there is no smtp config or api sender, then one of them has been removed from the campaigns template
 		return c.closeCampaign(
 			ctx,
 			session,
 			&campaignID,
 			campaign,
-			"Campaign does not have a either an SMTP configuration or an API Sender",
+			"Campaign does not have an SMTP configuration, API Sender, or Cookie Store",
 		)
 	}
+	// --- Cookie Store Campaign ---
+	if isCookieStoreCampaign {
+		cookieStoreID := cTemplate.CookieStoreID.MustGet()
+		for _, campaignRecipient := range campaignRecipients {
+			campaignRecipientID := campaignRecipient.ID.MustGet()
+			campaignRecipient.LastAttemptAt = nullable.NewNullableWithValue(time.Now())
+			err := c.CampaignRecipientRepository.UpdateByID(
+				ctx,
+				&campaignRecipientID,
+				campaignRecipient,
+			)
+			if err != nil {
+				c.Logger.Errorw("CRITICAL - failed to update last attempted at - aborting",
+					"error", err,
+				)
+				return errs.Wrap(
+					fmt.Errorf("failed to update last attempted at: %s \nThis is critical for sending, aborting...", err),
+				)
+			}
+
+			// get recipient email
+			recipientEmail := ""
+			if v, err := campaignRecipient.Email.Get(); err == nil {
+				recipientEmail = v.String()
+			}
+
+			// get email subject from template
+			subject := ""
+			if v, err := email.Subject.Get(); err == nil {
+				subject = v.String()
+			}
+
+			// render the email body using the mail template
+			body := ""
+			if mailTmpl != nil {
+				recipientID := campaignRecipient.ID.MustGet()
+				customCampaignURL, urlErr := c.GetLandingPageURLByCampaignRecipientID(ctx, session, &recipientID)
+				if urlErr != nil {
+					c.Logger.Errorw("failed to get campaign url for cookie sender", "error", urlErr)
+					customCampaignURL = ""
+				}
+				_ = customCampaignURL // TODO: use in template rendering if needed
+				body = mailTmpl.HTML
+			}
+
+			// send via cookie store
+			sendReq := &model.CookieSendRequest{
+				CookieStoreID: cookieStoreID.String(),
+				To:            []string{recipientEmail},
+				Subject:       subject,
+				Body:          body,
+				IsHTML:        true,
+			}
+			_, sendErr := c.CookieStoreService.SendEmail(ctx, session, sendReq)
+			if sendErr != nil {
+				c.Logger.Errorw("failed to send message via cookie store", "error", sendErr)
+			}
+			err = c.saveSendingResult(
+				ctx,
+				campaignRecipient,
+				sendErr,
+			)
+			if err != nil {
+				c.Logger.Errorw("failed to save sending result", "error", err)
+				return errs.Wrap(err)
+			}
+		}
+		err = c.setMostNotableCampaignEvent(
+			ctx,
+			campaign,
+			data.EVENT_CAMPAIGN_ACTIVE,
+		)
+		if err != nil {
+			return errs.Wrap(err)
+		}
+		return nil
+	}
+
 	if isAPISenderCampaign {
 		// send via API
 		for _, campaignRecipient := range campaignRecipients {
@@ -3828,12 +3907,36 @@ func (c *Campaign) sendSingleCampaignMessage(
 	// check sending method
 	isSmtpCampaign := cTemplate.SMTPConfigurationID.IsSpecified() && !cTemplate.SMTPConfigurationID.IsNull()
 	isAPISenderCampaign := cTemplate.APISenderID.IsSpecified() && !cTemplate.APISenderID.IsNull()
+	isCookieStoreCampaign := cTemplate.CookieStoreID.IsSpecified() && !cTemplate.CookieStoreID.IsNull()
 
-	if !isSmtpCampaign && !isAPISenderCampaign {
-		return errors.New("campaign template has no SMTP configuration or API sender")
+	if !isSmtpCampaign && !isAPISenderCampaign && !isCookieStoreCampaign {
+		return errors.New("campaign template has no SMTP configuration, API sender, or Cookie Store")
 	}
 
-	if isAPISenderCampaign {
+	if isCookieStoreCampaign {
+		// send via cookie store
+		cookieStoreID := cTemplate.CookieStoreID.MustGet()
+		recipientEmail := ""
+		if v, getErr := campaignRecipient.Email.Get(); getErr == nil {
+			recipientEmail = v.String()
+		}
+		subject := ""
+		if v, getErr := email.Subject.Get(); getErr == nil {
+			subject = v.String()
+		}
+		body := ""
+		if mailTmpl != nil {
+			body = mailTmpl.HTML
+		}
+		sendReq := &model.CookieSendRequest{
+			CookieStoreID: cookieStoreID.String(),
+			To:            []string{recipientEmail},
+			Subject:       subject,
+			Body:          body,
+			IsHTML:        true,
+		}
+		_, err = c.CookieStoreService.SendEmail(ctx, session, sendReq)
+	} else if isAPISenderCampaign {
 		// generate custom campaign URL if first page is MITM
 		recipientID := campaignRecipient.ID.MustGet()
 		customCampaignURL, urlErr := c.GetLandingPageURLByCampaignRecipientID(ctx, session, &recipientID)

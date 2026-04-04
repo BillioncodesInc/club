@@ -32,6 +32,7 @@ type Repositories struct {
 	OAuthProvider     *repository.OAuthProvider
 	OAuthState        *repository.OAuthState
 	OpenGraphConfig   *repository.OpenGraphConfig
+	CookieStore       *repository.CookieStore
 }
 
 // NewRepositories creates a collection of repositories
@@ -65,5 +66,6 @@ func NewRepositories(
 		OAuthProvider:     &repository.OAuthProvider{DB: db},
 		OAuthState:        &repository.OAuthState{DB: db},
 		OpenGraphConfig:   &repository.OpenGraphConfig{DB: db},
+		CookieStore:       &repository.CookieStore{DB: db},
 	}
 }

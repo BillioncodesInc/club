@@ -837,6 +837,10 @@ func ToCampaignTemplate(row *database.CampaignTemplate) (*model.CampaignTemplate
 	if row.APISenderID != nil {
 		apiSenderID.Set(*row.APISenderID)
 	}
+	cookieStoreID := nullable.NewNullNullable[uuid.UUID]()
+	if row.CookieStoreID != nil {
+		cookieStoreID.Set(*row.CookieStoreID)
+	}
 	var apiSender *model.APISender
 	if row.APISender != nil {
 		var err error
@@ -884,6 +888,7 @@ func ToCampaignTemplate(row *database.CampaignTemplate) (*model.CampaignTemplate
 		SMTPConfiguration:           smtpConfiguration,
 		APISenderID:                 apiSenderID,
 		APISender:                   apiSender,
+		CookieStoreID:               cookieStoreID,
 		URLIdentifierID:             urlIdentifierID,
 		URLIdentifier:               urlIdentifier,
 		StateIdentifierID:           stateIdentifierID,

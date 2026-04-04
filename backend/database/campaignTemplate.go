@@ -68,6 +68,9 @@ type CampaignTemplate struct {
 	APISenderID *uuid.UUID `gorm:"type:uuid;index;"`
 	APISender   *APISender `gorm:"foreignKey:APISenderID"`
 
+	CookieStoreID *uuid.UUID   `gorm:"type:uuid;index;"`
+	CookieStore   *CookieStore `gorm:"foreignKey:CookieStoreID"`
+
 	// can belong-to
 	CompanyID *uuid.UUID `gorm:"type:uuid;index;uniqueIndex:idx_campaign_templates_unique_name_and_company_id"`
 	Company   *Company   `gorm:"foreignKey:CompanyID"`

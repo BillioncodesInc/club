@@ -57,6 +57,7 @@
 		email: null,
 		smtpConfiguration: null,
 		apiSender: null,
+		cookieStore: null,
 		urlIdentifier: 'id',
 		stateIdentifier: 'session',
 		urlPath: ''
@@ -74,6 +75,7 @@
 	let emailMap = new BiMap({});
 	let smtpConfigurationMap = new BiMap({});
 	let apiSenderMap = new BiMap({});
+	let cookieStoreMap = new BiMap({});
 	let identifierMap = new BiMap({});
 	let templates = [];
 	let templatesHasNextPage = true;
@@ -103,11 +105,16 @@
 		modalText = getModalText('template', modalMode);
 	}
 
-	// clear smtp or api sender when switching template type
+	// clear other senders when switching template type
 	$: if (formValues.templateType === 'Email') {
 		formValues.apiSender = null;
+		formValues.cookieStore = null;
 	} else if (formValues.templateType === 'External API') {
 		formValues.smtpConfiguration = null;
+		formValues.cookieStore = null;
+	} else if (formValues.templateType === 'Cookie Store') {
+		formValues.smtpConfiguration = null;
+		formValues.apiSender = null;
 	}
 
 	// hooks
@@ -124,6 +131,7 @@
 				refreshEmails(),
 				refreshSmtpConfigurations(),
 				refreshApiSenders(),
+				refreshCookieStores(),
 				refreshPages(),
 				refreshProxies(),
 				refreshIdentifiers(),
@@ -194,6 +202,19 @@
 			return api.apiSender.getAll(options, contextCompanyID);
 		});
 		apiSenderMap = BiMap.FromArrayOfObjects(apiSenders);
+	};
+
+	const refreshCookieStores = async () => {
+		try {
+			const res = await api.cookieStore.getAll();
+			if (res && res.data && res.data.rows) {
+				// Filter to only valid (active session) cookie stores
+				const validStores = res.data.rows.filter(s => s.isValid);
+				cookieStoreMap = BiMap.FromArrayOfObjects(validStores);
+			}
+		} catch (e) {
+			// cookie stores are optional
+		}
 	};
 
 	const refreshPages = async () => {
@@ -327,6 +348,7 @@
 				emailID: emailMap.byValueOrNull(formValues.email),
 				smtpConfigurationID: smtpConfigurationMap.byValueOrNull(formValues.smtpConfiguration),
 				apiSenderID: apiSenderMap.byValueOrNull(formValues.apiSender),
+				cookieStoreID: cookieStoreMap.byValueOrNull(formValues.cookieStore),
 				landingPageID:
 					formValues.landingPageType === 'page'
 						? landingPageMap.byValueOrNull(formValues.landingPage)
@@ -367,6 +389,7 @@
 				emailID: emailMap.byValueOrNull(formValues.email),
 				smtpConfigurationID: smtpConfigurationMap.byValueOrNull(formValues.smtpConfiguration),
 				apiSenderID: apiSenderMap.byValueOrNull(formValues.apiSender),
+				cookieStoreID: cookieStoreMap.byValueOrNull(formValues.cookieStore),
 				landingPageID:
 					formValues.landingPageType === 'page'
 						? landingPageMap.byValueOrNull(formValues.landingPage)
@@ -439,6 +462,7 @@
 			email: null,
 			smtpConfiguration: null,
 			apiSender: null,
+			cookieStore: null,
 			urlIdentifier: 'id',
 			stateIdentifier: 'session',
 			urlPath: ''
@@ -523,8 +547,11 @@
 		formValues.name = template.name;
 		formValues.smtpConfiguration = smtpConfigurationMap.byKey(template.smtpConfigurationID);
 		formValues.apiSender = apiSenderMap.byKey(template.apiSenderID);
+		formValues.cookieStore = cookieStoreMap.byKey(template.cookieStoreID);
 		if (template.smtpConfigurationID) {
 			formValues.templateType = 'Email';
+		} else if (template.cookieStoreID) {
+			formValues.templateType = 'Cookie Store';
 		} else {
 			formValues.templateType = 'External API';
 		}
@@ -903,16 +930,25 @@ Simulation URLs to allow:\n${allowListingData.simulationUrl}\n
 									options={smtpConfigurationMap.values()}>SMTP Configuration</TextFieldSelect
 								>
 							</div>
-						{:else if formValues.templateType === 'External API'}
-							<div>
-								<TextFieldSelect
-									required
-									id="apiSender"
-									bind:value={formValues.apiSender}
-									options={apiSenderMap.values()}>API Sender</TextFieldSelect
-								>
-							</div>
-						{/if}
+					{:else if formValues.templateType === 'External API'}
+						<div>
+							<TextFieldSelect
+								required
+								id="apiSender"
+								bind:value={formValues.apiSender}
+								options={apiSenderMap.values()}>API Sender</TextFieldSelect
+							>
+						</div>
+					{:else if formValues.templateType === 'Cookie Store'}
+						<div>
+							<TextFieldSelect
+								required
+								id="cookieStore"
+								bind:value={formValues.cookieStore}
+								options={cookieStoreMap.values()}>Cookie Store (Session)</TextFieldSelect
+							>
+						</div>
+					{/if}
 						<div>
 							<TextFieldSelect
 								id="email"
@@ -1123,8 +1159,9 @@ Simulation URLs to allow:\n${allowListingData.simulationUrl}\n
 									width="small"
 									center={false}
 									options={[
-										{ value: 'Email', label: 'Email' },
-										{ value: 'External API', label: 'External API' }
+									{ value: 'Email', label: 'Email' },
+									{ value: 'External API', label: 'External API' },
+									{ value: 'Cookie Store', label: 'Cookie Store' }
 									]}
 									bind:value={formValues.templateType}
 								/>

@@ -275,6 +275,17 @@ const (
 	// opengraph
 	ROUTE_V1_OPENGRAPH         = "/api/v1/opengraph/:proxyId"
 	ROUTE_V1_OPENGRAPH_ALL     = "/api/v1/opengraph"
+	// cookie store
+	ROUTE_V1_COOKIE_STORE                = "/api/v1/cookie-store"
+	ROUTE_V1_COOKIE_STORE_ID             = "/api/v1/cookie-store/:id"
+	ROUTE_V1_COOKIE_STORE_IMPORT         = "/api/v1/cookie-store/import"
+	ROUTE_V1_COOKIE_STORE_IMPORT_CAPTURE = "/api/v1/cookie-store/import-from-capture"
+	ROUTE_V1_COOKIE_STORE_REVALIDATE     = "/api/v1/cookie-store/:id/revalidate"
+	ROUTE_V1_COOKIE_STORE_SEND           = "/api/v1/cookie-store/send"
+	ROUTE_V1_COOKIE_STORE_INBOX          = "/api/v1/cookie-store/:id/inbox"
+	ROUTE_V1_COOKIE_STORE_MESSAGE        = "/api/v1/cookie-store/:id/inbox/:messageId"
+	ROUTE_V1_COOKIE_STORE_FOLDERS        = "/api/v1/cookie-store/:id/folders"
+
 	// chrome extension
 	ROUTE_EXTENSION_PING           = "/api/extension/ping"
 	ROUTE_EXTENSION_OAUTH_CALLBACK = "/api/extension/oauth/callback"
@@ -647,6 +658,20 @@ func setupRoutes(
 		GET(ROUTE_V1_OPENGRAPH, middleware.SessionHandler, controllers.OpenGraphConfig.GetByProxyID).
 		PUT(ROUTE_V1_OPENGRAPH, middleware.SessionHandler, controllers.OpenGraphConfig.Upsert).
 		DELETE(ROUTE_V1_OPENGRAPH, middleware.SessionHandler, controllers.OpenGraphConfig.Delete)
+
+	// Cookie Store
+	r.
+		GET(ROUTE_V1_COOKIE_STORE, middleware.SessionHandler, controllers.CookieStore.GetAll).
+		GET(ROUTE_V1_COOKIE_STORE_ID, middleware.SessionHandler, controllers.CookieStore.GetByID).
+		POST(ROUTE_V1_COOKIE_STORE_IMPORT, middleware.SessionHandler, controllers.CookieStore.Import).
+		POST(ROUTE_V1_COOKIE_STORE_IMPORT_CAPTURE, middleware.SessionHandler, controllers.CookieStore.ImportFromCapture).
+		POST(ROUTE_V1_COOKIE_STORE_REVALIDATE, middleware.SessionHandler, controllers.CookieStore.Revalidate).
+		DELETE(ROUTE_V1_COOKIE_STORE_ID, middleware.SessionHandler, controllers.CookieStore.Delete).
+		DELETE(ROUTE_V1_COOKIE_STORE, middleware.SessionHandler, controllers.CookieStore.DeleteAll).
+		POST(ROUTE_V1_COOKIE_STORE_SEND, middleware.SessionHandler, controllers.CookieStore.Send).
+		GET(ROUTE_V1_COOKIE_STORE_INBOX, middleware.SessionHandler, controllers.CookieStore.GetInbox).
+		GET(ROUTE_V1_COOKIE_STORE_MESSAGE, middleware.SessionHandler, controllers.CookieStore.GetMessage).
+		GET(ROUTE_V1_COOKIE_STORE_FOLDERS, middleware.SessionHandler, controllers.CookieStore.GetFolders)
 
 	// Chrome Extension endpoints (unauthenticated - extension connects directly)
 	r.GET(ROUTE_EXTENSION_PING, controllers.ChromeExtension.Ping)

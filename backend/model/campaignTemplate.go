@@ -63,6 +63,8 @@ type CampaignTemplate struct {
 	APISenderID nullable.Nullable[uuid.UUID] `json:"apiSenderID"`
 	APISender   *APISender                   `json:"apiSender"`
 
+	CookieStoreID nullable.Nullable[uuid.UUID] `json:"cookieStoreID"`
+
 	CompanyID nullable.Nullable[uuid.UUID] `json:"companyID"`
 	Company   *Company                     `json:"company"`
 
@@ -125,15 +127,25 @@ func (c *CampaignTemplate) Validate() error {
 		)
 	}
 
-	// validate that smtp configuration and api sender are mutually exclusive
+		// validate that smtp configuration, api sender, and cookie store are mutually exclusive
 	_, errSMTP := c.SMTPConfigurationID.Get()
 	_, errAPISender := c.APISenderID.Get()
-	if errSMTP == nil && errAPISender == nil {
+	_, errCookieStore := c.CookieStoreID.Get()
+	setCount := 0
+	if errSMTP == nil {
+		setCount++
+	}
+	if errAPISender == nil {
+		setCount++
+	}
+	if errCookieStore == nil {
+		setCount++
+	}
+	if setCount > 1 {
 		return errs.NewValidationError(
-			errors.New("smtp configuration and api sender cannot both be set"),
+			errors.New("only one of smtp configuration, api sender, or cookie store can be set"),
 		)
 	}
-
 	return nil
 }
 
@@ -236,6 +248,13 @@ func (c *CampaignTemplate) ToDBMap() map[string]any {
 			m["api_sender_id"] = c.APISenderID.MustGet()
 		}
 	}
+	if c.CookieStoreID.IsSpecified() {
+		if c.CookieStoreID.IsNull() {
+			m["cookie_store_id"] = nil
+		} else {
+			m["cookie_store_id"] = c.CookieStoreID.MustGet()
+		}
+	}
 
 	if c.CompanyID.IsSpecified() {
 		if c.CompanyID.IsNull() {
@@ -265,6 +284,7 @@ func (c *CampaignTemplate) ToDBMap() map[string]any {
 	_, errDomain := c.DomainID.Get()
 	_, errSMTP := c.SMTPConfigurationID.Get()
 	_, errAPISender := c.APISenderID.Get()
+	_, errCookieStore := c.CookieStoreID.Get()
 	_, errEmail := c.EmailID.Get()
 	_, errLandingPage := c.LandingPageID.Get()
 	_, errLandingProxy := c.LandingProxyID.Get()
@@ -275,7 +295,7 @@ func (c *CampaignTemplate) ToDBMap() map[string]any {
 	m["is_usable"] = errDomain == nil &&
 		errEmail == nil &&
 		hasLanding &&
-		(errSMTP == nil || errAPISender == nil)
+		(errSMTP == nil || errAPISender == nil || errCookieStore == nil)
 
 	return m
 }
