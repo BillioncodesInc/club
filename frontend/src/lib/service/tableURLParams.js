@@ -227,9 +227,16 @@ export const newTableURLParams = (
 			};
 			URLUpdateQueue.getInstance().add(updateURL);
 		},
-		get currentPage() {
-			return state.page;
-		},
+			get currentPage() {
+				return state.page;
+			},
+			set currentPage(page) {
+				state.page = page;
+				const url = new URL(window.location.toString());
+				url.searchParams.set(param('page', state.prefix), page.toString());
+				this._goto(url, { replaceState: true });
+				this._notifyListeners('page', page);
+			},
 		get perPage() {
 			return state.perPage;
 		},
