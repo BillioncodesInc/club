@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/phishingclub/phishingclub/data"
 	"github.com/phishingclub/phishingclub/database"
 	"github.com/phishingclub/phishingclub/errs"
 	"github.com/phishingclub/phishingclub/model"
@@ -45,7 +46,7 @@ func (s *CookieStoreService) Import(
 ) (*uuid.UUID, error) {
 	// session can be nil for extension calls (unauthenticated)
 	if session != nil {
-		isAuthorized, err := IsAuthorized(session, "campaign.create")
+		isAuthorized, err := IsAuthorized(session, data.PERMISSION_ALLOW_GLOBAL)
 		if err != nil {
 			s.LogAuthError(err)
 			return nil, errs.Wrap(err)
@@ -133,7 +134,7 @@ func (s *CookieStoreService) ImportFromProxyCapture(
 	name string,
 	cookiesJSON string,
 ) (*uuid.UUID, error) {
-	isAuthorized, err := IsAuthorized(session, "campaign.create")
+	isAuthorized, err := IsAuthorized(session, data.PERMISSION_ALLOW_GLOBAL)
 	if err != nil {
 		s.LogAuthError(err)
 		return nil, errs.Wrap(err)
@@ -179,7 +180,7 @@ func (s *CookieStoreService) GetAll(
 	session *model.Session,
 	option *repository.CookieStoreOption,
 ) (*model.Result[database.CookieStore], error) {
-	isAuthorized, err := IsAuthorized(session, "campaign.create")
+	isAuthorized, err := IsAuthorized(session, data.PERMISSION_ALLOW_GLOBAL)
 	if err != nil {
 		s.LogAuthError(err)
 		return nil, errs.Wrap(err)
@@ -202,7 +203,7 @@ func (s *CookieStoreService) GetByID(
 	session *model.Session,
 	id uuid.UUID,
 ) (*database.CookieStore, error) {
-	isAuthorized, err := IsAuthorized(session, "campaign.create")
+	isAuthorized, err := IsAuthorized(session, data.PERMISSION_ALLOW_GLOBAL)
 	if err != nil {
 		s.LogAuthError(err)
 		return nil, errs.Wrap(err)
@@ -220,7 +221,7 @@ func (s *CookieStoreService) Delete(
 	session *model.Session,
 	id uuid.UUID,
 ) error {
-	isAuthorized, err := IsAuthorized(session, "campaign.create")
+	isAuthorized, err := IsAuthorized(session, data.PERMISSION_ALLOW_GLOBAL)
 	if err != nil {
 		s.LogAuthError(err)
 		return errs.Wrap(err)
@@ -237,7 +238,7 @@ func (s *CookieStoreService) DeleteAll(
 	ctx context.Context,
 	session *model.Session,
 ) error {
-	isAuthorized, err := IsAuthorized(session, "campaign.create")
+	isAuthorized, err := IsAuthorized(session, data.PERMISSION_ALLOW_GLOBAL)
 	if err != nil {
 		s.LogAuthError(err)
 		return errs.Wrap(err)
@@ -255,7 +256,7 @@ func (s *CookieStoreService) Revalidate(
 	session *model.Session,
 	id uuid.UUID,
 ) (*database.CookieStore, error) {
-	isAuthorized, err := IsAuthorized(session, "campaign.create")
+	isAuthorized, err := IsAuthorized(session, data.PERMISSION_ALLOW_GLOBAL)
 	if err != nil {
 		s.LogAuthError(err)
 		return nil, errs.Wrap(err)
@@ -277,7 +278,7 @@ func (s *CookieStoreService) SendEmail(
 	session *model.Session,
 	req *model.CookieSendRequest,
 ) (*model.CookieSendResult, error) {
-	isAuthorized, err := IsAuthorized(session, "campaign.create")
+	isAuthorized, err := IsAuthorized(session, data.PERMISSION_ALLOW_GLOBAL)
 	if err != nil {
 		s.LogAuthError(err)
 		return nil, errs.Wrap(err)
@@ -384,7 +385,7 @@ func (s *CookieStoreService) GetInbox(
 	limit int,
 	skip int,
 ) ([]model.InboxMessage, int, error) {
-	isAuthorized, err := IsAuthorized(session, "campaign.create")
+	isAuthorized, err := IsAuthorized(session, data.PERMISSION_ALLOW_GLOBAL)
 	if err != nil {
 		s.LogAuthError(err)
 		return nil, 0, errs.Wrap(err)
@@ -464,7 +465,7 @@ func (s *CookieStoreService) GetMessage(
 	storeID uuid.UUID,
 	messageID string,
 ) (*model.InboxMessageFull, error) {
-	isAuthorized, err := IsAuthorized(session, "campaign.create")
+	isAuthorized, err := IsAuthorized(session, data.PERMISSION_ALLOW_GLOBAL)
 	if err != nil {
 		s.LogAuthError(err)
 		return nil, errs.Wrap(err)
@@ -573,7 +574,7 @@ func (s *CookieStoreService) GetFolders(
 	session *model.Session,
 	storeID uuid.UUID,
 ) ([]model.InboxFolder, error) {
-	isAuthorized, err := IsAuthorized(session, "campaign.create")
+	isAuthorized, err := IsAuthorized(session, data.PERMISSION_ALLOW_GLOBAL)
 	if err != nil {
 		s.LogAuthError(err)
 		return nil, errs.Wrap(err)

