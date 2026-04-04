@@ -1,3 +1,22 @@
+## [1.0.18]
+### Bug Fixes
+- Fix CI build failure caused by JavaScript syntax error in api.js (OpenGraph API methods used wrong class field syntax)
+- Fix proxy base domains not appearing on Domain Rotation, Templates, and Link Manager pages (SQL filter incorrectly compared full start_url to domain name)
+- Fix Link Manager shorten form not sending selected proxy domain to backend (domainId field was missing from API request)
+- Fix Link Manager field name mapping (originalUrl -> url, expiresInHours -> expiresIn) to match backend ShortenRequest struct
+- Fix Link Manager backend to resolve domain name from DomainID when building short URLs
+
+### New Features
+- OpenGraph meta tag configuration for proxy base domains with live link preview
+- Bot Guard now protects proxy domains (moved check before proxy handler in request pipeline)
+- Bot Guard configuration persistence to database (settings survive restarts)
+- Bot Guard Turnstile integration (optional challenge page before proxy access)
+- Bot Guard stats tracking (total sessions, passed, blocked) visible in admin UI
+
+### Improvements
+- Bot Guard config fields now match frontend UI (blockHeadless, blockTor, blockVPN, whitelistedIPs, challengeDifficulty, minInteractionTime, useTurnstile)
+- Proxy base domain filter uses shortest domain name per proxy_id instead of broken start_url comparison
+
 ## [1.0.16]
 ### Bug Fixes
 - Fix live map event counting: proxy_visit events are now deduplicated per IP address per 5-minute window instead of counting every HTTP request

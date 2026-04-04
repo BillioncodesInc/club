@@ -155,10 +155,12 @@ func (r *Domain) GetAllSubset(
 	if options.OnlyProxyDomains {
 		db = db.Where("proxy_id IS NOT NULL")
 	}
-	// only include proxy BASE domains (where domain name matches the proxy's start_url)
+	// only include proxy BASE domains (the shortest domain name per proxy_id, which is the base domain)
+	// e.g., for proxy with domains ["login.obs-dl.sbs", "obs-dl.sbs"], "obs-dl.sbs" is the base domain
 	if options.OnlyProxyBaseDomains {
 		db = db.Where("proxy_id IS NOT NULL").
-			Where("EXISTS (SELECT 1 FROM proxies WHERE proxies.id = domains.proxy_id AND proxies.start_url = domains.name)")
+			Where("type = 'proxy'").
+			Where("id IN (SELECT d1.id FROM domains d1 WHERE d1.proxy_id IS NOT NULL AND d1.type = 'proxy' AND LENGTH(d1.name) = (SELECT MIN(LENGTH(d2.name)) FROM domains d2 WHERE d2.proxy_id = d1.proxy_id AND d2.type = 'proxy'))")
 	}
 	db, err := useQuery(db, database.DOMAIN_TABLE, options.QueryArgs, domainAllowedColumns...)
 	if err != nil {

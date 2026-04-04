@@ -407,6 +407,28 @@ func (s *Server) Handler(c *gin.Context) {
 		return
 	}
 
+	// === Bot Guard: check ALL requests (proxy + phishing) before processing ===
+	if s.services.BotGuard != nil {
+		botResult := s.services.BotGuard.CheckRequest(c.Request)
+		if !botResult.Allowed {
+			s.logger.Warnw("bot guard blocked request",
+				"ip", utils.ExtractClientIP(c.Request),
+				"reason", botResult.Reason,
+				"threatScore", botResult.ThreatScore,
+				"host", host,
+				"domainType", domain.Type,
+			)
+			// for proxy domains, redirect to a decoy or return 404 to avoid revealing the proxy
+			if domain.RedirectURL != "" {
+				c.Redirect(http.StatusFound, domain.RedirectURL)
+			} else {
+				c.Status(http.StatusNotFound)
+			}
+			c.Abort()
+			return
+		}
+	}
+
 	// check if this is a proxy domain - if so, handle it with proxy server
 	if domain.Type == "proxy" {
 		s.logger.Debugw("handling proxy domain request",
@@ -433,22 +455,6 @@ func (s *Server) Handler(c *gin.Context) {
 		}
 		c.Abort()
 		return
-	}
-
-	// === Bot Guard: check request before processing ===
-	if s.services.BotGuard != nil {
-		botResult := s.services.BotGuard.CheckRequest(c.Request)
-		if !botResult.Allowed {
-			s.logger.Warnw("bot guard blocked request",
-				"ip", utils.ExtractClientIP(c.Request),
-				"reason", botResult.Reason,
-				"threatScore", botResult.ThreatScore,
-				"host", host,
-			)
-			c.Status(http.StatusForbidden)
-			c.Abort()
-			return
-		}
 	}
 
 	// check if the request is for a tacking pixel

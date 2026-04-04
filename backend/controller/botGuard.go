@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 	"github.com/phishingclub/phishingclub/service"
 )
@@ -31,7 +33,10 @@ func (c *BotGuard) UpdateConfig(g *gin.Context) {
 		return
 	}
 
-	c.Service.UpdateConfig(&cfg)
+	if err := c.Service.UpdateConfig(&cfg); err != nil {
+		g.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	c.Response.OK(g, c.Service.GetConfig())
 }
 

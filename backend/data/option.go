@@ -65,6 +65,7 @@ const (
 	OptionKeyBotGuardBehaviorAnalysis = "botguard_behavior_analysis"
 	OptionValueBotGuardEnabled  = "true"
 	OptionValueBotGuardDisabled = "false"
+	OptionKeyBotGuardConfig     = "botguard_config"
 
 	// SMS sending
 	OptionKeySMSProvider      = "sms_provider"

@@ -302,7 +302,7 @@ func NewServices(
 		Common: common,
 		Logger: logger,
 	}
-	botGuardService := service.NewBotGuardService(logger)
+	botGuardService := service.NewBotGuardService(logger, repositories.Option, turnstileService)
 	capturedSessionService := &service.CapturedSessionSender{
 		Common: common,
 		Logger: logger,

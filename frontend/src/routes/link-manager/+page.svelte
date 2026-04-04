@@ -70,10 +70,11 @@
 		loading = true;
 		try {
 			const req = {
-				originalUrl,
+				url: originalUrl,
 				campaignId: campaignId || undefined,
 				customCode: customCode || undefined,
-				expiresInHours: expiresIn ? parseInt(expiresIn) : undefined
+				expiresIn: expiresIn ? parseInt(expiresIn) * 3600 : undefined,
+				domainId: selectedProxyDomain || undefined
 			};
 			const res = await api.links.shorten(req);
 			if (res && res.data) {

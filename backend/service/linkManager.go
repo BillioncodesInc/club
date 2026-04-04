@@ -261,6 +261,19 @@ func (lm *LinkManager) Shorten(req *ShortenRequest) (*ShortLink, error) {
 	}
 
 	domain := req.Domain
+	// if domain is not set but domainId is provided, resolve the domain name from DB
+	if domain == "" && req.DomainID != "" && lm.DomainRepository != nil {
+		domainUUID, err := uuid.Parse(req.DomainID)
+		if err == nil {
+			ctx := context.Background()
+			dbDomain, err := lm.DomainRepository.GetByID(ctx, &domainUUID, &repository.DomainOption{})
+			if err == nil && dbDomain != nil {
+				if name, err := dbDomain.Name.Get(); err == nil {
+					domain = "https://" + name.String()
+				}
+			}
+		}
+	}
 	if domain == "" {
 		domain = "http://localhost"
 	}

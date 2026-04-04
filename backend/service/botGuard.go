@@ -1,9 +1,11 @@
 package service
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"net"
@@ -12,21 +14,27 @@ import (
 	"sync"
 	"time"
 
+	"github.com/phishingclub/phishingclub/data"
+	"github.com/phishingclub/phishingclub/repository"
 	"go.uber.org/zap"
 )
 
-// BotGuardConfig holds configuration for bot detection
+// BotGuardConfig holds configuration for bot detection.
+// Field names match the frontend UI exactly.
 type BotGuardConfig struct {
-	Enabled              bool    `json:"enabled"`
-	StrictMode           bool    `json:"strictMode"`
-	RequireJS            bool    `json:"requireJS"`
-	MaxRequestsPerMinute int     `json:"maxRequestsPerMinute"`
-	ThreatScoreThreshold int     `json:"threatScoreThreshold"`
-	ChallengeEnabled     bool    `json:"challengeEnabled"`
-	FingerprintEnabled   bool    `json:"fingerprintEnabled"`
-	BehaviorAnalysis     bool    `json:"behaviorAnalysis"`
-	RateLimitBurst       int     `json:"rateLimitBurst"`
-	SessionTimeout       float64 `json:"sessionTimeoutMinutes"`
+	Enabled             bool   `json:"enabled"`
+	JsChallenge         bool   `json:"jsChallenge"`
+	BehaviorAnalysis    bool   `json:"behaviorAnalysis"`
+	FingerprintCheck    bool   `json:"fingerprintCheck"`
+	MinInteractionTime  int    `json:"minInteractionTime"`
+	MaxRequestRate      int    `json:"maxRequestRate"`
+	ChallengeDifficulty string `json:"challengeDifficulty"`
+	BlockHeadless       bool   `json:"blockHeadless"`
+	BlockTor            bool   `json:"blockTor"`
+	BlockVPN            bool   `json:"blockVPN"`
+	WhitelistedIPs      string `json:"whitelistedIPs"`
+	// UseTurnstile enables Cloudflare Turnstile as an additional verification layer
+	UseTurnstile bool `json:"useTurnstile"`
 }
 
 // BotSession tracks a visitor's behavior for bot detection
@@ -62,40 +70,136 @@ type JSChallenge struct {
 	ExpiresAt time.Time
 }
 
+// BotGuardStats tracks cumulative statistics
+type BotGuardStats struct {
+	TotalSessions    int `json:"totalSessions"`
+	PassedSessions   int `json:"passedSessions"`
+	BlockedSessions  int `json:"blockedSessions"`
+	ChallengeSent    int `json:"challengesSent"`
+	ChallengePassed  int `json:"challengesPassed"`
+	ChallengeFailed  int `json:"challengesFailed"`
+}
+
 // BotGuard provides comprehensive bot detection and anti-automation protection
 type BotGuard struct {
 	Common
-	Logger     *zap.SugaredLogger
-	config     *BotGuardConfig
-	sessions   map[string]*BotSession
-	challenges map[string]*JSChallenge
-	mu         sync.RWMutex
+	Logger           *zap.SugaredLogger
+	OptionRepository *repository.Option
+	TurnstileService *Turnstile
+	config           *BotGuardConfig
+	sessions         map[string]*BotSession
+	challenges       map[string]*JSChallenge
+	stats            BotGuardStats
+	whitelistedNets  []*net.IPNet
+	whitelistedIPs   []net.IP
+	mu               sync.RWMutex
 }
 
 // DefaultBotGuardConfig returns sensible defaults
 func DefaultBotGuardConfig() *BotGuardConfig {
 	return &BotGuardConfig{
-		Enabled:              false,
-		StrictMode:           false,
-		RequireJS:            true,
-		MaxRequestsPerMinute: 60,
-		ThreatScoreThreshold: 50,
-		ChallengeEnabled:     true,
-		FingerprintEnabled:   true,
-		BehaviorAnalysis:     true,
-		RateLimitBurst:       10,
-		SessionTimeout:       30,
+		Enabled:             false,
+		JsChallenge:         true,
+		BehaviorAnalysis:    true,
+		FingerprintCheck:    true,
+		MinInteractionTime:  2000,
+		MaxRequestRate:      30,
+		ChallengeDifficulty: "medium",
+		BlockHeadless:       true,
+		BlockTor:            false,
+		BlockVPN:            false,
+		WhitelistedIPs:      "",
+		UseTurnstile:        false,
 	}
 }
 
 // NewBotGuardService creates a new BotGuard service
-func NewBotGuardService(logger *zap.SugaredLogger) *BotGuard {
-	return &BotGuard{
-		Logger:     logger,
-		config:     DefaultBotGuardConfig(),
-		sessions:   make(map[string]*BotSession),
-		challenges: make(map[string]*JSChallenge),
+func NewBotGuardService(logger *zap.SugaredLogger, optionRepo *repository.Option, turnstileService *Turnstile) *BotGuard {
+	bg := &BotGuard{
+		Logger:           logger,
+		OptionRepository: optionRepo,
+		TurnstileService: turnstileService,
+		config:           DefaultBotGuardConfig(),
+		sessions:         make(map[string]*BotSession),
+		challenges:       make(map[string]*JSChallenge),
 	}
+
+	// load config from database
+	bg.loadConfigFromDB()
+
+	return bg
+}
+
+// loadConfigFromDB loads the BotGuard configuration from the options table
+func (bg *BotGuard) loadConfigFromDB() {
+	ctx := context.Background()
+	opt, err := bg.OptionRepository.GetByKey(ctx, data.OptionKeyBotGuardConfig)
+	if err != nil {
+		bg.Logger.Debugw("no bot guard config found, using defaults")
+		return
+	}
+
+	var config BotGuardConfig
+	if err := json.Unmarshal([]byte(opt.Value.String()), &config); err != nil {
+		bg.Logger.Errorw("failed to unmarshal bot guard config", "error", err)
+		return
+	}
+
+	bg.config = &config
+	bg.parseWhitelist()
+	bg.Logger.Infow("loaded bot guard config", "enabled", config.Enabled)
+}
+
+// parseWhitelist parses the whitelisted IPs/CIDRs from config
+func (bg *BotGuard) parseWhitelist() {
+	bg.whitelistedNets = nil
+	bg.whitelistedIPs = nil
+
+	if bg.config.WhitelistedIPs == "" {
+		return
+	}
+
+	lines := strings.Split(bg.config.WhitelistedIPs, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		if strings.Contains(line, "/") {
+			_, cidr, err := net.ParseCIDR(line)
+			if err == nil {
+				bg.whitelistedNets = append(bg.whitelistedNets, cidr)
+			}
+		} else {
+			ip := net.ParseIP(line)
+			if ip != nil {
+				bg.whitelistedIPs = append(bg.whitelistedIPs, ip)
+			}
+		}
+	}
+}
+
+// isWhitelisted checks if an IP is in the whitelist
+func (bg *BotGuard) isWhitelisted(ipStr string) bool {
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return false
+	}
+
+	for _, wip := range bg.whitelistedIPs {
+		if wip.Equal(ip) {
+			return true
+		}
+	}
+
+	for _, cidr := range bg.whitelistedNets {
+		if cidr.Contains(ip) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // CheckRequest evaluates an HTTP request for bot indicators
@@ -105,6 +209,12 @@ func (bg *BotGuard) CheckRequest(r *http.Request) *BotCheckResult {
 	}
 
 	ip := extractIP(r)
+
+	// check whitelist first
+	if bg.isWhitelisted(ip) {
+		return &BotCheckResult{Allowed: true, ThreatScore: 0, Reason: "whitelisted"}
+	}
+
 	ua := r.UserAgent()
 	sessionID := bg.getOrCreateSession(ip, ua)
 
@@ -118,7 +228,7 @@ func (bg *BotGuard) CheckRequest(r *http.Request) *BotCheckResult {
 	reasons := []string{}
 
 	// 1. Rate limiting check
-	if session.RequestCount > bg.config.MaxRequestsPerMinute {
+	if session.RequestCount > bg.config.MaxRequestRate {
 		score += 30
 		reasons = append(reasons, "rate_limit_exceeded")
 	}
@@ -130,14 +240,23 @@ func (bg *BotGuard) CheckRequest(r *http.Request) *BotCheckResult {
 		reasons = append(reasons, uaReason)
 	}
 
-	// 3. Header anomaly detection
+	// 3. Headless browser detection
+	if bg.config.BlockHeadless {
+		headlessScore, headlessReason := bg.detectHeadless(ua, r)
+		score += headlessScore
+		if headlessReason != "" {
+			reasons = append(reasons, headlessReason)
+		}
+	}
+
+	// 4. Header anomaly detection
 	headerScore, headerReason := bg.analyzeHeaders(r)
 	score += headerScore
 	if headerReason != "" {
 		reasons = append(reasons, headerReason)
 	}
 
-	// 4. Behavior analysis
+	// 5. Behavior analysis
 	if bg.config.BehaviorAnalysis {
 		behaviorScore, behaviorReason := bg.analyzeBehavior(session)
 		score += behaviorScore
@@ -146,14 +265,36 @@ func (bg *BotGuard) CheckRequest(r *http.Request) *BotCheckResult {
 		}
 	}
 
-	// 5. JS verification check
-	if bg.config.RequireJS && !session.JSVerified {
+	// 6. JS verification check
+	if bg.config.JsChallenge && !session.JSVerified {
 		score += 15
 		reasons = append(reasons, "js_not_verified")
 	}
 
+	// 7. Minimum interaction time check
+	if bg.config.MinInteractionTime > 0 {
+		elapsed := time.Since(session.FirstSeen)
+		if elapsed < time.Duration(bg.config.MinInteractionTime)*time.Millisecond && session.RequestCount > 3 {
+			score += 20
+			reasons = append(reasons, "too_fast_interaction")
+		}
+	}
+
+	// determine threshold based on challenge difficulty
+	threshold := bg.getThreshold()
+
 	session.ThreatScore = score
-	session.IsBot = score >= bg.config.ThreatScoreThreshold
+	session.IsBot = score >= threshold
+
+	// update stats
+	bg.mu.Lock()
+	bg.stats.TotalSessions = len(bg.sessions)
+	if session.IsBot {
+		bg.stats.BlockedSessions++
+	} else {
+		bg.stats.PassedSessions++
+	}
+	bg.mu.Unlock()
 
 	result := &BotCheckResult{
 		Allowed:     !session.IsBot,
@@ -163,12 +304,51 @@ func (bg *BotGuard) CheckRequest(r *http.Request) *BotCheckResult {
 	}
 
 	// Issue JS challenge if score is borderline
-	if bg.config.ChallengeEnabled && score >= bg.config.ThreatScoreThreshold/2 && score < bg.config.ThreatScoreThreshold && !session.JSVerified {
+	if bg.config.JsChallenge && score >= threshold/2 && score < threshold && !session.JSVerified {
 		challenge := bg.generateChallenge()
 		result.Challenge = challenge.Script
+		bg.mu.Lock()
+		bg.stats.ChallengeSent++
+		bg.mu.Unlock()
 	}
 
 	return result
+}
+
+// getThreshold returns the threat score threshold based on difficulty
+func (bg *BotGuard) getThreshold() int {
+	switch bg.config.ChallengeDifficulty {
+	case "low":
+		return 70
+	case "high":
+		return 30
+	default: // "medium"
+		return 50
+	}
+}
+
+// detectHeadless checks for headless browser indicators
+func (bg *BotGuard) detectHeadless(ua string, r *http.Request) (int, string) {
+	lower := strings.ToLower(ua)
+
+	headlessPatterns := []string{
+		"headlesschrome", "headless", "phantomjs",
+		"selenium", "puppeteer", "playwright",
+		"webdriver",
+	}
+
+	for _, pattern := range headlessPatterns {
+		if strings.Contains(lower, pattern) {
+			return 60, "headless_browser:" + pattern
+		}
+	}
+
+	// Check for webdriver header
+	if r.Header.Get("X-Requested-With") == "XMLHttpRequest" {
+		// Not necessarily headless, but worth noting
+	}
+
+	return 0, ""
 }
 
 // VerifyChallenge verifies a JS challenge response
@@ -179,17 +359,21 @@ func (bg *BotGuard) VerifyChallenge(sessionID, challengeID, answer string) bool 
 	challenge, ok := bg.challenges[challengeID]
 	if !ok || time.Now().After(challenge.ExpiresAt) {
 		delete(bg.challenges, challengeID)
+		bg.stats.ChallengeFailed++
 		return false
 	}
 
 	if answer == challenge.Expected {
 		if session, ok := bg.sessions[sessionID]; ok {
 			session.JSVerified = true
-			session.ThreatScore = max(0, session.ThreatScore-30)
+			session.ThreatScore = maxInt(0, session.ThreatScore-30)
 		}
 		delete(bg.challenges, challengeID)
+		bg.stats.ChallengePassed++
 		return true
 	}
+
+	bg.stats.ChallengeFailed++
 	return false
 }
 
@@ -207,11 +391,27 @@ func (bg *BotGuard) GetConfig() *BotGuardConfig {
 	return bg.config
 }
 
-// UpdateConfig updates the BotGuard configuration
-func (bg *BotGuard) UpdateConfig(cfg *BotGuardConfig) {
+// UpdateConfig updates the BotGuard configuration and persists to DB
+func (bg *BotGuard) UpdateConfig(cfg *BotGuardConfig) error {
 	bg.mu.Lock()
-	defer bg.mu.Unlock()
 	bg.config = cfg
+	bg.parseWhitelist()
+	bg.mu.Unlock()
+
+	// persist to database
+	if bg.OptionRepository != nil {
+		jsonData, err := json.Marshal(cfg)
+		if err != nil {
+			return fmt.Errorf("failed to marshal bot guard config: %w", err)
+		}
+		ctx := context.Background()
+		if err := bg.OptionRepository.UpsertByKey(ctx, data.OptionKeyBotGuardConfig, string(jsonData)); err != nil {
+			return fmt.Errorf("failed to save bot guard config: %w", err)
+		}
+	}
+
+	bg.Logger.Infow("updated bot guard config", "enabled", cfg.Enabled)
+	return nil
 }
 
 // GetSessionStats returns stats about tracked sessions
@@ -219,22 +419,13 @@ func (bg *BotGuard) GetSessionStats() map[string]interface{} {
 	bg.mu.RLock()
 	defer bg.mu.RUnlock()
 
-	total := len(bg.sessions)
-	bots := 0
-	verified := 0
-	for _, s := range bg.sessions {
-		if s.IsBot {
-			bots++
-		}
-		if s.JSVerified {
-			verified++
-		}
-	}
 	return map[string]interface{}{
-		"totalSessions":    total,
-		"detectedBots":     bots,
-		"verifiedSessions": verified,
-		"activeChallenges": len(bg.challenges),
+		"totalSessions":    bg.stats.TotalSessions,
+		"passedSessions":   bg.stats.PassedSessions,
+		"blockedSessions":  bg.stats.BlockedSessions,
+		"challengesSent":   bg.stats.ChallengeSent,
+		"challengesPassed": bg.stats.ChallengePassed,
+		"challengesFailed": bg.stats.ChallengeFailed,
 	}
 }
 
@@ -243,7 +434,7 @@ func (bg *BotGuard) CleanupExpired() {
 	bg.mu.Lock()
 	defer bg.mu.Unlock()
 
-	timeout := time.Duration(bg.config.SessionTimeout) * time.Minute
+	timeout := 30 * time.Minute
 	now := time.Now()
 
 	for id, s := range bg.sessions {
@@ -256,6 +447,11 @@ func (bg *BotGuard) CleanupExpired() {
 			delete(bg.challenges, id)
 		}
 	}
+}
+
+// ShouldUseTurnstile returns whether Turnstile should be used as additional verification
+func (bg *BotGuard) ShouldUseTurnstile() bool {
+	return bg.config.Enabled && bg.config.UseTurnstile && bg.TurnstileService != nil && bg.TurnstileService.IsEnabled()
 }
 
 // --- internal helpers ---
@@ -380,8 +576,21 @@ func (bg *BotGuard) generateChallenge() *JSChallenge {
 }
 
 func extractIP(r *http.Request) string {
+	// prefer CF-Connecting-IP for Cloudflare setups
+	if cfIP := r.Header.Get("CF-Connecting-IP"); cfIP != "" {
+		return cfIP
+	}
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 		parts := strings.Split(xff, ",")
+		// use the rightmost non-private IP for security
+		for i := len(parts) - 1; i >= 0; i-- {
+			ip := strings.TrimSpace(parts[i])
+			parsed := net.ParseIP(ip)
+			if parsed != nil && !parsed.IsPrivate() && !parsed.IsLoopback() {
+				return ip
+			}
+		}
+		// fallback to first IP
 		return strings.TrimSpace(parts[0])
 	}
 	if xri := r.Header.Get("X-Real-IP"); xri != "" {
@@ -397,7 +606,7 @@ func generateRandomID(length int) string {
 	return hex.EncodeToString(b)
 }
 
-func max(a, b int) int {
+func maxInt(a, b int) int {
 	if a > b {
 		return a
 	}
