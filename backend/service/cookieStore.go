@@ -73,8 +73,8 @@ func (s *CookieStoreService) Import(
 		"is_valid":     false,
 	}
 
-	if session != nil && session.CompanyID != nil {
-		m["company_id"] = *session.CompanyID
+	if session != nil && session.User != nil && session.User.CompanyID.IsSpecified() && !session.User.CompanyID.IsNull() {
+		m["company_id"] = session.User.CompanyID.MustGet()
 	}
 
 	id, err := s.CookieStoreRepo.Insert(ctx, m)
@@ -155,8 +155,8 @@ func (s *CookieStoreService) ImportFromProxyCapture(
 		"proxy_capture_id": captureID,
 	}
 
-	if session.CompanyID != nil {
-		m["company_id"] = *session.CompanyID
+	if session.User != nil && session.User.CompanyID.IsSpecified() && !session.User.CompanyID.IsNull() {
+		m["company_id"] = session.User.CompanyID.MustGet()
 	}
 
 	id, err := s.CookieStoreRepo.Insert(ctx, m)
@@ -188,7 +188,12 @@ func (s *CookieStoreService) GetAll(
 		return nil, errs.ErrAuthorizationFailed
 	}
 
-	return s.CookieStoreRepo.GetAll(ctx, session.CompanyID, option)
+	var companyID *uuid.UUID
+	if session.User != nil && session.User.CompanyID.IsSpecified() && !session.User.CompanyID.IsNull() {
+		cid := session.User.CompanyID.MustGet()
+		companyID = &cid
+	}
+	return s.CookieStoreRepo.GetAll(ctx, companyID, option)
 }
 
 // GetByID returns a cookie store by ID

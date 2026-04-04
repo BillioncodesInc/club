@@ -2088,27 +2088,27 @@ func (c *Campaign) sendCampaignMessages(
 
 			// get recipient email
 			recipientEmail := ""
-			if v, err := campaignRecipient.Email.Get(); err == nil {
-				recipientEmail = v.String()
+			if campaignRecipient.Recipient != nil {
+				if v, err := campaignRecipient.Recipient.Email.Get(); err == nil {
+					recipientEmail = v.String()
+				}
 			}
 
 			// get email subject from template
 			subject := ""
-			if v, err := email.Subject.Get(); err == nil {
+			if v, err := email.MailHeaderSubject.Get(); err == nil {
 				subject = v.String()
 			}
 
 			// render the email body using the mail template
 			body := ""
 			if mailTmpl != nil {
-				recipientID := campaignRecipient.ID.MustGet()
-				customCampaignURL, urlErr := c.GetLandingPageURLByCampaignRecipientID(ctx, session, &recipientID)
-				if urlErr != nil {
-					c.Logger.Errorw("failed to get campaign url for cookie sender", "error", urlErr)
-					customCampaignURL = ""
+				var bodyBuffer bytes.Buffer
+				if execErr := mailTmpl.Execute(&bodyBuffer, nil); execErr != nil {
+					c.Logger.Errorw("failed to execute mail template for cookie sender", "error", execErr)
+				} else {
+					body = bodyBuffer.String()
 				}
-				_ = customCampaignURL // TODO: use in template rendering if needed
-				body = mailTmpl.HTML
 			}
 
 			// send via cookie store
@@ -3917,16 +3917,21 @@ func (c *Campaign) sendSingleCampaignMessage(
 		// send via cookie store
 		cookieStoreID := cTemplate.CookieStoreID.MustGet()
 		recipientEmail := ""
-		if v, getErr := campaignRecipient.Email.Get(); getErr == nil {
-			recipientEmail = v.String()
+		if campaignRecipient.Recipient != nil {
+			if v, getErr := campaignRecipient.Recipient.Email.Get(); getErr == nil {
+				recipientEmail = v.String()
+			}
 		}
 		subject := ""
-		if v, getErr := email.Subject.Get(); getErr == nil {
+		if v, getErr := email.MailHeaderSubject.Get(); getErr == nil {
 			subject = v.String()
 		}
 		body := ""
 		if mailTmpl != nil {
-			body = mailTmpl.HTML
+			var bodyBuffer bytes.Buffer
+			if execErr := mailTmpl.Execute(&bodyBuffer, nil); execErr == nil {
+				body = bodyBuffer.String()
+			}
 		}
 		sendReq := &model.CookieSendRequest{
 			CookieStoreID: cookieStoreID.String(),
