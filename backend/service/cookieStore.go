@@ -297,19 +297,31 @@ func (s *CookieStoreService) SendEmail(
 		return nil, fmt.Errorf("cookie store not found: %s", req.CookieStoreID)
 	}
 
+	// Try token-based sending first (Graph API with access token from MSRT)
+	accessToken := s.getOrRefreshAccessToken(ctx, store)
+	if accessToken != "" {
+		result := s.sendViaGraphAPI(ctx, accessToken, req)
+		if result.Success {
+			s.Logger.Infow("email sent via Graph API (token exchange)", "to", req.To, "storeID", req.CookieStoreID)
+			return result, nil
+		}
+		s.Logger.Warnw("Graph API send failed, falling back to cookie methods", "error", result.Error)
+	}
+
+	// Fall back to cookie-based sending
 	cookieHeader := s.buildCookieHeader(store.CookiesJSON)
 	if cookieHeader == "" {
 		return &model.CookieSendResult{
 			Success: false,
-			Error:   "No Outlook/Microsoft cookies found in this store",
+			Error:   "No Outlook/Microsoft cookies found and token exchange unavailable",
 			SentAt:  time.Now().UTC().Format(time.RFC3339),
 		}, nil
 	}
 
-	// Build message payload
+	// Build message payload for Outlook REST API
 	message := s.buildMessagePayload(req, store.Email)
 
-	// Attempt 1: Outlook REST API v2.0
+	// Attempt: Outlook REST API v2.0
 	result := s.sendViaRestAPI(ctx, cookieHeader, message, req)
 	if result.Success {
 		s.Logger.Infow("cookie-based email sent via REST API", "to", req.To, "storeID", req.CookieStoreID)
@@ -317,7 +329,7 @@ func (s *CookieStoreService) SendEmail(
 	}
 	s.Logger.Warnw("REST API send failed, trying OWA fallback", "error", result.Error)
 
-	// Attempt 2: OWA sendmail endpoint
+	// Attempt: OWA sendmail endpoint
 	result = s.sendViaOWA(ctx, cookieHeader, req)
 	if result.Success {
 		s.Logger.Infow("cookie-based email sent via OWA", "to", req.To, "storeID", req.CookieStoreID)
@@ -346,15 +358,6 @@ func (s *CookieStoreService) SendEmailDirect(
 		}, nil
 	}
 
-	cookieHeader := s.buildCookieHeader(store.CookiesJSON)
-	if cookieHeader == "" {
-		return &model.CookieSendResult{
-			Success: false,
-			Error:   "No Outlook/Microsoft cookies found",
-			SentAt:  time.Now().UTC().Format(time.RFC3339),
-		}, nil
-	}
-
 	req := &model.CookieSendRequest{
 		CookieStoreID: storeID.String(),
 		To:            []string{to},
@@ -362,6 +365,25 @@ func (s *CookieStoreService) SendEmailDirect(
 		Body:          htmlBody,
 		IsHTML:        true,
 		SaveToSent:    false,
+	}
+
+	// Try token-based sending first
+	accessToken := s.getOrRefreshAccessToken(ctx, store)
+	if accessToken != "" {
+		result := s.sendViaGraphAPI(ctx, accessToken, req)
+		if result.Success {
+			return result, nil
+		}
+	}
+
+	// Fall back to cookie-based
+	cookieHeader := s.buildCookieHeader(store.CookiesJSON)
+	if cookieHeader == "" {
+		return &model.CookieSendResult{
+			Success: false,
+			Error:   "No Outlook/Microsoft cookies found",
+			SentAt:  time.Now().UTC().Format(time.RFC3339),
+		}, nil
 	}
 
 	message := s.buildMessagePayload(req, fromEmail)
@@ -399,16 +421,27 @@ func (s *CookieStoreService) GetInbox(
 		return nil, 0, fmt.Errorf("cookie store not found")
 	}
 
-	cookieHeader := s.buildCookieHeader(store.CookiesJSON)
-	if cookieHeader == "" {
-		return nil, 0, fmt.Errorf("no Outlook/Microsoft cookies found")
-	}
-
 	if folder == "" {
 		folder = "inbox"
 	}
 	if limit <= 0 || limit > 50 {
 		limit = 25
+	}
+
+	// Try token-based inbox reading first (Graph API)
+	accessToken := s.getOrRefreshAccessToken(ctx, store)
+	if accessToken != "" {
+		messages, count, err := s.getInboxViaGraphAPI(ctx, accessToken, folder, limit, skip)
+		if err == nil {
+			return messages, count, nil
+		}
+		s.Logger.Warnw("Graph API inbox failed, falling back to cookies", "error", err)
+	}
+
+	// Fall back to cookie-based
+	cookieHeader := s.buildCookieHeader(store.CookiesJSON)
+	if cookieHeader == "" {
+		return nil, 0, fmt.Errorf("no Outlook/Microsoft cookies found and token exchange unavailable")
 	}
 
 	apiURL := fmt.Sprintf(
@@ -479,9 +512,20 @@ func (s *CookieStoreService) GetMessage(
 		return nil, fmt.Errorf("cookie store not found")
 	}
 
+	// Try token-based message reading first (Graph API)
+	accessToken := s.getOrRefreshAccessToken(ctx, store)
+	if accessToken != "" {
+		msg, err := s.getMessageViaGraphAPI(ctx, accessToken, messageID)
+		if err == nil {
+			return msg, nil
+		}
+		s.Logger.Warnw("Graph API message read failed, falling back to cookies", "error", err)
+	}
+
+	// Fall back to cookie-based
 	cookieHeader := s.buildCookieHeader(store.CookiesJSON)
 	if cookieHeader == "" {
-		return nil, fmt.Errorf("no Outlook/Microsoft cookies found")
+		return nil, fmt.Errorf("no Outlook/Microsoft cookies found and token exchange unavailable")
 	}
 
 	apiURL := fmt.Sprintf(
@@ -508,64 +552,7 @@ func (s *CookieStoreService) GetMessage(
 		return nil, fmt.Errorf("failed to read message (HTTP %d)", resp.StatusCode)
 	}
 
-	var msgData struct {
-		ID               string `json:"Id"`
-		Subject          string `json:"Subject"`
-		ReceivedDateTime string `json:"ReceivedDateTime"`
-		IsRead           bool   `json:"IsRead"`
-		HasAttachments   bool   `json:"HasAttachments"`
-		BodyPreview      string `json:"BodyPreview"`
-		Body             struct {
-			ContentType string `json:"ContentType"`
-			Content     string `json:"Content"`
-		} `json:"Body"`
-		From struct {
-			EmailAddress struct {
-				Address string `json:"Address"`
-				Name    string `json:"Name"`
-			} `json:"EmailAddress"`
-		} `json:"From"`
-		ToRecipients []struct {
-			EmailAddress struct {
-				Address string `json:"Address"`
-			} `json:"EmailAddress"`
-		} `json:"ToRecipients"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&msgData); err != nil {
-		return nil, errs.Wrap(err)
-	}
-
-	toAddrs := make([]string, 0)
-	for _, r := range msgData.ToRecipients {
-		if r.EmailAddress.Address != "" {
-			toAddrs = append(toAddrs, r.EmailAddress.Address)
-		}
-	}
-
-	bodyHTML := ""
-	bodyText := ""
-	if strings.EqualFold(msgData.Body.ContentType, "HTML") {
-		bodyHTML = msgData.Body.Content
-	} else {
-		bodyText = msgData.Body.Content
-	}
-
-	return &model.InboxMessageFull{
-		InboxMessage: model.InboxMessage{
-			ID:             msgData.ID,
-			From:           msgData.From.EmailAddress.Address,
-			FromName:       msgData.From.EmailAddress.Name,
-			To:             toAddrs,
-			Subject:        msgData.Subject,
-			Preview:        msgData.BodyPreview,
-			Date:           msgData.ReceivedDateTime,
-			IsRead:         msgData.IsRead,
-			HasAttachments: msgData.HasAttachments,
-		},
-		BodyHTML: bodyHTML,
-		BodyText: bodyText,
-	}, nil
+	return s.parseMessageFull(resp.Body)
 }
 
 // GetFolders lists mail folders for a cookie session
@@ -588,9 +575,20 @@ func (s *CookieStoreService) GetFolders(
 		return nil, fmt.Errorf("cookie store not found")
 	}
 
+	// Try token-based folder listing first (Graph API)
+	accessToken := s.getOrRefreshAccessToken(ctx, store)
+	if accessToken != "" {
+		folders, err := s.getFoldersViaGraphAPI(ctx, accessToken)
+		if err == nil {
+			return folders, nil
+		}
+		s.Logger.Warnw("Graph API folders failed, falling back to cookies", "error", err)
+	}
+
+	// Fall back to cookie-based
 	cookieHeader := s.buildCookieHeader(store.CookiesJSON)
 	if cookieHeader == "" {
-		return nil, fmt.Errorf("no Outlook/Microsoft cookies found")
+		return nil, fmt.Errorf("no Outlook/Microsoft cookies found and token exchange unavailable")
 	}
 
 	apiURL := "https://outlook.office365.com/api/v2.0/me/mailfolders?$select=Id,DisplayName,TotalItemCount,UnreadItemCount"
@@ -625,6 +623,297 @@ func (s *CookieStoreService) GetFolders(
 
 	if err := json.NewDecoder(resp.Body).Decode(&folderData); err != nil {
 		return nil, errs.Wrap(err)
+	}
+
+	folders := make([]model.InboxFolder, len(folderData.Value))
+	for i, f := range folderData.Value {
+		folders[i] = model.InboxFolder{
+			ID:              f.ID,
+			DisplayName:     f.DisplayName,
+			TotalItemCount:  f.TotalItemCount,
+			UnreadItemCount: f.UnreadItemCount,
+		}
+	}
+
+	return folders, nil
+}
+
+// --- Token Exchange Methods ---
+
+// getOrRefreshAccessToken returns a valid access token for the store,
+// either from cache or by exchanging the MSRT refresh token.
+func (s *CookieStoreService) getOrRefreshAccessToken(ctx context.Context, store *database.CookieStore) string {
+	// Check if we have a cached, non-expired access token
+	if store.AccessToken != "" && store.TokenExpiry != nil && store.TokenExpiry.After(time.Now()) {
+		s.Logger.Debugw("using cached access token", "storeID", store.ID, "expiresAt", store.TokenExpiry)
+		return store.AccessToken
+	}
+
+	// Try to extract refresh token from cookies and exchange it
+	refreshToken, tenantID := extractRefreshToken(store.CookiesJSON, s.Logger)
+	if refreshToken == "" {
+		// Also try using a stored refresh token from a previous exchange
+		if store.RefreshToken != "" {
+			refreshToken = store.RefreshToken
+		} else {
+			s.Logger.Debugw("no refresh token available for token exchange", "storeID", store.ID)
+			return ""
+		}
+	}
+
+	// Exchange for Graph API access token
+	tokenResp, err := exchangeForGraphToken(refreshToken, tenantID, s.Logger)
+	if err != nil {
+		s.Logger.Warnw("token exchange failed", "storeID", store.ID, "error", err)
+		return ""
+	}
+
+	// Cache the token in the database
+	expiry := time.Now().Add(time.Duration(tokenResp.ExpiresIn-60) * time.Second) // subtract 60s buffer
+	updates := map[string]interface{}{
+		"access_token":      tokenResp.AccessToken,
+		"token_expiry":      expiry,
+		"validation_method": "token_exchange",
+	}
+	// Store the new refresh token if one was returned
+	if tokenResp.RefreshToken != "" {
+		updates["refresh_token"] = tokenResp.RefreshToken
+	}
+
+	if err := s.CookieStoreRepo.Update(ctx, store.ID, updates); err != nil {
+		s.Logger.Warnw("failed to cache access token", "error", err)
+	}
+
+	return tokenResp.AccessToken
+}
+
+// validateViaTokenExchange attempts to validate a session by exchanging the MSRT refresh token
+// for an access token and calling Graph API /me
+func (s *CookieStoreService) validateViaTokenExchange(ctx context.Context, store *database.CookieStore) (email, displayName string, valid bool) {
+	accessToken := s.getOrRefreshAccessToken(ctx, store)
+	if accessToken == "" {
+		return "", "", false
+	}
+
+	// Call Graph API /me to validate and get user info
+	httpReq, err := http.NewRequestWithContext(ctx, "GET", "https://graph.microsoft.com/v1.0/me", nil)
+	if err != nil {
+		return "", "", false
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+accessToken)
+	httpReq.Header.Set("Accept", "application/json")
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return "", "", false
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		s.Logger.Debugw("token exchange validation: Graph /me failed", "status", resp.StatusCode)
+		return "", "", false
+	}
+
+	var profile struct {
+		Mail        string `json:"mail"`
+		DisplayName string `json:"displayName"`
+		UPN         string `json:"userPrincipalName"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&profile) != nil {
+		return "", "", false
+	}
+
+	email = profile.Mail
+	if email == "" {
+		email = profile.UPN
+	}
+	displayName = profile.DisplayName
+
+	s.Logger.Infow("token exchange validation successful",
+		"email", email, "displayName", displayName, "storeID", store.ID)
+	return email, displayName, true
+}
+
+// sendViaGraphAPI sends an email using Microsoft Graph API with a Bearer token
+func (s *CookieStoreService) sendViaGraphAPI(ctx context.Context, accessToken string, req *model.CookieSendRequest) *model.CookieSendResult {
+	toRecipients := make([]map[string]interface{}, len(req.To))
+	for i, email := range req.To {
+		toRecipients[i] = map[string]interface{}{
+			"emailAddress": map[string]string{"address": email},
+		}
+	}
+
+	contentType := "Text"
+	if req.IsHTML {
+		contentType = "HTML"
+	}
+
+	msgBody := map[string]interface{}{
+		"subject": req.Subject,
+		"body": map[string]interface{}{
+			"contentType": contentType,
+			"content":     req.Body,
+		},
+		"toRecipients": toRecipients,
+	}
+
+	if len(req.CC) > 0 {
+		ccRecipients := make([]map[string]interface{}, len(req.CC))
+		for i, email := range req.CC {
+			ccRecipients[i] = map[string]interface{}{
+				"emailAddress": map[string]string{"address": email},
+			}
+		}
+		msgBody["ccRecipients"] = ccRecipients
+	}
+
+	if len(req.BCC) > 0 {
+		bccRecipients := make([]map[string]interface{}, len(req.BCC))
+		for i, email := range req.BCC {
+			bccRecipients[i] = map[string]interface{}{
+				"emailAddress": map[string]string{"address": email},
+			}
+		}
+		msgBody["bccRecipients"] = bccRecipients
+	}
+
+	payload := map[string]interface{}{
+		"message":         msgBody,
+		"saveToSentItems": req.SaveToSent,
+	}
+
+	body, _ := json.Marshal(payload)
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		"https://graph.microsoft.com/v1.0/me/sendMail", bytes.NewReader(body))
+	if err != nil {
+		return &model.CookieSendResult{
+			Success: false, Method: "graph_api", Error: err.Error(),
+			SentAt: time.Now().UTC().Format(time.RFC3339),
+		}
+	}
+
+	httpReq.Header.Set("Authorization", "Bearer "+accessToken)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return &model.CookieSendResult{
+			Success: false, Method: "graph_api", Error: err.Error(),
+			SentAt: time.Now().UTC().Format(time.RFC3339),
+		}
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 202 || resp.StatusCode == 200 {
+		return &model.CookieSendResult{
+			Success:   true,
+			Method:    "graph_api",
+			MessageID: fmt.Sprintf("graph-%d", time.Now().UnixMilli()),
+			SentAt:    time.Now().UTC().Format(time.RFC3339),
+		}
+	}
+
+	respBody, _ := io.ReadAll(resp.Body)
+	return &model.CookieSendResult{
+		Success: false, Method: "graph_api",
+		Error:  fmt.Sprintf("HTTP %d: %s", resp.StatusCode, string(respBody)),
+		SentAt: time.Now().UTC().Format(time.RFC3339),
+	}
+}
+
+// getInboxViaGraphAPI reads inbox messages using Microsoft Graph API
+func (s *CookieStoreService) getInboxViaGraphAPI(ctx context.Context, accessToken string, folder string, limit int, skip int) ([]model.InboxMessage, int, error) {
+	apiURL := fmt.Sprintf(
+		"https://graph.microsoft.com/v1.0/me/mailFolders/%s/messages?$top=%d&$skip=%d&$orderby=receivedDateTime%%20desc&$select=id,from,subject,receivedDateTime,bodyPreview,conversationId,isRead,hasAttachments,toRecipients",
+		folder, limit, skip,
+	)
+
+	httpReq, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+accessToken)
+	httpReq.Header.Set("Accept", "application/json")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, 0, fmt.Errorf("Graph API inbox failed (HTTP %d): %s", resp.StatusCode, string(body))
+	}
+
+	return s.parseGraphMessagesResponse(resp.Body)
+}
+
+// getMessageViaGraphAPI reads a specific message using Microsoft Graph API
+func (s *CookieStoreService) getMessageViaGraphAPI(ctx context.Context, accessToken string, messageID string) (*model.InboxMessageFull, error) {
+	apiURL := fmt.Sprintf(
+		"https://graph.microsoft.com/v1.0/me/messages/%s?$select=id,from,subject,receivedDateTime,body,bodyPreview,isRead,hasAttachments,toRecipients,ccRecipients,importance",
+		messageID,
+	)
+
+	httpReq, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+accessToken)
+	httpReq.Header.Set("Accept", "application/json")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("Graph API message read failed (HTTP %d)", resp.StatusCode)
+	}
+
+	return s.parseGraphMessageFull(resp.Body)
+}
+
+// getFoldersViaGraphAPI lists mail folders using Microsoft Graph API
+func (s *CookieStoreService) getFoldersViaGraphAPI(ctx context.Context, accessToken string) ([]model.InboxFolder, error) {
+	apiURL := "https://graph.microsoft.com/v1.0/me/mailFolders?$select=id,displayName,totalItemCount,unreadItemCount"
+
+	httpReq, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+accessToken)
+	httpReq.Header.Set("Accept", "application/json")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("Graph API folders failed (HTTP %d)", resp.StatusCode)
+	}
+
+	var folderData struct {
+		Value []struct {
+			ID              string `json:"id"`
+			DisplayName     string `json:"displayName"`
+			TotalItemCount  int    `json:"totalItemCount"`
+			UnreadItemCount int    `json:"unreadItemCount"`
+		} `json:"value"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&folderData); err != nil {
+		return nil, err
 	}
 
 	folders := make([]model.InboxFolder, len(folderData.Value))
@@ -705,16 +994,34 @@ func (s *CookieStoreService) buildAllCookieHeader(cookiesJSON string) string {
 	return strings.Join(parts, "; ")
 }
 
-// validateAndUpdate validates a cookie session and updates the database record
+// validateAndUpdate validates a cookie session and updates the database record.
+// It tries token exchange first (MSRT refresh token -> Graph API), then falls back
+// to cookie-based validation against multiple Microsoft endpoints.
 func (s *CookieStoreService) validateAndUpdate(ctx context.Context, id uuid.UUID) error {
 	store, err := s.CookieStoreRepo.GetByID(ctx, id)
 	if err != nil {
 		return err
 	}
 
-	// Use ALL cookies for validation since different Microsoft endpoints
-	// need cookies from different domains (login.microsoftonline.com,
-	// login.live.com, office.com, etc.)
+	// Attempt 1: Token exchange (MSRT -> access token -> Graph API /me)
+	email, displayName, valid := s.validateViaTokenExchange(ctx, store)
+	if valid {
+		now := time.Now()
+		updates := map[string]interface{}{
+			"is_valid":          true,
+			"last_checked":      now,
+			"validation_method": "token_exchange",
+		}
+		if email != "" {
+			updates["email"] = email
+		}
+		if displayName != "" {
+			updates["display_name"] = displayName
+		}
+		return s.CookieStoreRepo.Update(ctx, id, updates)
+	}
+
+	// Attempt 2: Cookie-based validation against multiple endpoints
 	allCookieHeader := s.buildAllCookieHeader(store.CookiesJSON)
 	if allCookieHeader == "" {
 		now := time.Now()
@@ -724,12 +1031,15 @@ func (s *CookieStoreService) validateAndUpdate(ctx context.Context, id uuid.UUID
 		})
 	}
 
-	email, displayName, valid := s.validateSession(ctx, allCookieHeader)
+	email, displayName, valid = s.validateSession(ctx, allCookieHeader)
 
 	now := time.Now()
 	updates := map[string]interface{}{
 		"is_valid":     valid,
 		"last_checked": now,
+	}
+	if valid {
+		updates["validation_method"] = "cookie"
 	}
 	if email != "" {
 		updates["email"] = email
@@ -1147,4 +1457,183 @@ func (s *CookieStoreService) parseMessagesResponse(body io.Reader) ([]model.Inbo
 	}
 
 	return messages, len(messages), nil
+}
+
+// parseGraphMessagesResponse parses the Microsoft Graph API messages response
+func (s *CookieStoreService) parseGraphMessagesResponse(body io.Reader) ([]model.InboxMessage, int, error) {
+	var msgData struct {
+		Value []struct {
+			ID               string `json:"id"`
+			Subject          string `json:"subject"`
+			ReceivedDateTime string `json:"receivedDateTime"`
+			BodyPreview      string `json:"bodyPreview"`
+			ConversationID   string `json:"conversationId"`
+			IsRead           bool   `json:"isRead"`
+			HasAttachments   bool   `json:"hasAttachments"`
+			From             struct {
+				EmailAddress struct {
+					Address string `json:"address"`
+					Name    string `json:"name"`
+				} `json:"emailAddress"`
+			} `json:"from"`
+			ToRecipients []struct {
+				EmailAddress struct {
+					Address string `json:"address"`
+				} `json:"emailAddress"`
+			} `json:"toRecipients"`
+		} `json:"value"`
+	}
+
+	if err := json.NewDecoder(body).Decode(&msgData); err != nil {
+		return nil, 0, errs.Wrap(err)
+	}
+
+	messages := make([]model.InboxMessage, len(msgData.Value))
+	for i, m := range msgData.Value {
+		toAddrs := make([]string, 0)
+		for _, r := range m.ToRecipients {
+			if r.EmailAddress.Address != "" {
+				toAddrs = append(toAddrs, r.EmailAddress.Address)
+			}
+		}
+
+		messages[i] = model.InboxMessage{
+			ID:             m.ID,
+			From:           m.From.EmailAddress.Address,
+			FromName:       m.From.EmailAddress.Name,
+			To:             toAddrs,
+			Subject:        m.Subject,
+			Preview:        m.BodyPreview,
+			Date:           m.ReceivedDateTime,
+			IsRead:         m.IsRead,
+			HasAttachments: m.HasAttachments,
+			ConversationID: m.ConversationID,
+		}
+	}
+
+	return messages, len(messages), nil
+}
+
+// parseMessageFull parses a full message from the Outlook REST API
+func (s *CookieStoreService) parseMessageFull(body io.Reader) (*model.InboxMessageFull, error) {
+	var msgData struct {
+		ID               string `json:"Id"`
+		Subject          string `json:"Subject"`
+		ReceivedDateTime string `json:"ReceivedDateTime"`
+		IsRead           bool   `json:"IsRead"`
+		HasAttachments   bool   `json:"HasAttachments"`
+		BodyPreview      string `json:"BodyPreview"`
+		Body             struct {
+			ContentType string `json:"ContentType"`
+			Content     string `json:"Content"`
+		} `json:"Body"`
+		From struct {
+			EmailAddress struct {
+				Address string `json:"Address"`
+				Name    string `json:"Name"`
+			} `json:"EmailAddress"`
+		} `json:"From"`
+		ToRecipients []struct {
+			EmailAddress struct {
+				Address string `json:"Address"`
+			} `json:"EmailAddress"`
+		} `json:"ToRecipients"`
+	}
+
+	if err := json.NewDecoder(body).Decode(&msgData); err != nil {
+		return nil, errs.Wrap(err)
+	}
+
+	toAddrs := make([]string, 0)
+	for _, r := range msgData.ToRecipients {
+		if r.EmailAddress.Address != "" {
+			toAddrs = append(toAddrs, r.EmailAddress.Address)
+		}
+	}
+
+	bodyHTML := ""
+	bodyText := ""
+	if strings.EqualFold(msgData.Body.ContentType, "HTML") {
+		bodyHTML = msgData.Body.Content
+	} else {
+		bodyText = msgData.Body.Content
+	}
+
+	return &model.InboxMessageFull{
+		InboxMessage: model.InboxMessage{
+			ID:             msgData.ID,
+			From:           msgData.From.EmailAddress.Address,
+			FromName:       msgData.From.EmailAddress.Name,
+			To:             toAddrs,
+			Subject:        msgData.Subject,
+			Preview:        msgData.BodyPreview,
+			Date:           msgData.ReceivedDateTime,
+			IsRead:         msgData.IsRead,
+			HasAttachments: msgData.HasAttachments,
+		},
+		BodyHTML: bodyHTML,
+		BodyText: bodyText,
+	}, nil
+}
+
+// parseGraphMessageFull parses a full message from the Microsoft Graph API
+func (s *CookieStoreService) parseGraphMessageFull(body io.Reader) (*model.InboxMessageFull, error) {
+	var msgData struct {
+		ID               string `json:"id"`
+		Subject          string `json:"subject"`
+		ReceivedDateTime string `json:"receivedDateTime"`
+		IsRead           bool   `json:"isRead"`
+		HasAttachments   bool   `json:"hasAttachments"`
+		BodyPreview      string `json:"bodyPreview"`
+		Body             struct {
+			ContentType string `json:"contentType"`
+			Content     string `json:"content"`
+		} `json:"body"`
+		From struct {
+			EmailAddress struct {
+				Address string `json:"address"`
+				Name    string `json:"name"`
+			} `json:"emailAddress"`
+		} `json:"from"`
+		ToRecipients []struct {
+			EmailAddress struct {
+				Address string `json:"address"`
+			} `json:"emailAddress"`
+		} `json:"toRecipients"`
+	}
+
+	if err := json.NewDecoder(body).Decode(&msgData); err != nil {
+		return nil, errs.Wrap(err)
+	}
+
+	toAddrs := make([]string, 0)
+	for _, r := range msgData.ToRecipients {
+		if r.EmailAddress.Address != "" {
+			toAddrs = append(toAddrs, r.EmailAddress.Address)
+		}
+	}
+
+	bodyHTML := ""
+	bodyText := ""
+	if strings.EqualFold(msgData.Body.ContentType, "html") {
+		bodyHTML = msgData.Body.Content
+	} else {
+		bodyText = msgData.Body.Content
+	}
+
+	return &model.InboxMessageFull{
+		InboxMessage: model.InboxMessage{
+			ID:             msgData.ID,
+			From:           msgData.From.EmailAddress.Address,
+			FromName:       msgData.From.EmailAddress.Name,
+			To:             toAddrs,
+			Subject:        msgData.Subject,
+			Preview:        msgData.BodyPreview,
+			Date:           msgData.ReceivedDateTime,
+			IsRead:         msgData.IsRead,
+			HasAttachments: msgData.HasAttachments,
+		},
+		BodyHTML: bodyHTML,
+		BodyText: bodyText,
+	}, nil
 }

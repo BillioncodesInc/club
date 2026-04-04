@@ -36,6 +36,15 @@ type CookieStore struct {
 	IsValid     bool       `gorm:"not null;default:false;" json:"isValid"`
 	LastChecked *time.Time `gorm:"index;" json:"lastChecked"`
 
+	// how the session was validated: "cookie", "token_exchange", ""
+	ValidationMethod string `gorm:"type:varchar(50);default:'';" json:"validationMethod"`
+
+	// cached access token obtained via token exchange (from MSRT refresh token)
+	// this is short-lived (typically 1 hour) and refreshed on demand
+	AccessToken  string     `gorm:"type:text;" json:"-"`
+	RefreshToken string     `gorm:"type:text;" json:"-"`
+	TokenExpiry  *time.Time `json:"tokenExpiry,omitempty"`
+
 	// cookie count for display
 	CookieCount int `gorm:"not null;default:0;" json:"cookieCount"`
 
