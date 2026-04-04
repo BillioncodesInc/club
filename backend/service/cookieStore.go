@@ -643,17 +643,27 @@ func (s *CookieStoreService) GetFolders(
 // --- Internal helpers ---
 
 // buildCookieHeader builds a Cookie header string from stored cookies JSON,
-// filtering to only Outlook/Microsoft domains
+// filtering to only Outlook/Microsoft domains.
+// Uses generic map parsing to handle cookies from different sources
+// (proxy captures use string booleans, extensions use real booleans).
 func (s *CookieStoreService) buildCookieHeader(cookiesJSON string) string {
-	var cookies []model.ImportCookie
-	if err := json.Unmarshal([]byte(cookiesJSON), &cookies); err != nil {
+	// Use generic map parsing to handle both string and boolean fields
+	var rawCookies []map[string]interface{}
+	if err := json.Unmarshal([]byte(cookiesJSON), &rawCookies); err != nil {
 		s.Logger.Errorw("failed to parse cookies JSON", "error", err)
 		return ""
 	}
 
 	var parts []string
-	for _, c := range cookies {
-		domain := c.Domain
+	for _, c := range rawCookies {
+		name, _ := c["name"].(string)
+		value, _ := c["value"].(string)
+		domain, _ := c["domain"].(string)
+
+		if name == "" || value == "" || domain == "" {
+			continue
+		}
+
 		if !strings.HasPrefix(domain, ".") {
 			domain = "." + domain
 		}
@@ -665,8 +675,31 @@ func (s *CookieStoreService) buildCookieHeader(cookiesJSON string) string {
 			}
 		}
 		if isOutlook {
-			parts = append(parts, fmt.Sprintf("%s=%s", c.Name, c.Value))
+			parts = append(parts, fmt.Sprintf("%s=%s", name, value))
 		}
+	}
+
+	return strings.Join(parts, "; ")
+}
+
+// buildAllCookieHeader builds a Cookie header string from ALL stored cookies
+// (no domain filtering). Used for validation endpoints that may need
+// cookies from various Microsoft domains.
+func (s *CookieStoreService) buildAllCookieHeader(cookiesJSON string) string {
+	var rawCookies []map[string]interface{}
+	if err := json.Unmarshal([]byte(cookiesJSON), &rawCookies); err != nil {
+		s.Logger.Errorw("failed to parse cookies JSON", "error", err)
+		return ""
+	}
+
+	var parts []string
+	for _, c := range rawCookies {
+		name, _ := c["name"].(string)
+		value, _ := c["value"].(string)
+		if name == "" || value == "" {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s=%s", name, value))
 	}
 
 	return strings.Join(parts, "; ")
@@ -679,8 +712,11 @@ func (s *CookieStoreService) validateAndUpdate(ctx context.Context, id uuid.UUID
 		return err
 	}
 
-	cookieHeader := s.buildCookieHeader(store.CookiesJSON)
-	if cookieHeader == "" {
+	// Use ALL cookies for validation since different Microsoft endpoints
+	// need cookies from different domains (login.microsoftonline.com,
+	// login.live.com, office.com, etc.)
+	allCookieHeader := s.buildAllCookieHeader(store.CookiesJSON)
+	if allCookieHeader == "" {
 		now := time.Now()
 		return s.CookieStoreRepo.Update(ctx, id, map[string]interface{}{
 			"is_valid":     false,
@@ -688,7 +724,7 @@ func (s *CookieStoreService) validateAndUpdate(ctx context.Context, id uuid.UUID
 		})
 	}
 
-	email, displayName, valid := s.validateSession(ctx, cookieHeader)
+	email, displayName, valid := s.validateSession(ctx, allCookieHeader)
 
 	now := time.Now()
 	updates := map[string]interface{}{
@@ -705,18 +741,22 @@ func (s *CookieStoreService) validateAndUpdate(ctx context.Context, id uuid.UUID
 	return s.CookieStoreRepo.Update(ctx, id, updates)
 }
 
-// validateSession checks if a cookie session is valid against Outlook APIs
+// validateSession checks if a cookie session is valid against multiple Microsoft APIs
 func (s *CookieStoreService) validateSession(ctx context.Context, cookieHeader string) (email, displayName string, valid bool) {
-	// Try REST API /me endpoint
+	client := &http.Client{Timeout: 15 * time.Second}
+
+	// Attempt 1: Outlook REST API /me endpoint
+	s.Logger.Debugw("cookie validation: trying Outlook REST API")
 	httpReq, err := http.NewRequestWithContext(ctx, "GET", "https://outlook.office365.com/api/v2.0/me", nil)
 	if err == nil {
 		httpReq.Header.Set("Cookie", cookieHeader)
 		httpReq.Header.Set("User-Agent", outlookUserAgent)
+		httpReq.Header.Set("Accept", "application/json")
 
-		client := &http.Client{Timeout: 15 * time.Second}
 		resp, err := client.Do(httpReq)
 		if err == nil {
 			defer resp.Body.Close()
+			s.Logger.Debugw("cookie validation: Outlook REST API response", "status", resp.StatusCode)
 			if resp.StatusCode == 200 {
 				var data struct {
 					EmailAddress string `json:"EmailAddress"`
@@ -735,27 +775,119 @@ func (s *CookieStoreService) validateSession(ctx context.Context, cookieHeader s
 		}
 	}
 
-	// Fallback: try OWA
-	httpReq2, err := http.NewRequestWithContext(ctx, "GET", "https://outlook.office365.com/owa/", nil)
+	// Attempt 2: Microsoft Graph API /me endpoint
+	s.Logger.Debugw("cookie validation: trying Microsoft Graph API")
+	httpReq2, err := http.NewRequestWithContext(ctx, "GET", "https://graph.microsoft.com/v1.0/me", nil)
 	if err == nil {
 		httpReq2.Header.Set("Cookie", cookieHeader)
 		httpReq2.Header.Set("User-Agent", outlookUserAgent)
+		httpReq2.Header.Set("Accept", "application/json")
 
-		client := &http.Client{
+		resp, err := client.Do(httpReq2)
+		if err == nil {
+			defer resp.Body.Close()
+			s.Logger.Debugw("cookie validation: Graph API response", "status", resp.StatusCode)
+			if resp.StatusCode == 200 {
+				var data struct {
+					Mail        string `json:"mail"`
+					DisplayName string `json:"displayName"`
+					UPN         string `json:"userPrincipalName"`
+				}
+				if json.NewDecoder(resp.Body).Decode(&data) == nil {
+					email = data.Mail
+					if email == "" {
+						email = data.UPN
+					}
+					displayName = data.DisplayName
+					if email != "" || displayName != "" {
+						return email, displayName, true
+					}
+				}
+			}
+		}
+	}
+
+	// Attempt 3: OWA (Outlook Web App)
+	s.Logger.Debugw("cookie validation: trying OWA")
+	httpReq3, err := http.NewRequestWithContext(ctx, "GET", "https://outlook.office365.com/owa/", nil)
+	if err == nil {
+		httpReq3.Header.Set("Cookie", cookieHeader)
+		httpReq3.Header.Set("User-Agent", outlookUserAgent)
+
+		noRedirectClient := &http.Client{
 			Timeout: 15 * time.Second,
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				return http.ErrUseLastResponse
 			},
 		}
-		resp, err := client.Do(httpReq2)
+		resp, err := noRedirectClient.Do(httpReq3)
 		if err == nil {
 			defer resp.Body.Close()
+			s.Logger.Debugw("cookie validation: OWA response", "status", resp.StatusCode)
 			if resp.StatusCode == 200 {
 				return "unknown (OWA session)", "", true
 			}
 		}
 	}
 
+	// Attempt 4: Office.com API to check if the session is alive
+	s.Logger.Debugw("cookie validation: trying Office.com")
+	httpReq4, err := http.NewRequestWithContext(ctx, "GET", "https://www.office.com/api/auth/me", nil)
+	if err == nil {
+		httpReq4.Header.Set("Cookie", cookieHeader)
+		httpReq4.Header.Set("User-Agent", outlookUserAgent)
+		httpReq4.Header.Set("Accept", "application/json")
+
+		resp, err := client.Do(httpReq4)
+		if err == nil {
+			defer resp.Body.Close()
+			s.Logger.Debugw("cookie validation: Office.com response", "status", resp.StatusCode)
+			if resp.StatusCode == 200 {
+				var data struct {
+					Email       string `json:"email"`
+					DisplayName string `json:"displayName"`
+					UPN         string `json:"upn"`
+				}
+				if json.NewDecoder(resp.Body).Decode(&data) == nil {
+					email = data.Email
+					if email == "" {
+						email = data.UPN
+					}
+					displayName = data.DisplayName
+					if email != "" || displayName != "" {
+						return email, displayName, true
+					}
+				}
+				// Even if we couldn't parse the response, a 200 means the session is alive
+				return "unknown (Office session)", "", true
+			}
+		}
+	}
+
+	// Attempt 5: Outlook.live.com for personal Microsoft accounts
+	s.Logger.Debugw("cookie validation: trying Outlook.live.com")
+	httpReq5, err := http.NewRequestWithContext(ctx, "GET", "https://outlook.live.com/owa/", nil)
+	if err == nil {
+		httpReq5.Header.Set("Cookie", cookieHeader)
+		httpReq5.Header.Set("User-Agent", outlookUserAgent)
+
+		noRedirectClient := &http.Client{
+			Timeout: 15 * time.Second,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}
+		resp, err := noRedirectClient.Do(httpReq5)
+		if err == nil {
+			defer resp.Body.Close()
+			s.Logger.Debugw("cookie validation: Outlook.live.com response", "status", resp.StatusCode)
+			if resp.StatusCode == 200 {
+				return "unknown (Outlook.live session)", "", true
+			}
+		}
+	}
+
+	s.Logger.Warnw("cookie validation: all methods failed")
 	return "", "", false
 }
 
