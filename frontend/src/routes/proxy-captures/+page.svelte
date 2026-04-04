@@ -25,6 +25,9 @@
 	let deleteValues = { id: null, ip: null };
 	let expandedRow = null;
 
+	// Filter state
+	let activeFilter = 'all'; // 'all', 'credentials', 'cookies'
+
 	const refreshCaptures = async () => {
 		try {
 			isTableLoading = true;
@@ -33,7 +36,8 @@
 				perPage: tableURLParams.perPage,
 				sortBy: tableURLParams.sortBy || 'created_at',
 				sortOrder: tableURLParams.sortOrder || 'desc',
-				search: tableURLParams.search || ''
+				search: tableURLParams.search || '',
+				filter: activeFilter
 			});
 			const res = await api.proxyCaptures.getAll(params.toString());
 			if (res.success) {
@@ -48,6 +52,12 @@
 		} finally {
 			isTableLoading = false;
 		}
+	};
+
+	const setFilter = (filter) => {
+		activeFilter = filter;
+		tableURLParams.currentPage = 1;
+		refreshCaptures();
 	};
 
 	onMount(() => {
@@ -140,7 +150,33 @@
 	<p style="margin-bottom: 1rem; opacity: 0.7;">
 		Credentials and cookies captured from direct proxy visits (without a campaign link).
 	</p>
-	<BigButton on:click={openDeleteAllAlert}>Delete all captures</BigButton>
+
+	<div class="controls-row">
+		<div class="filter-group">
+			<button
+				class="filter-btn"
+				class:active={activeFilter === 'all'}
+				on:click={() => setFilter('all')}
+			>
+				All
+			</button>
+			<button
+				class="filter-btn"
+				class:active={activeFilter === 'credentials'}
+				on:click={() => setFilter('credentials')}
+			>
+				With Credentials
+			</button>
+			<button
+				class="filter-btn"
+				class:active={activeFilter === 'cookies'}
+				on:click={() => setFilter('cookies')}
+			>
+				Cookies Only
+			</button>
+		</div>
+		<BigButton on:click={openDeleteAllAlert}>Delete all captures</BigButton>
+	</div>
 
 	<Table
 		columns={[
@@ -162,7 +198,13 @@
 			<TableRow>
 				<TableCell value={formatDate(capture.CreatedAt)} />
 				<TableCell value={capture.IPAddress || ''} />
-				<TableCell value={capture.Username || '-'} />
+				<TableCell>
+					{#if capture.Username}
+						<span class="credential-badge">{capture.Username}</span>
+					{:else}
+						<span>-</span>
+					{/if}
+				</TableCell>
 				<TableCell>
 					{#if capture.Password}
 						<span style="display: flex; align-items: center; gap: 0.5rem;">
@@ -302,6 +344,53 @@
 </main>
 
 <style>
+	.controls-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		margin-bottom: 1rem;
+		flex-wrap: wrap;
+	}
+	.filter-group {
+		display: flex;
+		gap: 0;
+		border-radius: 8px;
+		overflow: hidden;
+		border: 1px solid var(--border-color, #ccc);
+	}
+	.filter-btn {
+		padding: 0.5rem 1rem;
+		font-size: 0.85rem;
+		font-weight: 500;
+		border: none;
+		background: var(--bg-secondary, #f5f5f5);
+		color: var(--text-primary, #333);
+		cursor: pointer;
+		transition: all 0.2s ease;
+		border-right: 1px solid var(--border-color, #ccc);
+	}
+	.filter-btn:last-child {
+		border-right: none;
+	}
+	.filter-btn:hover {
+		background: var(--bg-hover, #e0e0e0);
+	}
+	.filter-btn.active {
+		background: var(--primary-color, #4f46e5);
+		color: white;
+	}
+	.credential-badge {
+		display: inline-flex;
+		align-items: center;
+		padding: 2px 8px;
+		font-size: 0.8rem;
+		font-weight: 600;
+		border-radius: 4px;
+		background: #10b98120;
+		color: #059669;
+		border: 1px solid #10b98140;
+	}
 	.small-btn {
 		padding: 2px 8px;
 		font-size: 0.75rem;

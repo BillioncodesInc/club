@@ -32,9 +32,12 @@ func (c *ProxyCapture) GetAll(g *gin.Context) {
 	}
 	queryArgs.DefaultSortByUpdatedAt()
 
+	// Parse filter parameter: "all", "credentials", "cookies"
+	filter := g.DefaultQuery("filter", "all")
+
 	captures, hasNextPage, err := c.ProxyCaptureRepository.GetAll(
 		g.Request.Context(),
-		&repository.ProxyCaptureOption{QueryArgs: queryArgs},
+		&repository.ProxyCaptureOption{QueryArgs: queryArgs, Filter: filter},
 	)
 	if err != nil {
 		c.Response.ServerError(g)

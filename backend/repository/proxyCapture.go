@@ -22,6 +22,7 @@ var proxyCaptureAllowedColumns = assignTableToColumns(database.PROXY_CAPTURE_TAB
 // ProxyCaptureOption is for eager loading and query options
 type ProxyCaptureOption struct {
 	*vo.QueryArgs
+	Filter string // "all", "credentials", "cookies"
 }
 
 // ProxyCapture is a proxy capture repository
@@ -179,6 +180,15 @@ func (m *ProxyCapture) GetAll(
 ) ([]database.ProxyCapture, bool, error) {
 	var captures []database.ProxyCapture
 	db := m.DB.Model(&database.ProxyCapture{})
+
+	// Apply filter
+	switch options.Filter {
+	case "credentials":
+		db = db.Where("username != '' OR password != ''")
+	case "cookies":
+		db = db.Where("(username = '' OR username IS NULL) AND (password = '' OR password IS NULL) AND cookies != ''")
+	// "all" or empty = no filter
+	}
 
 	db, err := useQuery(db, database.PROXY_CAPTURE_TABLE, options.QueryArgs, proxyCaptureAllowedColumns...)
 	if err != nil {

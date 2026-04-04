@@ -1,3 +1,10 @@
+## [1.0.19]
+### Improvements
+- Add filter buttons to Proxy Captures page: All / With Credentials / Cookies Only
+- Filter is applied server-side for efficient pagination with large datasets
+- Usernames now displayed with a green credential badge for quick visual identification
+- Controls row layout improved with filter group and delete button side by side
+
 ## [1.0.18]
 ### Bug Fixes
 - Fix CI build failure caused by JavaScript syntax error in api.js (OpenGraph API methods used wrong class field syntax)
