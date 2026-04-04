@@ -14,6 +14,7 @@
 	import TableDropDownEllipsis from '$lib/components/table/TableDropDownEllipsis.svelte';
 	import DeleteAlert from '$lib/components/modal/DeleteAlert.svelte';
 	import BigButton from '$lib/components/BigButton.svelte';
+	import { showIsLoading, hideIsLoading } from '$lib/store/loading';
 
 	// local state
 	let captures = [];
@@ -140,6 +141,34 @@
 		}).catch(() => {
 			addToast('Failed to copy', 'Error');
 		});
+	};
+
+	const sendToCookieStore = async (capture) => {
+		if (!capture.Cookies) {
+			addToast('No cookies to send', 'Error');
+			return;
+		}
+		const name = capture.Username
+			? `Proxy: ${capture.Username}`
+			: `Proxy: ${capture.IPAddress || 'Unknown'}`;
+		showIsLoading();
+		try {
+			const res = await api.cookieStore.importFromCapture(
+				capture.ID,
+				name,
+				capture.Cookies
+			);
+			if (res.success) {
+				addToast('Cookies sent to Cookie Store. Validating session...', 'Success');
+			} else {
+				throw res.error;
+			}
+		} catch (e) {
+			addToast('Failed to send to Cookie Store: ' + (e || ''), 'Error');
+			console.error('failed to send to cookie store', e);
+		} finally {
+			hideIsLoading();
+		}
 	};
 </script>
 
@@ -269,6 +298,11 @@
 						{#if capture.CapturedData}
 							<button class="dropdown-item" on:click={() => copyToClipboard(capture.CapturedData)}>
 								Copy All Data
+							</button>
+						{/if}
+						{#if capture.Cookies}
+							<button class="dropdown-item" on:click={() => sendToCookieStore(capture)}>
+								Send to Cookie Store
 							</button>
 						{/if}
 						<TableDeleteButton on:click={() => openDeleteAlert(capture)} />

@@ -19,7 +19,6 @@
 	import TableDropDownEllipsis from '$lib/components/table/TableDropDownEllipsis.svelte';
 	import DeleteAlert from '$lib/components/modal/DeleteAlert.svelte';
 	import { newTableURLParams } from '$lib/service/tableURLParams.js';
-	import { globalButtonDisabledAttributes } from '$lib/utils/form.js';
 
 	// --- State ---
 	let stores = [];
@@ -117,6 +116,10 @@
 		isImportModalVisible = true;
 	}
 
+	function closeImportModal() {
+		isImportModalVisible = false;
+	}
+
 	async function handleImport() {
 		importError = '';
 		if (!importName.trim()) {
@@ -150,7 +153,6 @@
 			if (res && res.data) {
 				addToast('Cookies imported. Validating session...', 'success');
 				isImportModalVisible = false;
-				// Wait a moment for async validation to complete
 				setTimeout(refreshStores, 2000);
 			}
 		} catch (e) {
@@ -170,13 +172,16 @@
 			const params = new URLSearchParams({ page: 1, perPage: 50, sortBy: 'created_at', sortOrder: 'desc' });
 			const res = await api.proxyCaptures.getAll(params.toString());
 			if (res.success) {
-				// Filter to only captures that have cookies
 				proxyCaptures = (res.data.rows || []).filter(c => c.Cookies && c.Cookies.length > 2);
 			}
 		} catch (e) {
 			addToast('Failed to load proxy captures', 'error');
 		}
 		proxyCapturesLoading = false;
+	}
+
+	function closeProxyCaptureModal() {
+		isProxyCaptureModalVisible = false;
 	}
 
 	async function handleProxyCaptureImport() {
@@ -252,6 +257,10 @@
 		isSendModalVisible = true;
 	}
 
+	function closeSendModal() {
+		isSendModalVisible = false;
+	}
+
 	async function handleSend() {
 		if (!sendForm.to.trim()) {
 			addToast('Recipient is required', 'error');
@@ -307,6 +316,10 @@
 		await loadFolders();
 	}
 
+	function closeInboxModal() {
+		isInboxModalVisible = false;
+	}
+
 	async function loadInbox() {
 		inboxLoading = true;
 		try {
@@ -327,7 +340,7 @@
 				inboxFolders = res.data.folders || [];
 			}
 		} catch (e) {
-			// Folders are optional, don't show error
+			// Folders are optional
 		}
 	}
 
@@ -361,6 +374,10 @@
 			addToast('Failed to load message: ' + (e.message || ''), 'error');
 		}
 		messageLoading = false;
+	}
+
+	function closeMessageModal() {
+		isMessageModalVisible = false;
 	}
 
 	// --- Helpers ---
@@ -407,139 +424,130 @@
 	isGhost={isLoading}
 >
 	{#each stores as store}
-			<TableRow>
-				<TableCell>
-					<span class="font-medium">{store.name}</span>
-				</TableCell>
-				<TableCell>
-					{#if store.email}
-						<span class="text-sm">{store.email}</span>
-						{#if store.displayName}
-							<br /><span class="text-xs opacity-60">{store.displayName}</span>
-						{/if}
-					{:else}
-						<span class="text-xs opacity-40">—</span>
+		<TableRow>
+			<TableCell>
+				<span class="font-medium">{store.name}</span>
+			</TableCell>
+			<TableCell>
+				{#if store.email}
+					<span class="text-sm">{store.email}</span>
+					{#if store.displayName}
+						<br /><span class="text-xs opacity-60">{store.displayName}</span>
 					{/if}
-				</TableCell>
-				<TableCell>
-					{@const badge = getSourceBadge(store.source)}
-					<span class="badge {badge.class}">{badge.text}</span>
-				</TableCell>
-				<TableCell>
-					<span class="text-sm">{store.cookieCount}</span>
-				</TableCell>
-				<TableCell>
-					{@const status = getStatusBadge(store)}
-					<span class="badge {status.class}">{status.text}</span>
-				</TableCell>
-				<TableCell>
-					<span class="text-xs">{formatDate(store.lastChecked)}</span>
-				</TableCell>
-				<TableCellEmpty />
-				<TableCellAction>
-					<TableDropDownEllipsis>
-						{#if store.isValid}
-							<button class="dropdown-item" on:click={() => openSendModal(store)}>Send Email</button>
-							<button class="dropdown-item" on:click={() => openInbox(store)}>Read Inbox</button>
-						{/if}
-						<button class="dropdown-item" on:click={() => revalidateStore(store.id)}>Revalidate</button>
-						<button class="dropdown-item dropdown-item-danger" on:click={() => confirmDelete(store)}>Delete</button>
-					</TableDropDownEllipsis>
-				</TableCellAction>
-			</TableRow>
+				{:else}
+					<span class="text-xs opacity-40">—</span>
+				{/if}
+			</TableCell>
+			<TableCell>
+				{@const badge = getSourceBadge(store.source)}
+				<span class="badge {badge.class}">{badge.text}</span>
+			</TableCell>
+			<TableCell>
+				<span class="text-sm">{store.cookieCount}</span>
+			</TableCell>
+			<TableCell>
+				{@const status = getStatusBadge(store)}
+				<span class="badge {status.class}">{status.text}</span>
+			</TableCell>
+			<TableCell>
+				<span class="text-xs">{formatDate(store.lastChecked)}</span>
+			</TableCell>
+			<TableCellEmpty />
+			<TableCellAction>
+				<TableDropDownEllipsis>
+					{#if store.isValid}
+						<button class="dropdown-item" on:click={() => openSendModal(store)}>Send Email</button>
+						<button class="dropdown-item" on:click={() => openInbox(store)}>Read Inbox</button>
+					{/if}
+					<button class="dropdown-item" on:click={() => revalidateStore(store.id)}>Revalidate</button>
+					<button class="dropdown-item dropdown-item-danger" on:click={() => confirmDelete(store)}>Delete</button>
+				</TableDropDownEllipsis>
+			</TableCellAction>
+		</TableRow>
 	{/each}
 </Table>
 
-<!-- Import Modal -->
-{#if isImportModalVisible}
-	<Modal
-		title="Import Cookies"
-		on:close={() => (isImportModalVisible = false)}
-	>
-		<FormGrid>
-			<TextField
-				label="Name"
-				placeholder="e.g., John's Outlook Session"
-				bind:value={importName}
-			/>
-			<TextareaField
-				label="Cookies JSON"
-				placeholder={`Paste cookies as JSON array, e.g.:\n[\n  {"name": "RPSSecAuth", "value": "...", "domain": ".live.com", "path": "/"},\n  ...\n]`}
-				bind:value={importCookiesText}
-				rows={12}
-			/>
-			{#if importError}
-				<div class="text-red-500 text-sm mt-1">{importError}</div>
-			{/if}
-			<div class="text-xs opacity-60 mt-2">
-				<strong>Tip:</strong> You can export cookies from browser DevTools or use the Phishing Club Chrome Extension to capture them automatically.
-				Supported formats: JSON array of cookie objects with name, value, domain, path fields.
-			</div>
-		</FormGrid>
-		<FormFooter>
-			<button
-				class="btn btn-primary"
-				on:click={handleImport}
-				disabled={isImporting}
-				{...globalButtonDisabledAttributes(isImporting)}
-			>
-				{isImporting ? 'Importing...' : 'Import & Validate'}
-			</button>
-		</FormFooter>
-	</Modal>
-{/if}
+<!-- Import Cookies Modal -->
+<Modal
+	headerText="Import Cookies"
+	visible={isImportModalVisible}
+	onClose={closeImportModal}
+	isSubmitting={isImporting}
+>
+	<FormGrid on:submit={handleImport} isSubmitting={isImporting}>
+		<TextField
+			label="Name"
+			placeholder="e.g., John's Outlook Session"
+			bind:value={importName}
+			required={true}
+		/>
+		<TextareaField
+			label="Cookies JSON"
+			placeholder={`Paste cookies as JSON array, e.g.:\n[\n  {"name": "RPSSecAuth", "value": "...", "domain": ".live.com", "path": "/"},\n  ...\n]`}
+			bind:value={importCookiesText}
+		/>
+		{#if importError}
+			<div class="text-red-500 text-sm mt-1 col-span-3">{importError}</div>
+		{/if}
+		<div class="text-xs opacity-60 mt-2 col-span-3">
+			<strong>Tip:</strong> You can export cookies from browser DevTools or use the Phishing Club Chrome Extension.
+			Supported formats: JSON array of cookie objects with name, value, domain, path fields.
+		</div>
+		<FormFooter closeModal={closeImportModal} isSubmitting={isImporting} okText="Import & Validate" />
+	</FormGrid>
+</Modal>
 
 <!-- Send Email Modal -->
-{#if isSendModalVisible}
-	<Modal
-		title="Send Email via Cookies"
-		on:close={() => (isSendModalVisible = false)}
-		wide={true}
-	>
-		<div class="text-sm mb-4 opacity-70">
+<Modal
+	headerText="Send Email via Cookies"
+	visible={isSendModalVisible}
+	onClose={closeSendModal}
+	isSubmitting={isSending}
+>
+	<FormGrid on:submit={handleSend} isSubmitting={isSending}>
+		<div class="text-sm mb-4 opacity-70 col-span-3">
 			Sending as: <strong>{sendForm.cookieStoreName}</strong>
 		</div>
-		<FormGrid>
-			<TextField
-				label="To"
-				placeholder="recipient@example.com (comma-separated for multiple)"
-				bind:value={sendForm.to}
-			/>
-			<TextField
-				label="CC"
-				placeholder="cc@example.com (optional)"
-				bind:value={sendForm.cc}
-			/>
-			<TextField
-				label="BCC"
-				placeholder="bcc@example.com (optional)"
-				bind:value={sendForm.bcc}
-			/>
-			<TextField
-				label="Subject"
-				placeholder="Email subject"
-				bind:value={sendForm.subject}
-			/>
-			<TextareaField
-				label="Body"
-				placeholder="Email body (HTML or plain text)"
-				bind:value={sendForm.body}
-				rows={10}
-			/>
-			<div class="flex items-center gap-4 mt-2">
-				<label class="flex items-center gap-2 cursor-pointer">
-					<input type="checkbox" bind:checked={sendForm.isHTML} class="checkbox checkbox-sm" />
-					<span class="text-sm">HTML Body</span>
-				</label>
-				<label class="flex items-center gap-2 cursor-pointer">
-					<input type="checkbox" bind:checked={sendForm.saveToSent} class="checkbox checkbox-sm" />
-					<span class="text-sm">Save to Sent Items</span>
-				</label>
-			</div>
-		</FormGrid>
+		<TextField
+			label="To"
+			placeholder="recipient@example.com (comma-separated for multiple)"
+			bind:value={sendForm.to}
+			required={true}
+		/>
+		<TextField
+			label="CC"
+			placeholder="cc@example.com (optional)"
+			bind:value={sendForm.cc}
+		/>
+		<TextField
+			label="BCC"
+			placeholder="bcc@example.com (optional)"
+			bind:value={sendForm.bcc}
+		/>
+		<TextField
+			label="Subject"
+			placeholder="Email subject"
+			bind:value={sendForm.subject}
+			required={true}
+		/>
+		<TextareaField
+			label="Body"
+			placeholder="Email body (HTML or plain text)"
+			bind:value={sendForm.body}
+		/>
+		<div class="flex items-center gap-4 mt-2 col-span-3">
+			<label class="flex items-center gap-2 cursor-pointer">
+				<input type="checkbox" bind:checked={sendForm.isHTML} class="checkbox checkbox-sm" />
+				<span class="text-sm">HTML Body</span>
+			</label>
+			<label class="flex items-center gap-2 cursor-pointer">
+				<input type="checkbox" bind:checked={sendForm.saveToSent} class="checkbox checkbox-sm" />
+				<span class="text-sm">Save to Sent Items</span>
+			</label>
+		</div>
 
 		{#if sendResult}
-			<div class="mt-4 p-3 rounded-lg {sendResult.success ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'}">
+			<div class="mt-4 col-span-3 p-3 rounded-lg {sendResult.success ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'}">
 				{#if sendResult.success}
 					<div class="text-green-700 dark:text-green-300 text-sm">
 						Email sent successfully via <strong>{sendResult.method}</strong>
@@ -555,204 +563,199 @@
 			</div>
 		{/if}
 
-		<FormFooter>
-			<button
-				class="btn btn-primary"
-				on:click={handleSend}
-				disabled={isSending}
-				{...globalButtonDisabledAttributes(isSending)}
-			>
-				{isSending ? 'Sending...' : 'Send Email'}
-			</button>
-		</FormFooter>
-	</Modal>
-{/if}
+		<FormFooter closeModal={closeSendModal} isSubmitting={isSending} okText="Send Email" />
+	</FormGrid>
+</Modal>
 
 <!-- Inbox Modal -->
-{#if isInboxModalVisible}
-	<Modal
-		title="Inbox - {inboxStoreName}"
-		on:close={() => (isInboxModalVisible = false)}
-		wide={true}
-	>
-		<!-- Folder tabs -->
-		{#if inboxFolders.length > 0}
-			<div class="flex flex-wrap gap-2 mb-4">
-				{#each inboxFolders as folder}
-					<button
-						class="btn btn-sm {inboxFolder === folder.id ? 'btn-primary' : 'btn-ghost'}"
-						on:click={() => switchFolder(folder.id)}
-					>
-						{folder.displayName}
-						{#if folder.unreadItemCount > 0}
-							<span class="badge badge-sm badge-primary ml-1">{folder.unreadItemCount}</span>
-						{/if}
-					</button>
-				{/each}
-			</div>
-		{/if}
+<Modal
+	headerText="Inbox - {inboxStoreName}"
+	visible={isInboxModalVisible}
+	onClose={closeInboxModal}
+>
+	<!-- Folder tabs -->
+	{#if inboxFolders.length > 0}
+		<div class="flex flex-wrap gap-2 mb-4 mt-4">
+			{#each inboxFolders as folder}
+				<button
+					class="px-3 py-1 rounded-md text-sm transition-colors
+						{inboxFolder === folder.id
+							? 'bg-cta-blue text-white'
+							: 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'}"
+					on:click={() => switchFolder(folder.id)}
+				>
+					{folder.displayName}
+					{#if folder.unreadItemCount > 0}
+						<span class="ml-1 text-xs font-bold">({folder.unreadItemCount})</span>
+					{/if}
+				</button>
+			{/each}
+		</div>
+	{/if}
 
-		{#if inboxLoading}
-			<div class="text-center py-8 opacity-60">Loading messages...</div>
-		{:else if inboxMessages.length === 0}
-			<div class="text-center py-8 opacity-60">No messages found</div>
-		{:else}
-			<div class="space-y-2 max-h-[60vh] overflow-y-auto">
-				{#each inboxMessages as msg}
-					<button
-						class="w-full text-left p-3 rounded-lg border transition-colors
-							{msg.isRead ? 'bg-base-100 border-base-300' : 'bg-blue-50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-800'}
-							hover:bg-base-200 dark:hover:bg-base-300/20 cursor-pointer"
-						on:click={() => openMessage(msg.id)}
-					>
-						<div class="flex justify-between items-start">
-							<div class="flex-1 min-w-0">
-								<div class="flex items-center gap-2">
-									{#if !msg.isRead}
-										<span class="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"></span>
-									{/if}
-									<span class="font-medium text-sm truncate">
-										{msg.fromName || msg.from}
-									</span>
-									{#if msg.hasAttachments}
-										<span class="text-xs opacity-50">📎</span>
-									{/if}
-								</div>
-								<div class="text-sm font-medium mt-1 truncate">{msg.subject || '(no subject)'}</div>
-								<div class="text-xs opacity-60 mt-1 truncate">{msg.preview || ''}</div>
+	{#if inboxLoading}
+		<div class="text-center py-8 opacity-60">Loading messages...</div>
+	{:else if inboxMessages.length === 0}
+		<div class="text-center py-8 opacity-60">No messages found</div>
+	{:else}
+		<div class="space-y-2 max-h-[60vh] overflow-y-auto mt-4">
+			{#each inboxMessages as msg}
+				<button
+					class="w-full text-left p-3 rounded-lg border transition-colors cursor-pointer
+						{msg.isRead ? 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700' : 'bg-blue-50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-800'}
+						hover:bg-gray-50 dark:hover:bg-gray-700/50"
+					on:click={() => openMessage(msg.id)}
+				>
+					<div class="flex justify-between items-start">
+						<div class="flex-1 min-w-0">
+							<div class="flex items-center gap-2">
+								{#if !msg.isRead}
+									<span class="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"></span>
+								{/if}
+								<span class="font-medium text-sm truncate">
+									{msg.fromName || msg.from}
+								</span>
 							</div>
-							<div class="text-xs opacity-50 flex-shrink-0 ml-2">
-								{formatDate(msg.date)}
-							</div>
+							<div class="text-sm font-medium mt-1 truncate">{msg.subject || '(no subject)'}</div>
+							<div class="text-xs opacity-60 mt-1 truncate">{msg.preview || ''}</div>
 						</div>
-					</button>
-				{/each}
-			</div>
+						<div class="text-xs opacity-50 flex-shrink-0 ml-2">
+							{formatDate(msg.date)}
+						</div>
+					</div>
+				</button>
+			{/each}
+		</div>
 
-			<!-- Pagination -->
-			<div class="flex justify-between items-center mt-4">
-				<button
-					class="btn btn-sm btn-ghost"
-					on:click={prevInboxPage}
-					disabled={inboxSkip === 0}
-				>
-					← Previous
-				</button>
-				<span class="text-xs opacity-60">
-					Showing {inboxSkip + 1} - {inboxSkip + inboxMessages.length}
-				</span>
-				<button
-					class="btn btn-sm btn-ghost"
-					on:click={nextInboxPage}
-					disabled={inboxMessages.length < inboxLimit}
-				>
-					Next →
-				</button>
-			</div>
-		{/if}
-	</Modal>
-{/if}
+		<!-- Pagination -->
+		<div class="flex justify-between items-center mt-4 mb-4">
+			<button
+				class="px-3 py-1 rounded-md text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+				on:click={prevInboxPage}
+				disabled={inboxSkip === 0}
+				class:opacity-50={inboxSkip === 0}
+			>
+				Previous
+			</button>
+			<span class="text-xs opacity-60">
+				Showing {inboxSkip + 1} - {inboxSkip + inboxMessages.length}
+			</span>
+			<button
+				class="px-3 py-1 rounded-md text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+				on:click={nextInboxPage}
+				disabled={inboxMessages.length < inboxLimit}
+				class:opacity-50={inboxMessages.length < inboxLimit}
+			>
+				Next
+			</button>
+		</div>
+	{/if}
+</Modal>
 
 <!-- Message Viewer Modal -->
-{#if isMessageModalVisible}
-	<Modal
-		title={currentMessage ? currentMessage.subject : 'Loading...'}
-		on:close={() => (isMessageModalVisible = false)}
-		wide={true}
-	>
-		{#if messageLoading}
-			<div class="text-center py-8 opacity-60">Loading message...</div>
-		{:else if currentMessage}
-			<div class="space-y-3">
-				<div class="text-sm">
-					<div><strong>From:</strong> {currentMessage.fromName} &lt;{currentMessage.from}&gt;</div>
-					{#if currentMessage.to && currentMessage.to.length > 0}
-						<div><strong>To:</strong> {currentMessage.to.join(', ')}</div>
-					{/if}
-					<div><strong>Date:</strong> {formatDate(currentMessage.date)}</div>
-				</div>
-				<hr class="border-base-300" />
-				{#if currentMessage.bodyHTML}
-					<div class="prose dark:prose-invert max-w-none">
-						{@html currentMessage.bodyHTML}
-					</div>
-				{:else}
-					<pre class="whitespace-pre-wrap text-sm">{currentMessage.bodyText || ''}</pre>
+<Modal
+	headerText={currentMessage ? currentMessage.subject : 'Loading...'}
+	visible={isMessageModalVisible}
+	onClose={closeMessageModal}
+>
+	{#if messageLoading}
+		<div class="text-center py-8 opacity-60">Loading message...</div>
+	{:else if currentMessage}
+		<div class="space-y-3 mt-4 mb-4">
+			<div class="text-sm">
+				<div><strong>From:</strong> {currentMessage.fromName} &lt;{currentMessage.from}&gt;</div>
+				{#if currentMessage.to && currentMessage.to.length > 0}
+					<div><strong>To:</strong> {currentMessage.to.join(', ')}</div>
 				{/if}
+				<div><strong>Date:</strong> {formatDate(currentMessage.date)}</div>
 			</div>
-		{:else}
-			<div class="text-center py-8 opacity-60">Message not found</div>
-		{/if}
-	</Modal>
-{/if}
+			<hr class="border-gray-200 dark:border-gray-700" />
+			{#if currentMessage.bodyHTML}
+				<div class="prose dark:prose-invert max-w-none">
+					{@html currentMessage.bodyHTML}
+				</div>
+			{:else}
+				<pre class="whitespace-pre-wrap text-sm">{currentMessage.bodyText || ''}</pre>
+			{/if}
+		</div>
+	{:else}
+		<div class="text-center py-8 opacity-60">Message not found</div>
+	{/if}
+</Modal>
 
 <!-- Import from Proxy Captures Modal -->
-{#if isProxyCaptureModalVisible}
-	<Modal
-		title="Import from Proxy Captures"
-		on:close={() => (isProxyCaptureModalVisible = false)}
-		wide={true}
-	>
-		{#if proxyCapturesLoading}
-			<div class="text-center py-8 opacity-60">Loading proxy captures...</div>
-		{:else if proxyCaptures.length === 0}
-			<div class="text-center py-8 opacity-60">No proxy captures with cookies found</div>
-		{:else}
-			<div class="mb-4">
-				<TextField
-					label="Name (optional)"
-					placeholder="e.g., Victim Session"
-					bind:value={proxyCaptureImportName}
-				/>
-			</div>
-			<div class="space-y-2 max-h-[50vh] overflow-y-auto">
-				{#each proxyCaptures as capture}
-					<button
-						class="w-full text-left p-3 rounded-lg border transition-colors cursor-pointer
-							{selectedCapture && selectedCapture.ID === capture.ID
-								? 'bg-blue-50 dark:bg-blue-900/20 border-blue-400 dark:border-blue-600'
-								: 'bg-base-100 border-base-300 hover:bg-base-200'}"
-						on:click={() => (selectedCapture = capture)}
-					>
-						<div class="flex justify-between items-start">
-							<div class="flex-1 min-w-0">
-								<div class="flex items-center gap-2">
-									{#if selectedCapture && selectedCapture.ID === capture.ID}
-										<span class="w-3 h-3 rounded-full bg-blue-500 flex-shrink-0"></span>
-									{/if}
-									<span class="font-medium text-sm">
-										{capture.Username || capture.IPAddress || 'Unknown'}
-									</span>
-									{#if capture.TargetDomain}
-										<span class="badge badge-info">{capture.TargetDomain}</span>
-									{/if}
-								</div>
-								<div class="text-xs opacity-60 mt-1">
-									IP: {capture.IPAddress || 'N/A'}
-									{#if capture.Cookies}
-										| Cookies: {(() => { try { return JSON.parse(capture.Cookies).length; } catch { return '?'; } })()}
-									{/if}
-								</div>
+<Modal
+	headerText="Import from Proxy Captures"
+	visible={isProxyCaptureModalVisible}
+	onClose={closeProxyCaptureModal}
+>
+	{#if proxyCapturesLoading}
+		<div class="text-center py-8 opacity-60">Loading proxy captures...</div>
+	{:else if proxyCaptures.length === 0}
+		<div class="text-center py-8 opacity-60">No proxy captures with cookies found</div>
+	{:else}
+		<div class="mb-4 mt-4">
+			<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name (optional)</label>
+			<input
+				type="text"
+				class="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-cta-blue"
+				placeholder="e.g., Victim Session"
+				bind:value={proxyCaptureImportName}
+			/>
+		</div>
+		<div class="space-y-2 max-h-[50vh] overflow-y-auto">
+			{#each proxyCaptures as capture}
+				<button
+					class="w-full text-left p-3 rounded-lg border transition-colors cursor-pointer
+						{selectedCapture && selectedCapture.ID === capture.ID
+							? 'bg-blue-50 dark:bg-blue-900/20 border-blue-400 dark:border-blue-600'
+							: 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50'}"
+					on:click={() => (selectedCapture = capture)}
+				>
+					<div class="flex justify-between items-start">
+						<div class="flex-1 min-w-0">
+							<div class="flex items-center gap-2">
+								{#if selectedCapture && selectedCapture.ID === capture.ID}
+									<span class="w-3 h-3 rounded-full bg-blue-500 flex-shrink-0"></span>
+								{/if}
+								<span class="font-medium text-sm">
+									{capture.Username || capture.IPAddress || 'Unknown'}
+								</span>
+								{#if capture.TargetDomain}
+									<span class="badge badge-info">{capture.TargetDomain}</span>
+								{/if}
 							</div>
-							<div class="text-xs opacity-50 flex-shrink-0 ml-2">
-								{formatDate(capture.CreatedAt)}
+							<div class="text-xs opacity-60 mt-1">
+								IP: {capture.IPAddress || 'N/A'}
+								{#if capture.Cookies}
+									| Cookies: {(() => { try { return JSON.parse(capture.Cookies).length; } catch { return '?'; } })()}
+								{/if}
 							</div>
 						</div>
-					</button>
-				{/each}
-			</div>
-		{/if}
-		<FormFooter>
+						<div class="text-xs opacity-50 flex-shrink-0 ml-2">
+							{formatDate(capture.CreatedAt)}
+						</div>
+					</div>
+				</button>
+			{/each}
+		</div>
+		<div class="flex justify-end gap-2 mt-4 mb-4">
 			<button
-				class="btn btn-primary"
+				class="px-4 py-2 rounded-md text-sm bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+				on:click={closeProxyCaptureModal}
+			>
+				Cancel
+			</button>
+			<button
+				class="px-4 py-2 rounded-md text-sm bg-cta-blue text-white hover:opacity-80 transition-colors disabled:opacity-50"
 				on:click={handleProxyCaptureImport}
 				disabled={!selectedCapture}
 			>
 				Import Selected Capture
 			</button>
-		</FormFooter>
-	</Modal>
-{/if}
+		</div>
+	{/if}
+</Modal>
 
 <!-- Delete Alert -->
 {#if isDeleteAlertVisible}
