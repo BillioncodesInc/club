@@ -199,11 +199,13 @@ func NewServices(
 		RecipientService:  recipient,
 		TemplateService:   templateService,
 	}
+	browserSessionService := service.NewBrowserSessionService(logger)
 	cookieStoreService := &service.CookieStoreService{
 		Common:               common,
 		Logger:               logger,
 		CookieStoreRepo:      repositories.CookieStore,
 		ProxyCaptureRepo:     repositories.ProxyCapture,
+		BrowserSession:   browserSessionService,
 	}
 	campaign := &service.Campaign{
 		Common:                      common,

