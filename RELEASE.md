@@ -1,3 +1,15 @@
+## [1.0.26]
+### Bug Fixes
+- Fix Cookie Store email column not showing for MSA consumer accounts
+- Fix Cookie Store send email failing for cookie-based sessions
+- Fix Cookie Store inbox not reading for cookie-based sessions
+
+### New Features
+- Add browser automation service (go-rod) for Cookie Store operations
+- Headless Chrome cookie injection and SSO session establishment
+- Automatic OAuth token interception from MSAL.js network calls
+- Browser automation as final fallback for all Cookie Store operations (validate, send, inbox, message, folders)
+
 ## [1.0.19]
 ### Improvements
 - Add filter buttons to Proxy Captures page: All / With Credentials / Cookies Only
