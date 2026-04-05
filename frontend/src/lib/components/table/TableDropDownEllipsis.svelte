@@ -81,11 +81,28 @@
 	};
 
 	const handleClickWhenVisible = (event) => {
+		// Check if the click is inside the dropdown menu
+		const clickedInsideMenu = menuRef && menuRef.contains(event.target);
+		const clickedButton = buttonRef && buttonRef.contains(event.target);
+
+		if (clickedInsideMenu) {
+			// Let menu item clicks pass through to their handlers
+			// Close the dropdown after a short delay to allow the click to register
+			setTimeout(() => {
+				activeFormElement.set(null);
+			}, 50);
+			document.removeEventListener('click', handleClickWhenVisible);
+			return;
+		}
+
+		// For clicks outside the menu, close and prevent
 		if (isMenuVisible && menuRef && buttonRef) {
 			activeFormElement.set(null);
 		}
-		event.preventDefault();
-		event.stopPropagation();
+		if (!clickedButton) {
+			event.preventDefault();
+			event.stopPropagation();
+		}
 		document.removeEventListener('click', handleClickWhenVisible);
 	};
 

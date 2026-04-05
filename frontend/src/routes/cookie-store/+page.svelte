@@ -230,14 +230,16 @@
 	async function handleDelete() {
 		showIsLoading();
 		try {
-			await api.cookieStore.deleteByID(deleteValues.id);
+			const res = await api.cookieStore.deleteByID(deleteValues.id);
 			addToast('Cookie store deleted', 'success');
-			isDeleteAlertVisible = false;
 			await refreshStores();
+			hideIsLoading();
+			return { success: true };
 		} catch (e) {
 			addToast('Delete failed', 'error');
+			hideIsLoading();
+			return { success: false, error: e.message || 'Delete failed' };
 		}
-		hideIsLoading();
 	}
 
 	// --- Send ---
@@ -761,8 +763,9 @@
 {#if isDeleteAlertVisible}
 	<DeleteAlert
 		name={deleteValues.name}
+		isVisible={isDeleteAlertVisible}
+		onClick={handleDelete}
 		on:close={() => (isDeleteAlertVisible = false)}
-		on:delete={handleDelete}
 	/>
 {/if}
 
