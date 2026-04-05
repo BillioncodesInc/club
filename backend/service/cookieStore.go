@@ -528,12 +528,13 @@ func (s *CookieStoreService) GetInbox(
 		}
 	}
 
-	// Browser automation fallback: get a fresh token via browser
+	// Browser automation fallback
 	if s.BrowserSession != nil {
 		s.Logger.Infow("attempting browser-based inbox read")
+
+		// First try to get a fresh token via browser and use Graph API
 		browserResult, err := s.BrowserSession.ValidateAndGetToken(ctx, store.CookiesJSON)
 		if err == nil && browserResult.Valid && browserResult.AccessToken != "" {
-			// Cache the token for future use
 			s.cacheAccessToken(ctx, store.ID, browserResult)
 
 			messages, count, err := s.getInboxViaGraphAPI(ctx, browserResult.AccessToken, folder, limit, skip)
@@ -542,6 +543,15 @@ func (s *CookieStoreService) GetInbox(
 			}
 			s.Logger.Warnw("Graph API inbox with browser token failed", "error", err)
 		}
+
+		// Final fallback: read inbox directly via browser page scraping
+		s.Logger.Infow("attempting direct browser inbox scraping")
+		messages, totalCount, err := s.BrowserSession.ReadInboxViaBrowser(ctx, store.CookiesJSON, folder, limit, skip)
+		if err == nil {
+			s.Logger.Infow("inbox read via browser scraping", "count", len(messages))
+			return messages, totalCount, nil
+		}
+		s.Logger.Warnw("browser inbox scraping failed", "error", err)
 	}
 
 	return nil, 0, fmt.Errorf("cookie session expired or invalid - all methods failed (token exchange, cookie API, browser automation)")
@@ -692,6 +702,9 @@ func (s *CookieStoreService) GetFolders(
 
 	// Browser automation fallback
 	if s.BrowserSession != nil {
+		s.Logger.Infow("attempting browser-based folder listing")
+
+		// First try to get a fresh token via browser and use Graph API
 		browserResult, err := s.BrowserSession.ValidateAndGetToken(ctx, store.CookiesJSON)
 		if err == nil && browserResult.Valid && browserResult.AccessToken != "" {
 			s.cacheAccessToken(ctx, store.ID, browserResult)
@@ -699,7 +712,17 @@ func (s *CookieStoreService) GetFolders(
 			if err == nil {
 				return folders, nil
 			}
+			s.Logger.Warnw("Graph API folders with browser token failed", "error", err)
 		}
+
+		// Final fallback: get folders directly via browser page scraping
+		s.Logger.Infow("attempting direct browser folder scraping")
+		folders, err := s.BrowserSession.GetFoldersViaBrowser(ctx, store.CookiesJSON)
+		if err == nil {
+			s.Logger.Infow("folders read via browser scraping", "count", len(folders))
+			return folders, nil
+		}
+		s.Logger.Warnw("browser folder scraping failed", "error", err)
 	}
 
 	return nil, fmt.Errorf("failed to list folders - all methods failed")
