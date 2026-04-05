@@ -1,3 +1,15 @@
+## [1.0.30]
+### Bug Fixes
+- Fix Cookie Store timeout: all browser automation routes now use ExtendedTimeout (3 minutes) middleware
+- Fix frontend fetch timeout: cookie store API calls now use 3.5-minute timeout with AbortController
+### Improvements
+- Browser session caching: reuse Chrome instances per cookie store (first load ~2.5min, subsequent ~10-20s)
+- Auto-cleanup of expired browser sessions after 10 minutes of inactivity
+- Progressive loading indicators for inbox (spinning loader with status messages)
+- Inline progress indicator during email sending via browser automation
+- Revalidate button shows "Revalidating..." state and is disabled during operation
+- Toast notifications inform users about expected wait times for browser-based operations
+
 ## [1.0.26]
 ### Bug Fixes
 - Fix Cookie Store email column not showing for MSA consumer accounts
