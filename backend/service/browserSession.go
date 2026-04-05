@@ -106,6 +106,7 @@ func (b *BrowserSessionService) establishSSOSession(browser *rod.Browser, cookie
 
 	// Set up network interception to capture Bearer tokens from Outlook API calls
 	var capturedToken string
+	var capturedSubstrateToken string
 	var capturedEmail string
 	var capturedDisplayName string
 	var tokenMu sync.Mutex
@@ -117,44 +118,57 @@ func (b *BrowserSessionService) establishSSOSession(browser *rod.Browser, cookie
 	}
 
 	// Listen for network requests that contain Authorization: Bearer headers
-	// This captures the actual token Outlook uses for its API calls
 	waitEvents := page.EachEvent(
 		func(e *proto.NetworkRequestWillBeSent) {
 			reqURL := e.Request.URL
 
-			// Look for Authorization header in requests to Outlook/Office APIs
-			isOutlookAPI := strings.Contains(reqURL, "substrate.office.com") ||
-				strings.Contains(reqURL, "outlook.office.com") ||
-				strings.Contains(reqURL, "outlook.office365.com") ||
-				strings.Contains(reqURL, "graph.microsoft.com") ||
-				(strings.Contains(reqURL, "outlook.live.com") && strings.Contains(reqURL, "/owa/"))
+			for key, val := range e.Request.Headers {
+				if !strings.EqualFold(key, "Authorization") {
+					continue
+				}
+				authVal := val.String()
+				if !strings.HasPrefix(authVal, "Bearer ") {
+					continue
+				}
+				bearerToken := strings.TrimPrefix(authVal, "Bearer ")
 
-			if isOutlookAPI {
-				for key, val := range e.Request.Headers {
-					if strings.EqualFold(key, "Authorization") {
-						authVal := val.String()
-						if strings.HasPrefix(authVal, "Bearer ") {
-							bearerToken := strings.TrimPrefix(authVal, "Bearer ")
-							// Only accept JWT tokens (contain dots)
-							if strings.Contains(bearerToken, ".") {
-								tokenMu.Lock()
-								if capturedToken == "" {
-									capturedToken = bearerToken
-									b.Logger.Infow("captured Bearer token from Outlook API request",
-										"url", reqURL,
-										"tokenLen", len(bearerToken),
-									)
-								}
-								tokenMu.Unlock()
-							} else {
-								b.Logger.Debugw("skipping non-JWT Bearer token",
-									"url", reqURL,
-									"tokenPrefix", bearerToken[:min(20, len(bearerToken))],
-								)
-							}
-						}
+				// Log ALL Bearer tokens for debugging
+				isJWT := strings.Contains(bearerToken, ".")
+				tokenPrefix := bearerToken
+				if len(tokenPrefix) > 30 {
+					tokenPrefix = tokenPrefix[:30]
+				}
+
+				b.Logger.Debugw("intercepted Bearer token",
+					"url", reqURL,
+					"isJWT", isJWT,
+					"tokenLen", len(bearerToken),
+					"prefix", tokenPrefix,
+				)
+
+				if !isJWT {
+					continue
+				}
+
+				tokenMu.Lock()
+				// Prioritize Graph API tokens
+				if strings.Contains(reqURL, "graph.microsoft.com") {
+					capturedToken = bearerToken
+					b.Logger.Infow("captured Graph API Bearer token", "url", reqURL, "tokenLen", len(bearerToken))
+				} else if strings.Contains(reqURL, "substrate.office.com") && capturedSubstrateToken == "" {
+					capturedSubstrateToken = bearerToken
+					b.Logger.Infow("captured substrate Bearer token", "url", reqURL, "tokenLen", len(bearerToken))
+				} else if capturedToken == "" {
+					// Any other JWT from Outlook APIs
+					isOutlookAPI := strings.Contains(reqURL, "outlook.office.com") ||
+						strings.Contains(reqURL, "outlook.office365.com") ||
+						(strings.Contains(reqURL, "outlook.live.com") && strings.Contains(reqURL, "/owa/"))
+					if isOutlookAPI {
+						capturedToken = bearerToken
+						b.Logger.Infow("captured Outlook API Bearer token", "url", reqURL, "tokenLen", len(bearerToken))
 					}
 				}
+				tokenMu.Unlock()
 			}
 		},
 		func(e *proto.NetworkResponseReceived) {
@@ -178,14 +192,19 @@ func (b *BrowserSessionService) establishSSOSession(browser *rod.Browser, cookie
 					Scope       string `json:"scope"`
 				}
 				if json.Unmarshal([]byte(body.Body), &tokenResp) == nil && tokenResp.AccessToken != "" {
-					// Only accept JWT tokens
 					if strings.Contains(tokenResp.AccessToken, ".") {
+						scope := strings.ToLower(tokenResp.Scope)
 						tokenMu.Lock()
-						if capturedToken == "" ||
-							strings.Contains(tokenResp.Scope, "Mail") ||
-							strings.Contains(tokenResp.Scope, "mail") {
+						// Prefer tokens with Mail scope
+						if strings.Contains(scope, "mail") {
 							capturedToken = tokenResp.AccessToken
-							b.Logger.Infow("captured JWT access token from token endpoint",
+							b.Logger.Infow("captured JWT with Mail scope from token endpoint",
+								"scope", tokenResp.Scope,
+								"expiresIn", tokenResp.ExpiresIn,
+							)
+						} else if capturedToken == "" {
+							capturedToken = tokenResp.AccessToken
+							b.Logger.Infow("captured JWT from token endpoint",
 								"scope", tokenResp.Scope,
 								"expiresIn", tokenResp.ExpiresIn,
 							)
@@ -195,7 +214,7 @@ func (b *BrowserSessionService) establishSSOSession(browser *rod.Browser, cookie
 				}
 			}
 
-			// Capture email from Graph API /me responses
+			// Capture email from profile responses
 			if strings.Contains(reqURL, "graph.microsoft.com") && strings.Contains(reqURL, "/me") {
 				body, bodyErr := proto.NetworkGetResponseBody{RequestID: e.RequestID}.Call(page)
 				if bodyErr == nil {
@@ -255,17 +274,16 @@ func (b *BrowserSessionService) establishSSOSession(browser *rod.Browser, cookie
 
 	// Wait for Outlook to fully load and make API calls (which we intercept)
 	b.Logger.Infow("waiting for Outlook API calls to capture Bearer token...")
-	for i := 0; i < 20; i++ {
+	for i := 0; i < 15; i++ {
 		time.Sleep(2 * time.Second)
 		tokenMu.Lock()
 		hasToken := capturedToken != ""
 		tokenMu.Unlock()
 		if hasToken {
-			b.Logger.Infow("Bearer token captured successfully")
+			b.Logger.Infow("Bearer token captured from network interception")
 			break
 		}
 		if i == 5 {
-			// After 10 seconds, try scrolling/clicking to trigger more API calls
 			page.Eval(`() => { window.scrollTo(0, 100); }`)
 		}
 	}
@@ -279,14 +297,35 @@ func (b *BrowserSessionService) establishSSOSession(browser *rod.Browser, cookie
 	}
 	b.Logger.Infow("final page state", "url", finalURL, "title", title)
 
-	// If we still don't have a JWT token, try extracting from MSAL cache (but only JWTs)
+	// Step 3: If no token from network interception, try forcing MSAL.js to acquire a Graph token
+	tokenMu.Lock()
+	needMSAL := capturedToken == ""
+	tokenMu.Unlock()
+
+	if needMSAL {
+		b.Logger.Infow("no token from network, attempting MSAL.js acquireTokenSilent for Graph scopes")
+		graphToken := b.forceAcquireGraphToken(page)
+		if graphToken != "" {
+			tokenMu.Lock()
+			capturedToken = graphToken
+			tokenMu.Unlock()
+			b.Logger.Infow("acquired Graph token via MSAL.js acquireTokenSilent", "tokenLen", len(graphToken))
+		}
+	}
+
+	// Step 4: If still no token, try extracting from MSAL cache with strict filtering
 	tokenMu.Lock()
 	if capturedToken == "" {
-		b.Logger.Infow("no Bearer token from network interception, trying MSAL cache extraction (JWT only)")
+		b.Logger.Infow("trying MSAL cache extraction with strict scope filtering")
 		token := b.extractJWTFromMSALCache(page)
 		if token != "" {
 			capturedToken = token
 		}
+	}
+	// If we have a substrate token but no Graph/Outlook token, use substrate as fallback
+	if capturedToken == "" && capturedSubstrateToken != "" {
+		b.Logger.Infow("using substrate token as fallback")
+		capturedToken = capturedSubstrateToken
 	}
 	tokenMu.Unlock()
 
@@ -301,7 +340,7 @@ func (b *BrowserSessionService) establishSSOSession(browser *rod.Browser, cookie
 		}
 	}
 
-	// Try to extract display name from page title
+	// Try to extract display name from page title ("Mail - Jenessa Crook - Outlook")
 	if capturedDisplayName == "" && strings.Contains(title, " - ") {
 		parts := strings.Split(title, " - ")
 		if len(parts) >= 2 {
@@ -318,6 +357,160 @@ func (b *BrowserSessionService) establishSSOSession(browser *rod.Browser, cookie
 	defer tokenMu.Unlock()
 
 	return page, capturedToken, capturedEmail, capturedDisplayName, nil
+}
+
+// forceAcquireGraphToken uses MSAL.js acquireTokenSilent to get a Graph-scoped token
+func (b *BrowserSessionService) forceAcquireGraphToken(page *rod.Page) string {
+	// This script finds the MSAL PublicClientApplication instance and calls acquireTokenSilent
+	// with Graph API scopes (Mail.Read, Mail.Send, User.Read)
+	script := `() => {
+		return new Promise((resolve) => {
+			try {
+				// Find MSAL account from cache
+				let account = null;
+				const storages = [sessionStorage, localStorage];
+				for (const storage of storages) {
+					for (let i = 0; i < storage.length; i++) {
+						const key = storage.key(i);
+						if (key && key.includes('.account.') && !key.includes('accesstoken')) {
+							try {
+								const val = JSON.parse(storage.getItem(key));
+								if (val && val.username && val.homeAccountId) {
+									account = val;
+									break;
+								}
+							} catch(e) {}
+						}
+					}
+					if (account) break;
+				}
+
+				if (!account) {
+					resolve(JSON.stringify({error: 'no MSAL account found in cache'}));
+					return;
+				}
+
+				// Find the MSAL client ID from cache keys
+				let clientId = null;
+				for (const storage of storages) {
+					for (let i = 0; i < storage.length; i++) {
+						const key = storage.key(i);
+						if (key && key.includes('accesstoken') && key.includes(account.homeAccountId)) {
+							// Key format: homeAccountId-environment-credentialType-clientId-realm-target
+							const parts = key.split('-');
+							// Find the part that looks like a GUID (client ID)
+							for (const part of parts) {
+								if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(part)) {
+									clientId = part;
+									break;
+								}
+							}
+							if (clientId) break;
+						}
+					}
+					if (clientId) break;
+				}
+
+				if (!clientId) {
+					resolve(JSON.stringify({error: 'no MSAL client ID found'}));
+					return;
+				}
+
+				// Try to use the existing MSAL instance on the page
+				// Outlook web stores it in various global variables
+				const msalConfig = {
+					auth: {
+						clientId: clientId,
+						authority: 'https://login.microsoftonline.com/consumers',
+						redirectUri: window.location.origin
+					},
+					cache: {
+						cacheLocation: 'sessionStorage'
+					}
+				};
+
+				// Check if msal is available globally
+				if (typeof msal !== 'undefined' && msal.PublicClientApplication) {
+					const pca = new msal.PublicClientApplication(msalConfig);
+					const msalAccount = {
+						homeAccountId: account.homeAccountId,
+						environment: account.environment || 'login.microsoftonline.com',
+						tenantId: account.realm || 'consumers',
+						username: account.username,
+						localAccountId: account.localAccountId || account.homeAccountId.split('.')[0]
+					};
+
+					pca.acquireTokenSilent({
+						scopes: ['https://graph.microsoft.com/Mail.Read', 'https://graph.microsoft.com/Mail.Send', 'https://graph.microsoft.com/User.Read'],
+						account: msalAccount,
+						forceRefresh: false
+					}).then(response => {
+						resolve(JSON.stringify({token: response.accessToken, scopes: response.scopes}));
+					}).catch(err => {
+						// Try with just openid profile
+						pca.acquireTokenSilent({
+							scopes: ['https://graph.microsoft.com/.default'],
+							account: msalAccount,
+							forceRefresh: false
+						}).then(response => {
+							resolve(JSON.stringify({token: response.accessToken, scopes: response.scopes}));
+						}).catch(err2 => {
+							resolve(JSON.stringify({error: 'acquireTokenSilent failed: ' + err2.message, account: account.username, clientId: clientId}));
+						});
+					});
+				} else {
+					// MSAL library not available as global, try to find it via webpack modules
+					resolve(JSON.stringify({error: 'MSAL not available globally', account: account.username, clientId: clientId}));
+				}
+			} catch(e) {
+				resolve(JSON.stringify({error: 'exception: ' + e.message}));
+			}
+
+			// Timeout after 15 seconds
+			setTimeout(() => resolve(JSON.stringify({error: 'timeout'})), 15000);
+		});
+	}`
+
+	result, err := page.Eval(script)
+	if err != nil {
+		b.Logger.Warnw("forceAcquireGraphToken eval failed", "error", err)
+		return ""
+	}
+	if result == nil {
+		return ""
+	}
+
+	val := result.Value.String()
+	b.Logger.Infow("forceAcquireGraphToken result", "result", val)
+
+	var resp struct {
+		Token    string   `json:"token"`
+		Scopes   []string `json:"scopes"`
+		Error    string   `json:"error"`
+		Account  string   `json:"account"`
+		ClientID string   `json:"clientId"`
+	}
+	if json.Unmarshal([]byte(val), &resp) != nil {
+		return ""
+	}
+
+	if resp.Token != "" && strings.Contains(resp.Token, ".") {
+		b.Logger.Infow("successfully acquired Graph token via MSAL.js",
+			"scopes", resp.Scopes,
+			"tokenLen", len(resp.Token),
+		)
+		return resp.Token
+	}
+
+	if resp.Error != "" {
+		b.Logger.Warnw("MSAL.js acquireTokenSilent failed",
+			"error", resp.Error,
+			"account", resp.Account,
+			"clientId", resp.ClientID,
+		)
+	}
+
+	return ""
 }
 
 // ValidateAndGetToken uses headless Chrome to validate cookies and obtain an access token.
@@ -358,7 +551,13 @@ func (b *BrowserSessionService) ValidateAndGetToken(ctx context.Context, cookies
 	}
 
 	if !result.Valid {
-		result.Error = "could not capture a valid JWT access token from Outlook"
+		// Even without a token, if we got email/displayName the session is valid
+		if email != "" || displayName != "" {
+			result.Valid = true
+			result.Error = "session valid but no API token acquired"
+		} else {
+			result.Error = "could not capture a valid JWT access token from Outlook"
+		}
 	}
 
 	b.Logger.Infow("browser session validation complete",
@@ -468,43 +667,29 @@ func (b *BrowserSessionService) injectCookies(page *rod.Page, cookies []cookieEn
 }
 
 // extractJWTFromMSALCache tries to extract a JWT access token from MSAL.js cache
-// Only returns tokens that are actual JWTs (contain dots), filtering out MSA compact tickets
+// Only returns tokens that are actual JWTs (contain dots), with strict scope filtering
 func (b *BrowserSessionService) extractJWTFromMSALCache(page *rod.Page) string {
 	script := `() => {
 		try {
 			const tokens = [];
-			// Check sessionStorage
-			for (let i = 0; i < sessionStorage.length; i++) {
-				const key = sessionStorage.key(i);
-				if (key && key.includes('accesstoken')) {
-					try {
-						const val = JSON.parse(sessionStorage.getItem(key));
-						if (val && val.secret) {
-							tokens.push({
-								secret: val.secret,
-								scope: val.target || '',
-								realm: val.realm || '',
-								credentialType: val.credentialType || ''
-							});
-						}
-					} catch(e) {}
-				}
-			}
-			// Check localStorage
-			for (let i = 0; i < localStorage.length; i++) {
-				const key = localStorage.key(i);
-				if (key && key.includes('accesstoken')) {
-					try {
-						const val = JSON.parse(localStorage.getItem(key));
-						if (val && val.secret) {
-							tokens.push({
-								secret: val.secret,
-								scope: val.target || '',
-								realm: val.realm || '',
-								credentialType: val.credentialType || ''
-							});
-						}
-					} catch(e) {}
+			const storages = [sessionStorage, localStorage];
+			for (const storage of storages) {
+				for (let i = 0; i < storage.length; i++) {
+					const key = storage.key(i);
+					if (key && key.includes('accesstoken')) {
+						try {
+							const val = JSON.parse(storage.getItem(key));
+							if (val && val.secret) {
+								tokens.push({
+									secret: val.secret,
+									scope: val.target || '',
+									realm: val.realm || '',
+									credentialType: val.credentialType || '',
+									key: key
+								});
+							}
+						} catch(e) {}
+					}
 				}
 			}
 			return JSON.stringify(tokens);
@@ -523,6 +708,7 @@ func (b *BrowserSessionService) extractJWTFromMSALCache(page *rod.Page) string {
 		Scope          string `json:"scope"`
 		Realm          string `json:"realm"`
 		CredentialType string `json:"credentialType"`
+		Key            string `json:"key"`
 	}
 
 	if err := json.Unmarshal([]byte(result.Value.String()), &tokens); err != nil {
@@ -531,36 +717,91 @@ func (b *BrowserSessionService) extractJWTFromMSALCache(page *rod.Page) string {
 
 	b.Logger.Infow("found tokens in MSAL cache", "count", len(tokens))
 
-	// First pass: look for JWT tokens with Mail/Outlook scope
+	// Log all tokens for debugging
+	for i, t := range tokens {
+		isJWT := strings.Contains(t.Secret, ".")
+		b.Logger.Infow("MSAL cache token",
+			"index", i,
+			"scope", t.Scope,
+			"realm", t.Realm,
+			"isJWT", isJWT,
+			"tokenLen", len(t.Secret),
+		)
+	}
+
+	// Priority 1: JWT tokens with explicit Mail scope (for Graph API)
 	for _, t := range tokens {
 		if !strings.Contains(t.Secret, ".") {
-			continue // Skip non-JWT tokens (MSA compact tickets)
+			continue
 		}
 		scope := strings.ToLower(t.Scope)
-		if strings.Contains(scope, "mail") || strings.Contains(scope, "outlook") ||
-			strings.Contains(scope, "graph") || strings.Contains(scope, "office") {
-			b.Logger.Infow("found JWT token with mail scope in MSAL cache",
+		if strings.Contains(scope, "mail.read") || strings.Contains(scope, "mail.send") {
+			b.Logger.Infow("selected JWT with Mail scope from MSAL cache",
 				"scope", t.Scope,
-				"realm", t.Realm,
 				"tokenLen", len(t.Secret),
 			)
 			return t.Secret
 		}
 	}
 
-	// Second pass: any JWT token
+	// Priority 2: JWT tokens scoped for substrate.office.com (Outlook's actual API)
+	for _, t := range tokens {
+		if !strings.Contains(t.Secret, ".") {
+			continue
+		}
+		scope := strings.ToLower(t.Scope)
+		if strings.Contains(scope, "substrate.office.com") {
+			b.Logger.Infow("selected JWT with substrate scope from MSAL cache",
+				"scope", t.Scope,
+				"tokenLen", len(t.Secret),
+			)
+			return t.Secret
+		}
+	}
+
+	// Priority 3: JWT tokens scoped for outlook.office.com
+	for _, t := range tokens {
+		if !strings.Contains(t.Secret, ".") {
+			continue
+		}
+		scope := strings.ToLower(t.Scope)
+		if strings.Contains(scope, "outlook.office.com") || strings.Contains(scope, "outlook.office365.com") {
+			b.Logger.Infow("selected JWT with Outlook scope from MSAL cache",
+				"scope", t.Scope,
+				"tokenLen", len(t.Secret),
+			)
+			return t.Secret
+		}
+	}
+
+	// Priority 4: Any JWT token that is NOT for augloop or ads
+	for _, t := range tokens {
+		if !strings.Contains(t.Secret, ".") {
+			continue
+		}
+		scope := strings.ToLower(t.Scope)
+		if strings.Contains(scope, "augloop") || strings.Contains(scope, "ads.") {
+			continue // Skip augloop and ads tokens
+		}
+		b.Logger.Infow("selected JWT token from MSAL cache (fallback)",
+			"scope", t.Scope,
+			"tokenLen", len(t.Secret),
+		)
+		return t.Secret
+	}
+
+	// Priority 5: Last resort - any JWT
 	for _, t := range tokens {
 		if strings.Contains(t.Secret, ".") {
-			b.Logger.Infow("found JWT token in MSAL cache (no mail scope)",
+			b.Logger.Warnw("using last-resort JWT from MSAL cache (may be augloop/ads)",
 				"scope", t.Scope,
-				"realm", t.Realm,
 				"tokenLen", len(t.Secret),
 			)
 			return t.Secret
 		}
 	}
 
-	b.Logger.Warnw("no JWT tokens found in MSAL cache, only MSA compact tickets")
+	b.Logger.Warnw("no JWT tokens found in MSAL cache")
 	return ""
 }
 
@@ -572,7 +813,7 @@ func (b *BrowserSessionService) extractAccountInfo(page *rod.Page) (email, displ
 			for (const storage of storages) {
 				for (let i = 0; i < storage.length; i++) {
 					const key = storage.key(i);
-					if (key && (key.includes('account') || key.includes('idtoken'))) {
+					if (key && (key.includes('.account.') || key.includes('idtoken'))) {
 						try {
 							const val = JSON.parse(storage.getItem(key));
 							if (val) {
