@@ -19,17 +19,145 @@ import (
 	"go.uber.org/zap"
 )
 
+// cachedBrowserSession holds a reusable browser + page for a specific cookie store
+type cachedBrowserSession struct {
+	browser    *rod.Browser
+	page       *rod.Page
+	cookiesKey string // hash of cookies to detect changes
+	createdAt  time.Time
+	lastUsed   time.Time
+	mu         sync.Mutex
+}
+
 // BrowserSessionService handles browser-based cookie validation and token acquisition.
 type BrowserSessionService struct {
 	Logger *zap.SugaredLogger
 	mu     sync.Mutex
+
+	// Session cache: keyed by cookie store ID (or cookies hash for validation)
+	sessions   map[string]*cachedBrowserSession
+	sessionsMu sync.Mutex
 }
 
 // NewBrowserSessionService creates a new BrowserSessionService
 func NewBrowserSessionService(logger *zap.SugaredLogger) *BrowserSessionService {
-	return &BrowserSessionService{
-		Logger: logger,
+	svc := &BrowserSessionService{
+		Logger:   logger,
+		sessions: make(map[string]*cachedBrowserSession),
 	}
+	// Start cleanup goroutine
+	go svc.cleanupLoop()
+	return svc
+}
+
+// cleanupLoop periodically removes expired cached sessions
+func (b *BrowserSessionService) cleanupLoop() {
+	ticker := time.NewTicker(2 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		b.sessionsMu.Lock()
+		for key, sess := range b.sessions {
+			if time.Since(sess.lastUsed) > 10*time.Minute {
+				b.Logger.Infow("cleaning up expired browser session", "key", key, "age", time.Since(sess.createdAt))
+				sess.mu.Lock()
+				if sess.browser != nil {
+					sess.browser.Close()
+				}
+				sess.mu.Unlock()
+				delete(b.sessions, key)
+			}
+		}
+		b.sessionsMu.Unlock()
+	}
+}
+
+// getOrCreateSession returns a cached browser session or creates a new one
+func (b *BrowserSessionService) getOrCreateSession(ctx context.Context, sessionKey string, cookiesJSON string) (*cachedBrowserSession, error) {
+	b.sessionsMu.Lock()
+	sess, exists := b.sessions[sessionKey]
+	b.sessionsMu.Unlock()
+
+	if exists {
+		sess.mu.Lock()
+		// Check if session is still valid (browser not closed, page responsive)
+		valid := false
+		if sess.browser != nil && sess.page != nil {
+			// Try a simple eval to check if page is still alive
+			_, err := sess.page.Eval(`() => document.title`)
+			if err == nil {
+				valid = true
+				sess.lastUsed = time.Now()
+				b.Logger.Infow("reusing cached browser session", "key", sessionKey, "age", time.Since(sess.createdAt))
+			} else {
+				b.Logger.Warnw("cached session page is dead, recreating", "key", sessionKey, "error", err)
+			}
+		}
+		sess.mu.Unlock()
+
+		if valid {
+			return sess, nil
+		}
+
+		// Session is dead, clean it up
+		b.sessionsMu.Lock()
+		if sess.browser != nil {
+			sess.browser.Close()
+		}
+		delete(b.sessions, sessionKey)
+		b.sessionsMu.Unlock()
+	}
+
+	// Create new session
+	b.Logger.Infow("creating new browser session", "key", sessionKey)
+
+	var cookies []cookieEntry
+	if err := json.Unmarshal([]byte(cookiesJSON), &cookies); err != nil {
+		return nil, fmt.Errorf("failed to parse cookies JSON: %w", err)
+	}
+
+	browser, _, err := b.launchBrowser(ctx, 120*time.Second)
+	if err != nil {
+		return nil, err
+	}
+
+	page, err := b.setupPageWithCookiesAndSSO(browser, cookies)
+	if err != nil {
+		browser.Close()
+		return nil, err
+	}
+
+	// Navigate to Outlook
+	if err := b.navigateToOutlook(page); err != nil {
+		b.Logger.Warnw("initial Outlook navigation failed", "error", err)
+		// Don't close - the SSO session might still be valid
+	}
+
+	newSess := &cachedBrowserSession{
+		browser:    browser,
+		page:       page,
+		cookiesKey: sessionKey,
+		createdAt:  time.Now(),
+		lastUsed:   time.Now(),
+	}
+
+	b.sessionsMu.Lock()
+	b.sessions[sessionKey] = newSess
+	b.sessionsMu.Unlock()
+
+	return newSess, nil
+}
+
+// closeSession closes and removes a cached session
+func (b *BrowserSessionService) closeSession(sessionKey string) {
+	b.sessionsMu.Lock()
+	sess, exists := b.sessions[sessionKey]
+	if exists {
+		if sess.browser != nil {
+			sess.browser.Close()
+		}
+		delete(b.sessions, sessionKey)
+	}
+	b.sessionsMu.Unlock()
 }
 
 // BrowserSessionResult holds the result of a browser-based session validation
@@ -53,7 +181,9 @@ type cookieEntry struct {
 	ExpirationDate interface{} `json:"expirationDate"`
 }
 
-// launchBrowser creates and returns a headless Chrome browser instance
+// launchBrowser creates and returns a headless Chrome browser instance.
+// Note: the cleanup function is returned but callers using session caching should NOT call it
+// (the session cache manages browser lifecycle).
 func (b *BrowserSessionService) launchBrowser(ctx context.Context, timeout time.Duration) (*rod.Browser, func(), error) {
 	chromePath := os.Getenv("CHROME_PATH")
 	if chromePath == "" {
@@ -155,6 +285,18 @@ func (b *BrowserSessionService) navigateToOutlook(page *rod.Page) error {
 	return nil
 }
 
+// ensureOnOutlook checks if the cached page is on Outlook, navigates if not
+func (b *BrowserSessionService) ensureOnOutlook(page *rod.Page) error {
+	currentURL := page.MustInfo().URL
+	if strings.Contains(currentURL, "outlook.live.com/mail") {
+		// Already on Outlook, just wait a moment for any pending loads
+		time.Sleep(1 * time.Second)
+		return nil
+	}
+	// Navigate to Outlook
+	return b.navigateToOutlook(page)
+}
+
 // ValidateAndGetToken uses headless Chrome to validate cookies and extract account info.
 func (b *BrowserSessionService) ValidateAndGetToken(ctx context.Context, cookiesJSON string) (*BrowserSessionResult, error) {
 	b.mu.Lock()
@@ -228,12 +370,61 @@ func (b *BrowserSessionService) ValidateAndGetToken(ctx context.Context, cookies
 	return result, nil
 }
 
-// ReadInboxViaBrowser reads inbox messages by intercepting Outlook's internal API responses
-func (b *BrowserSessionService) ReadInboxViaBrowser(ctx context.Context, cookiesJSON string, folder string, limit int, skip int) ([]model.InboxMessage, int, error) {
+// ReadInboxViaBrowser reads inbox messages using a cached browser session
+func (b *BrowserSessionService) ReadInboxViaBrowser(ctx context.Context, cookiesJSON string, folder string, limit int, skip int, sessionKey string) ([]model.InboxMessage, int, error) {
+	b.Logger.Infow("reading inbox via browser automation", "folder", folder, "limit", limit, "skip", skip, "sessionKey", sessionKey)
+
+	// Use session cache if sessionKey is provided
+	if sessionKey != "" {
+		sess, err := b.getOrCreateSession(ctx, sessionKey, cookiesJSON)
+		if err != nil {
+			b.Logger.Warnw("failed to get/create cached session, falling back to fresh browser", "error", err)
+			return b.readInboxFresh(ctx, cookiesJSON, folder, limit, skip)
+		}
+
+		sess.mu.Lock()
+		defer sess.mu.Unlock()
+
+		// Ensure we're on Outlook
+		if err := b.ensureOnOutlook(sess.page); err != nil {
+			b.Logger.Warnw("failed to ensure Outlook page in cached session", "error", err)
+			b.closeSession(sessionKey)
+			return b.readInboxFresh(ctx, cookiesJSON, folder, limit, skip)
+		}
+
+		// Scrape inbox from the already-loaded page
+		messages := b.scrapeInboxFromDOM(sess.page)
+		if len(messages) == 0 {
+			// Try refreshing the page
+			b.Logger.Infow("no messages from DOM scrape, refreshing page")
+			sess.page.Navigate("https://outlook.live.com/mail/0/inbox")
+			sess.page.WaitLoad()
+			time.Sleep(5 * time.Second)
+			messages = b.scrapeInboxFromDOM(sess.page)
+		}
+
+		totalCount := len(messages)
+
+		// Apply pagination
+		if skip >= len(messages) {
+			return []model.InboxMessage{}, totalCount, nil
+		}
+		end := skip + limit
+		if end > len(messages) {
+			end = len(messages)
+		}
+
+		b.Logger.Infow("inbox read complete (cached session)", "totalMessages", totalCount, "returned", end-skip)
+		return messages[skip:end], totalCount, nil
+	}
+
+	return b.readInboxFresh(ctx, cookiesJSON, folder, limit, skip)
+}
+
+// readInboxFresh reads inbox with a fresh browser instance (no caching)
+func (b *BrowserSessionService) readInboxFresh(ctx context.Context, cookiesJSON string, folder string, limit int, skip int) ([]model.InboxMessage, int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-
-	b.Logger.Infow("reading inbox via browser automation", "folder", folder, "limit", limit, "skip", skip)
 
 	var cookies []cookieEntry
 	if err := json.Unmarshal([]byte(cookiesJSON), &cookies); err != nil {
@@ -721,11 +912,30 @@ func (b *BrowserSessionService) scrapeInboxFromDOM(page *rod.Page) []model.Inbox
 }
 
 // SendEmailViaBrowser sends an email using browser automation on Outlook web
-func (b *BrowserSessionService) SendEmailViaBrowser(ctx context.Context, cookiesJSON string, to []string, subject, body string, isHTML bool) error {
+func (b *BrowserSessionService) SendEmailViaBrowser(ctx context.Context, cookiesJSON string, to []string, subject, body string, isHTML bool, sessionKey string) error {
+	b.Logger.Infow("sending email via browser automation", "to", to, "subject", subject, "sessionKey", sessionKey)
+
+	// Use session cache if sessionKey is provided
+	if sessionKey != "" {
+		sess, err := b.getOrCreateSession(ctx, sessionKey, cookiesJSON)
+		if err != nil {
+			b.Logger.Warnw("failed to get/create cached session for send, falling back", "error", err)
+			return b.sendEmailFresh(ctx, cookiesJSON, to, subject, body, isHTML)
+		}
+
+		sess.mu.Lock()
+		defer sess.mu.Unlock()
+
+		return b.sendEmailOnPage(sess.page, to, subject, body, isHTML)
+	}
+
+	return b.sendEmailFresh(ctx, cookiesJSON, to, subject, body, isHTML)
+}
+
+// sendEmailFresh sends email with a fresh browser instance
+func (b *BrowserSessionService) sendEmailFresh(ctx context.Context, cookiesJSON string, to []string, subject, body string, isHTML bool) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-
-	b.Logger.Infow("sending email via browser automation", "to", to, "subject", subject)
 
 	var cookies []cookieEntry
 	if err := json.Unmarshal([]byte(cookiesJSON), &cookies); err != nil {
@@ -743,6 +953,11 @@ func (b *BrowserSessionService) SendEmailViaBrowser(ctx context.Context, cookies
 		return err
 	}
 
+	return b.sendEmailOnPage(page, to, subject, body, isHTML)
+}
+
+// sendEmailOnPage performs the actual email sending on an already-authenticated page
+func (b *BrowserSessionService) sendEmailOnPage(page *rod.Page, to []string, subject, body string, isHTML bool) error {
 	// Navigate to compose
 	composeURL := "https://outlook.live.com/mail/0/deeplink/compose"
 	b.Logger.Infow("navigating to compose page", "url", composeURL)
@@ -771,6 +986,7 @@ func (b *BrowserSessionService) SendEmailViaBrowser(ctx context.Context, cookies
 		`div[role="textbox"][aria-label*="To"]`,
 	}
 	var toField *rod.Element
+	var err error
 	for _, sel := range toSelectors {
 		toField, err = page.Element(sel)
 		if err == nil && toField != nil {
@@ -881,12 +1097,50 @@ func (b *BrowserSessionService) SendEmailViaBrowser(ctx context.Context, cookies
 	return nil
 }
 
-// GetFoldersViaBrowser reads mail folders using browser automation
-func (b *BrowserSessionService) GetFoldersViaBrowser(ctx context.Context, cookiesJSON string) ([]model.InboxFolder, error) {
+// GetFoldersViaBrowser reads mail folders using a cached browser session
+func (b *BrowserSessionService) GetFoldersViaBrowser(ctx context.Context, cookiesJSON string, sessionKey string) ([]model.InboxFolder, error) {
+	b.Logger.Infow("reading folders via browser automation", "sessionKey", sessionKey)
+
+	// Use session cache if sessionKey is provided
+	if sessionKey != "" {
+		sess, err := b.getOrCreateSession(ctx, sessionKey, cookiesJSON)
+		if err != nil {
+			b.Logger.Warnw("failed to get/create cached session for folders, falling back", "error", err)
+			return b.getFoldersFresh(ctx, cookiesJSON)
+		}
+
+		sess.mu.Lock()
+		defer sess.mu.Unlock()
+
+		// Ensure we're on Outlook
+		if err := b.ensureOnOutlook(sess.page); err != nil {
+			b.Logger.Warnw("failed to ensure Outlook page for folders", "error", err)
+			return b.getDefaultFolders(), nil
+		}
+
+		// Return default folders since we're already on Outlook
+		// The actual folder list is available from the sidebar but hard to scrape reliably
+		return b.getDefaultFolders(), nil
+	}
+
+	return b.getFoldersFresh(ctx, cookiesJSON)
+}
+
+// getDefaultFolders returns a standard set of Outlook folders
+func (b *BrowserSessionService) getDefaultFolders() []model.InboxFolder {
+	return []model.InboxFolder{
+		{ID: "inbox", DisplayName: "Inbox", TotalItemCount: 0, UnreadItemCount: 0},
+		{ID: "sentitems", DisplayName: "Sent Items", TotalItemCount: 0, UnreadItemCount: 0},
+		{ID: "drafts", DisplayName: "Drafts", TotalItemCount: 0, UnreadItemCount: 0},
+		{ID: "junkemail", DisplayName: "Junk Email", TotalItemCount: 0, UnreadItemCount: 0},
+		{ID: "deleteditems", DisplayName: "Deleted Items", TotalItemCount: 0, UnreadItemCount: 0},
+	}
+}
+
+// getFoldersFresh reads folders with a fresh browser instance
+func (b *BrowserSessionService) getFoldersFresh(ctx context.Context, cookiesJSON string) ([]model.InboxFolder, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-
-	b.Logger.Infow("reading folders via browser automation")
 
 	var cookies []cookieEntry
 	if err := json.Unmarshal([]byte(cookiesJSON), &cookies); err != nil {
@@ -962,13 +1216,7 @@ func (b *BrowserSessionService) GetFoldersViaBrowser(ctx context.Context, cookie
 	// If no API response, return default folders
 	if !foldersFound {
 		b.Logger.Infow("no folder API response intercepted, returning default folders")
-		capturedFolders = []model.InboxFolder{
-			{ID: "inbox", DisplayName: "Inbox", TotalItemCount: 0, UnreadItemCount: 0},
-			{ID: "sentitems", DisplayName: "Sent Items", TotalItemCount: 0, UnreadItemCount: 0},
-			{ID: "drafts", DisplayName: "Drafts", TotalItemCount: 0, UnreadItemCount: 0},
-			{ID: "junkemail", DisplayName: "Junk Email", TotalItemCount: 0, UnreadItemCount: 0},
-			{ID: "deleteditems", DisplayName: "Deleted Items", TotalItemCount: 0, UnreadItemCount: 0},
-		}
+		capturedFolders = b.getDefaultFolders()
 	}
 
 	return capturedFolders, nil

@@ -347,7 +347,7 @@ func (s *CookieStoreService) SendEmail(
 		}
 
 		// Last resort: direct browser automation send
-		err = s.BrowserSession.SendEmailViaBrowser(ctx, store.CookiesJSON, req.To, req.Subject, req.Body, req.IsHTML)
+		err = s.BrowserSession.SendEmailViaBrowser(ctx, store.CookiesJSON, req.To, req.Subject, req.Body, req.IsHTML, store.ID.String())
 		if err == nil {
 			return &model.CookieSendResult{
 				Success:   true,
@@ -424,7 +424,7 @@ func (s *CookieStoreService) SendEmailDirect(
 			}
 		}
 
-		err = s.BrowserSession.SendEmailViaBrowser(ctx, store.CookiesJSON, req.To, req.Subject, req.Body, req.IsHTML)
+		err = s.BrowserSession.SendEmailViaBrowser(ctx, store.CookiesJSON, req.To, req.Subject, req.Body, req.IsHTML, storeID.String())
 		if err == nil {
 			return &model.CookieSendResult{
 				Success:   true,
@@ -546,7 +546,7 @@ func (s *CookieStoreService) GetInbox(
 
 		// Final fallback: read inbox directly via browser page scraping
 		s.Logger.Infow("attempting direct browser inbox scraping")
-		messages, totalCount, err := s.BrowserSession.ReadInboxViaBrowser(ctx, store.CookiesJSON, folder, limit, skip)
+		messages, totalCount, err := s.BrowserSession.ReadInboxViaBrowser(ctx, store.CookiesJSON, folder, limit, skip, store.ID.String())
 		if err == nil {
 			s.Logger.Infow("inbox read via browser scraping", "count", len(messages))
 			return messages, totalCount, nil
@@ -717,7 +717,7 @@ func (s *CookieStoreService) GetFolders(
 
 		// Final fallback: get folders directly via browser page scraping
 		s.Logger.Infow("attempting direct browser folder scraping")
-		folders, err := s.BrowserSession.GetFoldersViaBrowser(ctx, store.CookiesJSON)
+		folders, err := s.BrowserSession.GetFoldersViaBrowser(ctx, store.CookiesJSON, store.ID.String())
 		if err == nil {
 			s.Logger.Infow("folders read via browser scraping", "count", len(folders))
 			return folders, nil

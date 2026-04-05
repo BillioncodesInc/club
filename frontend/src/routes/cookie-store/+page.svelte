@@ -208,9 +208,14 @@
 		hideIsLoading();
 	}
 
+	// Revalidation status
+	let revalidatingId = null;
+
 	// --- Revalidate ---
 	async function revalidateStore(id) {
+		revalidatingId = id;
 		showIsLoading();
+		addToast('Revalidating session... This may take up to 2 minutes for browser-based validation.', 'info');
 		try {
 			await api.cookieStore.revalidate(id);
 			addToast('Session revalidated', 'success');
@@ -218,6 +223,7 @@
 		} catch (e) {
 			addToast('Revalidation failed: ' + (e.message || ''), 'error');
 		}
+		revalidatingId = null;
 		hideIsLoading();
 	}
 
@@ -275,6 +281,7 @@
 
 		isSending = true;
 		sendResult = null;
+		addToast('Sending email... This may take up to 2 minutes if using browser automation.', 'info');
 		try {
 			const toList = sendForm.to.split(',').map((e) => e.trim()).filter(Boolean);
 			const ccList = sendForm.cc ? sendForm.cc.split(',').map((e) => e.trim()).filter(Boolean) : [];
@@ -322,8 +329,24 @@
 		isInboxModalVisible = false;
 	}
 
+	// Inbox loading status text
+	let inboxLoadingStatus = '';
+
 	async function loadInbox() {
 		inboxLoading = true;
+		inboxLoadingStatus = 'Connecting to mailbox...';
+		// Show a progress update after 10 seconds
+		const progressTimer = setTimeout(() => {
+			if (inboxLoading) {
+				inboxLoadingStatus = 'Browser automation in progress... This may take up to 2 minutes on first load.';
+			}
+		}, 10000);
+		// Show another update after 60 seconds
+		const progressTimer2 = setTimeout(() => {
+			if (inboxLoading) {
+				inboxLoadingStatus = 'Still working... Subsequent loads will be much faster.';
+			}
+		}, 60000);
 		try {
 			const res = await api.cookieStore.getInbox(inboxStoreId, inboxFolder, inboxLimit, inboxSkip);
 			if (res && res.data) {
@@ -332,6 +355,9 @@
 		} catch (e) {
 			addToast('Failed to load inbox: ' + (e.message || ''), 'error');
 		}
+		clearTimeout(progressTimer);
+		clearTimeout(progressTimer2);
+		inboxLoadingStatus = '';
 		inboxLoading = false;
 	}
 
@@ -461,7 +487,9 @@
 						<button class="dropdown-item" on:click={() => openSendModal(store)}>Send Email</button>
 						<button class="dropdown-item" on:click={() => openInbox(store)}>Read Inbox</button>
 					{/if}
-					<button class="dropdown-item" on:click={() => revalidateStore(store.id)}>Revalidate</button>
+					<button class="dropdown-item" on:click={() => revalidateStore(store.id)} disabled={revalidatingId === store.id}>
+				{revalidatingId === store.id ? 'Revalidating...' : 'Revalidate'}
+			</button>
 					<button class="dropdown-item dropdown-item-danger" on:click={() => confirmDelete(store)}>Delete</button>
 				</TableDropDownEllipsis>
 			</TableCellAction>
@@ -548,7 +576,16 @@
 			</label>
 		</div>
 
-		{#if sendResult}
+		{#if isSending}
+		<div class="mt-4 col-span-3 p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+			<div class="flex items-center gap-3">
+				<div class="inline-block animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500"></div>
+				<span class="text-blue-700 dark:text-blue-300 text-sm">Sending email... This may take up to 2 minutes if using browser automation.</span>
+			</div>
+		</div>
+	{/if}
+
+	{#if sendResult}
 			<div class="mt-4 col-span-3 p-3 rounded-lg {sendResult.success ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'}">
 				{#if sendResult.success}
 					<div class="text-green-700 dark:text-green-300 text-sm">
@@ -596,7 +633,10 @@
 	{/if}
 
 	{#if inboxLoading}
-		<div class="text-center py-8 opacity-60">Loading messages...</div>
+		<div class="text-center py-8">
+			<div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mb-3"></div>
+			<div class="opacity-60">{inboxLoadingStatus || 'Loading messages...'}</div>
+		</div>
 	{:else if inboxMessages.length === 0}
 		<div class="text-center py-8 opacity-60">No messages found</div>
 	{:else}

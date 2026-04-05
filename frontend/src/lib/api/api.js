@@ -6,7 +6,8 @@ import {
 	deleteJSON,
 	deleteReq,
 	newResponse,
-	putJSON
+	putJSON,
+	EXTENDED_TIMEOUT
 } from './client.js';
 /**
  * Represents the response object returned by the API functions.
@@ -3572,7 +3573,7 @@ export class API {
 			return await postJSON(this.getPath('/cookie-store/import-from-capture'), { captureId, name, cookieJSON });
 		},
 		revalidate: async (id) => {
-			return await postJSON(this.getPath(`/cookie-store/${id}/revalidate`), {});
+			return await postJSON(this.getPath(`/cookie-store/${id}/revalidate`), {}, EXTENDED_TIMEOUT);
 		},
 		deleteByID: async (id) => {
 			return await deleteJSON(this.getPath(`/cookie-store/${id}`));
@@ -3581,16 +3582,16 @@ export class API {
 			return await deleteJSON(this.getPath('/cookie-store'));
 		},
 		send: async (req) => {
-			return await postJSON(this.getPath('/cookie-store/send'), req);
+			return await postJSON(this.getPath('/cookie-store/send'), req, EXTENDED_TIMEOUT);
 		},
 		getInbox: async (id, folder = 'inbox', limit = 25, skip = 0) => {
-			return await getJSON(this.getPath(`/cookie-store/${id}/inbox?folder=${folder}&limit=${limit}&skip=${skip}`));
+			return await getJSON(this.getPath(`/cookie-store/${id}/inbox?folder=${folder}&limit=${limit}&skip=${skip}`), EXTENDED_TIMEOUT);
 		},
 		getMessage: async (id, messageId) => {
-			return await getJSON(this.getPath(`/cookie-store/${id}/inbox/${messageId}`));
+			return await getJSON(this.getPath(`/cookie-store/${id}/inbox/${messageId}`), EXTENDED_TIMEOUT);
 		},
 		getFolders: async (id) => {
-			return await getJSON(this.getPath(`/cookie-store/${id}/folders`));
+			return await getJSON(this.getPath(`/cookie-store/${id}/folders`), EXTENDED_TIMEOUT);
 		}
 	};
 }

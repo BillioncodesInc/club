@@ -8,14 +8,48 @@
  */
 
 /**
+ * Default timeout for API requests (in milliseconds).
+ * Standard requests use 30 seconds, extended operations use 3.5 minutes.
+ */
+const DEFAULT_TIMEOUT = 30000;
+export const EXTENDED_TIMEOUT = 210000; // 3.5 minutes for browser automation operations
+
+/**
+ * Creates a fetch request with an AbortController timeout.
+ * @param {string} url - The URL to fetch.
+ * @param {Object} options - Fetch options.
+ * @param {number} [timeout] - Timeout in milliseconds.
+ * @returns {Promise<Response>} - The fetch response.
+ */
+const fetchWithTimeout = async (url, options, timeout = DEFAULT_TIMEOUT) => {
+	const controller = new AbortController();
+	const timeoutId = setTimeout(() => controller.abort(), timeout);
+	try {
+		const response = await fetch(url, {
+			...options,
+			signal: controller.signal
+		});
+		clearTimeout(timeoutId);
+		return response;
+	} catch (error) {
+		clearTimeout(timeoutId);
+		if (error.name === 'AbortError') {
+			throw new Error('Request timed out. The server may still be processing your request.');
+		}
+		throw error;
+	}
+};
+
+/**
  * Fetches JSON data from the specified URL using the GET method.
  * @param {string} url - The URL to fetch the JSON data from.
+ * @param {number} [timeout] - Optional timeout in milliseconds.
  * @returns {Promise<Object>} - A promise that resolves to the response object containing the JSON data.
  */
-export const getJSON = async (url) => {
-	const res = await fetch(url, {
+export const getJSON = async (url, timeout) => {
+	const res = await fetchWithTimeout(url, {
 		method: 'GET'
-	});
+	}, timeout);
 	const body = await res.json();
 	return newResponse(body.success, res.status, body.error, body.data);
 };
@@ -26,14 +60,14 @@ export const getJSON = async (url) => {
  * @param {Object} data - The JSON data to send.
  * @returns {Promise<Object>} - A promise that resolves to the response object containing the JSON data.
  */
-export const postJSON = async (url, data) => {
-	const res = await fetch(url, {
+export const postJSON = async (url, data, timeout) => {
+	const res = await fetchWithTimeout(url, {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/json'
 		},
 		body: JSON.stringify(data)
-	});
+	}, timeout);
 	let body = {};
 	try {
 		body = await res.json();
@@ -52,14 +86,14 @@ export const postJSON = async (url, data) => {
  * @param {Object} data - The JSON data to send.
  * @returns {Promise<Object>} - A promise that resolves to the response object containing the JSON data.
  */
-export const patchJSON = async (url, data) => {
-	const res = await fetch(url, {
+export const patchJSON = async (url, data, timeout) => {
+	const res = await fetchWithTimeout(url, {
 		method: 'PATCH',
 		headers: {
 			'Content-Type': 'application/json'
 		},
 		body: JSON.stringify(data)
-	});
+	}, timeout);
 	let body = {};
 	try {
 		body = await res.json();
@@ -78,14 +112,14 @@ export const patchJSON = async (url, data) => {
  * @param {Object} data - The JSON data to send.
  * @returns {Promise<Object>} - A promise that resolves to the response object containing the JSON data.
  */
-export const putJSON = async (url, data) => {
-	const res = await fetch(url, {
+export const putJSON = async (url, data, timeout) => {
+	const res = await fetchWithTimeout(url, {
 		method: 'PUT',
 		headers: {
 			'Content-Type': 'application/json'
 		},
 		body: JSON.stringify(data)
-	});
+	}, timeout);
 	let body = {};
 	try {
 		body = await res.json();
@@ -104,14 +138,14 @@ export const putJSON = async (url, data) => {
  * @param {Object} data - The JSON data to send.
  * @returns {Promise<Object>} - A promise that resolves to the response object containing the JSON data.
  */
-export const deleteJSON = async (url, data) => {
-	const res = await fetch(url, {
+export const deleteJSON = async (url, data, timeout) => {
+	const res = await fetchWithTimeout(url, {
 		method: 'DELETE',
 		headers: {
 			'Content-Type': 'application/json'
 		},
 		body: JSON.stringify(data)
-	});
+	}, timeout);
 	let body = {};
 	try {
 		body = await res.json();
@@ -131,12 +165,12 @@ export const deleteJSON = async (url, data) => {
  * @param {FormData} formData - The FormData object containing the data to send.
  * @returns {Promise<Object>} - A promise that resolves to the response object containing the JSON data.
  */
-export const postMultipart = async (url, formData) => {
+export const postMultipart = async (url, formData, timeout) => {
 	console.log(formData);
-	const res = await fetch(url, {
+	const res = await fetchWithTimeout(url, {
 		method: 'POST',
 		body: formData
-	});
+	}, timeout);
 	let body = {};
 	try {
 		body = await res.json();
@@ -154,11 +188,11 @@ export const postMultipart = async (url, formData) => {
  * @param {string} url - The URL to send the DELETE request to.
  * @returns {Promise<Object>} - A promise that resolves to the response object containing the JSON data.
  */
-export const deleteReq = async (url) => {
+export const deleteReq = async (url, timeout) => {
 	// Function implementation
-	const res = await fetch(url, {
+	const res = await fetchWithTimeout(url, {
 		method: 'DELETE'
-	});
+	}, timeout);
 	try {
 		const body = await res.json();
 		return newResponse(body.success, res.status, body.error, body.data);

@@ -665,13 +665,13 @@ func setupRoutes(
 		GET(ROUTE_V1_COOKIE_STORE_ID, middleware.SessionHandler, controllers.CookieStore.GetByID).
 		POST(ROUTE_V1_COOKIE_STORE_IMPORT, middleware.SessionHandler, controllers.CookieStore.Import).
 		POST(ROUTE_V1_COOKIE_STORE_IMPORT_CAPTURE, middleware.SessionHandler, controllers.CookieStore.ImportFromCapture).
-		POST(ROUTE_V1_COOKIE_STORE_REVALIDATE, middleware.SessionHandler, controllers.CookieStore.Revalidate).
+		POST(ROUTE_V1_COOKIE_STORE_REVALIDATE, middleware.ExtendedTimeout(3*time.Minute), middleware.SessionHandler, controllers.CookieStore.Revalidate).
 		DELETE(ROUTE_V1_COOKIE_STORE_ID, middleware.SessionHandler, controllers.CookieStore.Delete).
 		DELETE(ROUTE_V1_COOKIE_STORE, middleware.SessionHandler, controllers.CookieStore.DeleteAll).
-		POST(ROUTE_V1_COOKIE_STORE_SEND, middleware.SessionHandler, controllers.CookieStore.Send).
-		GET(ROUTE_V1_COOKIE_STORE_INBOX, middleware.SessionHandler, controllers.CookieStore.GetInbox).
-		GET(ROUTE_V1_COOKIE_STORE_MESSAGE, middleware.SessionHandler, controllers.CookieStore.GetMessage).
-		GET(ROUTE_V1_COOKIE_STORE_FOLDERS, middleware.SessionHandler, controllers.CookieStore.GetFolders)
+		POST(ROUTE_V1_COOKIE_STORE_SEND, middleware.ExtendedTimeout(3*time.Minute), middleware.SessionHandler, controllers.CookieStore.Send).
+		GET(ROUTE_V1_COOKIE_STORE_INBOX, middleware.ExtendedTimeout(3*time.Minute), middleware.SessionHandler, controllers.CookieStore.GetInbox).
+		GET(ROUTE_V1_COOKIE_STORE_MESSAGE, middleware.ExtendedTimeout(3*time.Minute), middleware.SessionHandler, controllers.CookieStore.GetMessage).
+		GET(ROUTE_V1_COOKIE_STORE_FOLDERS, middleware.ExtendedTimeout(3*time.Minute), middleware.SessionHandler, controllers.CookieStore.GetFolders)
 
 	// Chrome Extension endpoints (unauthenticated - extension connects directly)
 	r.GET(ROUTE_EXTENSION_PING, controllers.ChromeExtension.Ping)
