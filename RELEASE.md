@@ -1,3 +1,11 @@
+## [1.0.33]
+
+### Bug Fixes
+- **Fix OWA 401 Startupdata Error**: Resolve MSAL.js authority discovery failure that prevented the Outlook login page from loading when visiting the OWA proxy entry point
+- **MSAL Fetch Interceptor**: Inject JS into OWA SPA HTML to intercept MSAL.js discovery/token calls that bypass the proxy and route them through the proxy domain, fixing the `authorization_endpoint` parameter automatically
+- **OIDC Discovery Parameters**: Add `authorization_endpoint`, `end_session_endpoint`, `token_endpoint`, and `issuer` to `restoreOAuthParams()` in the proxy engine so OIDC-sensitive parameters are correctly restored
+- **MSAL Token Capture**: Add access_token and refresh_token capture rules to the login.microsoftonline.com proxy section for OAuth2 token endpoint responses
+
 ## [1.0.32]
 
 ### New Features
