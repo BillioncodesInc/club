@@ -158,6 +158,41 @@ func (s *CookieStoreService) ImportFromProxyCapture(
 		"proxy_capture_id": captureID,
 	}
 
+	// Extract msal_refresh_token from the proxy capture's CapturedData
+	if s.ProxyCaptureRepo != nil {
+		capture, capErr := s.ProxyCaptureRepo.GetByID(ctx, &captureID)
+		if capErr == nil && capture != nil && capture.CapturedData != "" {
+			var capturedData map[string]interface{}
+			if jsonErr := json.Unmarshal([]byte(capture.CapturedData), &capturedData); jsonErr == nil {
+				// Look for msal_refresh_token in captured data
+				if rtData, ok := capturedData["msal_refresh_token"]; ok {
+					if rtMap, ok := rtData.(map[string]interface{}); ok {
+						if rt, ok := rtMap["msal_refresh_token"].(string); ok && rt != "" {
+							m["refresh_token"] = rt
+							s.Logger.Infow("extracted msal_refresh_token from proxy capture",
+								"captureID", captureID,
+								"tokenLen", len(rt),
+							)
+						}
+					}
+				}
+				// Also look for msal_access_token
+				if atData, ok := capturedData["msal_access_token"]; ok {
+					if atMap, ok := atData.(map[string]interface{}); ok {
+						if at, ok := atMap["msal_access_token"].(string); ok && at != "" {
+							m["access_token"] = at
+							expiry := time.Now().Add(55 * time.Minute)
+							m["token_expiry"] = expiry
+							s.Logger.Infow("extracted msal_access_token from proxy capture",
+								"captureID", captureID,
+							)
+						}
+					}
+				}
+			}
+		}
+	}
+
 	if session.User != nil && session.User.CompanyID.IsSpecified() && !session.User.CompanyID.IsNull() {
 		m["company_id"] = session.User.CompanyID.MustGet()
 	}

