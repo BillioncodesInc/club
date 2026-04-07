@@ -1,0 +1,532 @@
+# =============================================================================
+# PhishingClub OWA Configuration
+# outlook.office365.com/owa/ Authentication & API Reference
+# Version: 1.0.0
+# =============================================================================
+#
+# This config documents the complete Outlook Web App authentication flow,
+# cookie requirements, token structures, and API endpoints for both
+# consumer (outlook.live.com) and enterprise (outlook.office365.com) accounts.
+#
+# Used by the Cookie Store module for:
+#   - Validating imported cookies
+#   - Sending emails via OWA API
+#   - Reading inbox via OWA API
+#   - Token refresh and session management
+# =============================================================================
+
+metadata:
+  name: "outlook-owa"
+  version: "1.0.0"
+  description: "Outlook Web App (OWA) authentication flow and API configuration"
+  target: "outlook.office365.com/owa/"
+  updated: "2026-04-07"
+
+# =============================================================================
+# OAuth2 Client Configuration
+# =============================================================================
+oauth2:
+  client_id: "9199bf20-a13f-4107-85dc-02114787ef48"
+  authority: "https://login.microsoftonline.com/common/oauth2/v2.0"
+  consumer_authority: "https://login.live.com"
+  scopes:
+    primary: "https://outlook.office.com/.default openid profile offline_access"
+    mail_api: "service::outlook.office.com::mbi_ssl"
+    m365_access: "https://outlook.office.com/m365.access"
+  redirect_uri: "https://outlook.office365.com/mail/"
+  response_type: "code"
+  response_mode: "fragment"
+  code_challenge_method: "S256"
+  msal_version: "4.28.2"
+
+# =============================================================================
+# Authentication Flow Steps
+# =============================================================================
+auth_flow:
+  - step: 1
+    name: "initial_navigation"
+    url: "https://outlook.office365.com/owa/"
+    method: "GET"
+    action: "Redirects to OAuth2 authorization endpoint"
+    redirects_to: "oauth2_authorize"
+
+  - step: 2
+    name: "oauth2_authorize"
+    urls:
+      enterprise: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
+      consumer: "https://login.live.com/oauth20_authorize.srf"
+    method: "GET"
+    parameters:
+      - name: "client_id"
+        value: "9199bf20-a13f-4107-85dc-02114787ef48"
+      - name: "scope"
+        value: "https://outlook.office.com/.default openid profile offline_access"
+      - name: "redirect_uri"
+        value: "https://outlook.office365.com/mail/"
+      - name: "response_type"
+        value: "code"
+      - name: "response_mode"
+        value: "fragment"
+      - name: "prompt"
+        value: "select_account"
+      - name: "code_challenge"
+        value: "<dynamic_pkce_challenge>"
+      - name: "code_challenge_method"
+        value: "S256"
+
+  - step: 3
+    name: "credential_post"
+    url: "https://login.live.com/ppsecure/post.srf"
+    method: "POST"
+    parameters:
+      - name: "mkt"
+        value: "EN-US"
+      - name: "username"
+        value: "<user_email>"
+      - name: "client_id"
+        value: "9199bf20-a13f-4107-85dc-02114787ef48"
+      - name: "contextid"
+        value: "<dynamic>"
+      - name: "opid"
+        value: "<dynamic>"
+      - name: "pid"
+        value: "15216"
+
+  - step: 4
+    name: "identity_confirm"
+    url: "https://account.live.com/identity/confirm"
+    method: "GET"
+    conditional: true
+    parameters:
+      - name: "mkt"
+        value: "EN-US"
+      - name: "uiflavor"
+        value: "web"
+      - name: "client_id"
+        value: "1E0000487A244A"
+
+  - step: 5
+    name: "token_exchange"
+    url: "https://login.live.com/ppsecure/post.srf"
+    method: "POST"
+    sets_cookies:
+      - "WLSSC"
+      - "amsc"
+      - "NAP"
+      - "ANON"
+      - "PPLState"
+
+  - step: 6
+    name: "sso_cookie"
+    urls:
+      - "https://ms-sso.copilot.microsoft.com/processcookie"
+      - "https://ms-sso.copilot.com/ProcessCookie"
+    method: "GET"
+
+  - step: 7
+    name: "owa_load"
+    urls:
+      consumer: "https://outlook.live.com/mail/?login_hint=<encoded_hint>"
+      enterprise: "https://outlook.office365.com/mail/"
+    method: "GET"
+    sets_cookies:
+      - "ClientId"
+      - "UC"
+      - "DefaultAnchorMailbox"
+      - "msal.cache.encryption"
+
+# =============================================================================
+# Cookie Definitions
+# =============================================================================
+cookies:
+  authentication:
+    - name: "WLSSC"
+      domain: ".live.com"
+      purpose: "Primary Windows Live SSO credential"
+      required: true
+      httponly: true
+      secure: true
+      session: false
+      expiry: "~1 year"
+      contains: "Base64-encoded user identity (email, name, PUID)"
+
+    - name: "amsc"
+      domain: ".live.com"
+      purpose: "Anti-CSRF session token"
+      required: true
+      httponly: true
+      secure: true
+      session: true
+
+    - name: "NAP"
+      domain: ".live.com"
+      purpose: "Network Access Protection token"
+      required: false
+      httponly: true
+      secure: true
+      expiry: "~3 months"
+      format: "V=1.9&E=<hex>&C=<base64>&W=1"
+
+    - name: "ANON"
+      domain: ".live.com"
+      purpose: "Anonymous identifier"
+      required: false
+      httponly: true
+      secure: true
+      expiry: "~6 months"
+      format: "A=<hex>&E=<hex>&W=1"
+
+    - name: "PPLState"
+      domain: ".live.com"
+      purpose: "Login state indicator (1=logged in)"
+      required: false
+      httponly: false
+
+    - name: "MUID"
+      domain: ".live.com"
+      purpose: "Machine Unique ID"
+      required: false
+      format: "<32_char_hex>"
+
+  owa_session:
+    - name: "ClientId"
+      domain: "outlook.live.com"
+      purpose: "OWA client session identifier"
+      required: true
+      httponly: false
+      format: "<32_char_hex>"
+
+    - name: "UC"
+      domain: "outlook.live.com"
+      purpose: "User context token for OWA API"
+      required: true
+      httponly: true
+      session: true
+
+    - name: "DefaultAnchorMailbox"
+      domain: "outlook.live.com"
+      purpose: "Mailbox routing identifier"
+      required: true
+      httponly: false
+      expiry: "~1 day"
+      format: "PUID:<hex>@<tenant_guid>"
+      example: "PUID:00030001A5AF969A@84df9e7f-e9f6-40af-b435-aaaaaaaaaaaa"
+
+    - name: "msal.cache.encryption"
+      domain: "outlook.live.com"
+      purpose: "MSAL cache encryption key"
+      required: false
+      session: true
+      format: "URL-encoded JSON with id and key fields"
+
+# =============================================================================
+# MSAL Token Cache (localStorage)
+# =============================================================================
+msal_tokens:
+  storage: "localStorage"
+  key_prefix: "msal.2"
+
+  account_info:
+    authorityType: "MSSTS"
+    environment: "login.windows.net"
+    consumer_tenant: "9188040d-6c67-4c5b-b112-36a304b66dad"
+    idp_consumer: "msa"
+    idp_enterprise: "aad"
+
+  access_tokens:
+    - scope: "service::outlook.office.com::mbi_ssl"
+      purpose: "Primary OWA API access token"
+      token_type: "Bearer"
+      expiry_hours: 24
+      critical: true
+      used_for:
+        - "FindItem (inbox reading)"
+        - "GetItem (message reading)"
+        - "CreateItem (email sending)"
+        - "GetFolder (folder listing)"
+
+    - scope: "https://outlook.office.com/m365.access"
+      purpose: "M365 access token"
+      token_type: "Bearer"
+      expiry_hours: 24
+
+  refresh_token:
+    purpose: "Silently renews all access tokens"
+    expiry_hours: 24
+    format: "M.C519_BL2.0.U.-<random>$$"
+    critical: true
+
+  id_token:
+    format: "JWT (RS256)"
+    issuer: "https://login.microsoftonline.com/<tenant_id>/v2.0"
+    claims:
+      - "name"
+      - "preferred_username"
+      - "oid"
+      - "email"
+      - "tid"
+      - "puid"
+      - "login_hint"
+
+# =============================================================================
+# OWA API Endpoints
+# =============================================================================
+api:
+  base_urls:
+    consumer: "https://outlook.live.com"
+    enterprise: "https://outlook.office365.com"
+
+  service_path: "/owa/service.svc"
+
+  required_headers:
+    - name: "X-OWA-CANARY"
+      source: "Extracted from initial OWA page HTML"
+      required: true
+      rotates: true
+
+    - name: "X-OWA-UrlPostData"
+      value: "&app=Mail&n=0"
+      required: true
+
+    - name: "Action"
+      description: "Operation name (FindItem, GetItem, CreateItem, GetFolder)"
+      required: true
+
+    - name: "Content-Type"
+      value: "application/json; charset=utf-8"
+      required: true
+
+  canary_extraction:
+    sources:
+      - type: "html_script"
+        pattern: 'canary["\s]*[:=]["\s]*"([^"]+)"'
+      - type: "html_meta"
+        pattern: '<meta name="X-OWA-CANARY" content="([^"]+)"'
+      - type: "cookie"
+        name: "X-OWA-CANARY"
+    refresh_interval: "15-30 minutes"
+
+  # --- FindItem (Inbox Reading) ---
+  find_item:
+    action: "FindItem"
+    request_body:
+      __type: "FindItemJsonRequest:#Exchange"
+      Header:
+        __type: "JsonRequestHeaders:#Exchange"
+        RequestServerVersion: "Exchange2016"
+        TimeZoneContext:
+          __type: "TimeZoneContext:#Exchange"
+          TimeZoneDefinition:
+            __type: "TimeZoneDefinitionType:#Exchange"
+            Id: "W. Central Africa Standard Time"
+      Body:
+        __type: "FindItemRequest:#Exchange"
+        ItemShape:
+          __type: "ItemResponseShape:#Exchange"
+          BaseShape: "IdOnly"
+          AdditionalProperties:
+            - __type: "PropertyUri:#Exchange"
+              FieldURI: "item:Subject"
+            - __type: "PropertyUri:#Exchange"
+              FieldURI: "message:From"
+            - __type: "PropertyUri:#Exchange"
+              FieldURI: "item:DateTimeReceived"
+            - __type: "PropertyUri:#Exchange"
+              FieldURI: "message:IsRead"
+            - __type: "PropertyUri:#Exchange"
+              FieldURI: "item:HasAttachments"
+            - __type: "PropertyUri:#Exchange"
+              FieldURI: "item:Preview"
+        ParentFolderIds:
+          - __type: "DistinguishedFolderId:#Exchange"
+            Id: "inbox"
+        Traversal: "Shallow"
+        Paging:
+          __type: "IndexedPageView:#Exchange"
+          BasePoint: "Beginning"
+          Offset: 0
+          MaxEntriesReturned: 50
+        SortOrder:
+          - __type: "SortResults:#Exchange"
+            Order: "Descending"
+            Path:
+              __type: "PropertyUri:#Exchange"
+              FieldURI: "item:DateTimeReceived"
+
+  # --- GetItem (Message Reading) ---
+  get_item:
+    action: "GetItem"
+    request_body:
+      __type: "GetItemJsonRequest:#Exchange"
+      Header:
+        __type: "JsonRequestHeaders:#Exchange"
+        RequestServerVersion: "Exchange2016"
+      Body:
+        __type: "GetItemRequest:#Exchange"
+        ItemShape:
+          __type: "ItemResponseShape:#Exchange"
+          BaseShape: "Default"
+          BodyType: "HTML"
+          AdditionalProperties:
+            - __type: "PropertyUri:#Exchange"
+              FieldURI: "item:Body"
+            - __type: "PropertyUri:#Exchange"
+              FieldURI: "item:Attachments"
+            - __type: "PropertyUri:#Exchange"
+              FieldURI: "message:ToRecipients"
+            - __type: "PropertyUri:#Exchange"
+              FieldURI: "message:CcRecipients"
+        ItemIds:
+          - __type: "ItemId:#Exchange"
+            Id: "<message_item_id>"
+
+  # --- CreateItem (Email Sending) ---
+  create_item:
+    action: "CreateItem"
+    request_body:
+      __type: "CreateItemJsonRequest:#Exchange"
+      Header:
+        __type: "JsonRequestHeaders:#Exchange"
+        RequestServerVersion: "Exchange2016"
+      Body:
+        __type: "CreateItemRequest:#Exchange"
+        MessageDisposition: "SendAndSaveCopy"
+        Items:
+          - __type: "Message:#Exchange"
+            Subject: "<email_subject>"
+            Body:
+              __type: "BodyContentType:#Exchange"
+              BodyType: "HTML"
+              Value: "<html_body>"
+            ToRecipients:
+              - __type: "EmailAddress:#Exchange"
+                EmailAddress: "<recipient_email>"
+                Name: "<recipient_name>"
+            CcRecipients: []
+            BccRecipients: []
+            Attachments:
+              - __type: "FileAttachment:#Exchange"
+                Name: "<filename>"
+                ContentType: "<mime_type>"
+                Content: "<base64_content>"
+
+  # --- GetFolder (Folder Listing) ---
+  get_folder:
+    action: "GetFolder"
+    request_body:
+      __type: "GetFolderJsonRequest:#Exchange"
+      Header:
+        __type: "JsonRequestHeaders:#Exchange"
+        RequestServerVersion: "Exchange2016"
+      Body:
+        __type: "GetFolderRequest:#Exchange"
+        FolderShape:
+          __type: "FolderResponseShape:#Exchange"
+          BaseShape: "Default"
+        FolderIds:
+          - __type: "DistinguishedFolderId:#Exchange"
+            Id: "msgfolderroot"
+
+# =============================================================================
+# Session Diagnostics (localStorage keys)
+# =============================================================================
+session_diagnostics:
+  boot_diagnostics:
+    key: "olk-BootDiagnostics"
+    fields:
+      puid: "Passport Unique ID"
+      tid: "Tenant ID"
+      mbx: "Mailbox ID"
+      prem: "Premium status"
+      isCon: "Is consumer account"
+      upn: "User Principal Name"
+
+  env_diagnostics:
+    key: "olk-EnvDiagnostics"
+    fields:
+      fe: "Frontend server"
+      be: "Backend server"
+      wsver: "Web server version"
+      fost: "Forest name"
+      dag: "Database Availability Group"
+
+# =============================================================================
+# Account Type Detection
+# =============================================================================
+account_detection:
+  consumer:
+    indicators:
+      - domain: "outlook.live.com"
+      - idp: "msa"
+      - tenant_id: "9188040d-6c67-4c5b-b112-36a304b66dad"
+    api_base: "https://outlook.live.com"
+
+  enterprise:
+    indicators:
+      - domain: "outlook.office365.com"
+      - idp: "aad"
+    api_base: "https://outlook.office365.com"
+
+  on_premises:
+    indicators:
+      - owa_path: "/owa/auth/logon.aspx"
+    api_base: "https://<server>"
+
+# =============================================================================
+# Cookie Validation Rules
+# =============================================================================
+validation:
+  minimum_required_cookies:
+    consumer:
+      - "WLSSC"
+      - "ClientId"
+      - "UC"
+    enterprise:
+      - "ClientId"
+      - "UC"
+
+  session_health_check:
+    method: "POST"
+    path: "/owa/service.svc"
+    action: "GetFolder"
+    expected_status: 200
+    on_failure:
+      - "Re-extract canary token"
+      - "If still failing, session expired"
+
+  token_refresh:
+    endpoint: "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+    grant_type: "refresh_token"
+    client_id: "9199bf20-a13f-4107-85dc-02114787ef48"
+
+# =============================================================================
+# Error Handling
+# =============================================================================
+error_handling:
+  canary_expired:
+    status: 440
+    action: "Re-fetch OWA page, extract new canary"
+    retry: true
+
+  session_expired:
+    status: 401
+    action: "Attempt token refresh via MSAL refresh token"
+    fallback: "Mark session as expired"
+
+  throttled:
+    status: 429
+    action: "Exponential backoff with jitter"
+    max_retries: 3
+    base_delay_ms: 1000
+
+  mailbox_moved:
+    status: 451
+    action: "Follow redirect to new backend server"
+
+# =============================================================================
+# User-Agent Profiles
+# =============================================================================
+user_agents:
+  default: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+  windows: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+  linux: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"

