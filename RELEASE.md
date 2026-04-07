@@ -1,3 +1,17 @@
+## [1.0.31]
+### Major Rework: Cookie Store Pre-Automation & Cached Data
+- **Background pre-automation**: After cookie import/validation, the system automatically launches browser automation in the background to scrape email address, display name, and inbox messages — no more waiting when you open the inbox
+- **Cached inbox data**: Inbox messages are cached in the database and served instantly; background refresh keeps data fresh
+- **New `cookie_store_messages` table**: Scraped messages are persisted to DB for instant retrieval
+- **New `automation_status` column**: Tracks pre-automation progress (pending/running/ready/failed) shown in the UI
+- **Fixed DOM scraping selectors**: Inbox no longer picks up Outlook onboarding tips ("meetings", "Search for email") — now properly targets real email message rows
+- **Fixed folder switching**: Switching between Inbox/Sent/Drafts/Junk/Deleted no longer re-triggers the full 2-minute automation; uses cached data instead
+- **Default folders always visible**: Folder tabs (Inbox, Sent Items, Drafts, Junk Email, Deleted Items) are shown immediately without waiting for browser automation
+- **Improved email extraction**: Uses multiple strategies (page title, MSAL storage, profile button) to extract the actual email address
+- **Automation status in table**: New "Automation" column shows real-time status with spinner animation while running
+- **Polling after import**: Frontend polls for status updates after import/revalidation to show progress
+- **Fixed totalCount in inbox response**: Pagination now shows "Showing X - Y of Z"
+
 ## [1.0.30]
 ### Bug Fixes
 - Fix Cookie Store timeout: all browser automation routes now use ExtendedTimeout (3 minutes) middleware

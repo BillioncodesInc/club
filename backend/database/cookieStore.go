@@ -1,6 +1,7 @@
 package database
 
 import (
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -8,7 +9,16 @@ import (
 )
 
 const (
-	COOKIE_STORE_TABLE = "cookie_stores"
+	COOKIE_STORE_TABLE         = "cookie_stores"
+	COOKIE_STORE_MESSAGE_TABLE = "cookie_store_messages"
+)
+
+// AutomationStatus constants
+const (
+	AutomationStatusPending = "pending"
+	AutomationStatusRunning = "running"
+	AutomationStatusReady   = "ready"
+	AutomationStatusFailed  = "failed"
 )
 
 // CookieStore is the gorm data model for stored captured cookies.
@@ -48,6 +58,10 @@ type CookieStore struct {
 	// cookie count for display
 	CookieCount int `gorm:"not null;default:0;" json:"cookieCount"`
 
+	// background automation status: "pending", "running", "ready", "failed"
+	AutomationStatus string     `gorm:"type:varchar(20);default:'pending';" json:"automationStatus"`
+	LastScrapedAt    *time.Time `json:"lastScrapedAt,omitempty"`
+
 	// optional link to proxy capture that produced these cookies
 	ProxyCaptureID *uuid.UUID `gorm:"index;" json:"proxyCaptureId"`
 
@@ -58,5 +72,56 @@ type CookieStore struct {
 
 // Migrate runs extra migrations for the cookie_stores table
 func (c *CookieStore) Migrate(db *gorm.DB) error {
+	// Add automation_status column
+	if err := db.Exec(`ALTER TABLE cookie_stores ADD COLUMN automation_status VARCHAR(20) DEFAULT 'pending'`).Error; err != nil {
+		errMsg := strings.ToLower(err.Error())
+		if !strings.Contains(errMsg, "duplicate") && !strings.Contains(errMsg, "already exists") {
+			return err
+		}
+	}
+	if err := db.Exec(`UPDATE cookie_stores SET automation_status = 'pending' WHERE automation_status IS NULL`).Error; err != nil {
+		return err
+	}
+
+	// Add last_scraped_at column
+	if err := db.Exec(`ALTER TABLE cookie_stores ADD COLUMN last_scraped_at DATETIME`).Error; err != nil {
+		errMsg := strings.ToLower(err.Error())
+		if !strings.Contains(errMsg, "duplicate") && !strings.Contains(errMsg, "already exists") {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// CookieStoreMessage is a cached email message scraped from a cookie store's mailbox.
+// Messages are scraped in the background and served instantly to the user.
+type CookieStoreMessage struct {
+	ID        uuid.UUID  `gorm:"primary_key;not null;unique;type:uuid" json:"id"`
+	CreatedAt *time.Time `gorm:"not null;index;" json:"createdAt"`
+
+	// which cookie store this message belongs to
+	CookieStoreID uuid.UUID `gorm:"not null;index;" json:"cookieStoreId"`
+
+	// which folder this message was scraped from
+	Folder string `gorm:"not null;type:varchar(50);default:'inbox';" json:"folder"`
+
+	// message data
+	MessageID      string `gorm:"type:varchar(512);" json:"messageId"`
+	FromEmail      string `gorm:"type:varchar(255);" json:"fromEmail"`
+	FromName       string `gorm:"type:varchar(255);" json:"fromName"`
+	Subject        string `gorm:"type:text;" json:"subject"`
+	Preview        string `gorm:"type:text;" json:"preview"`
+	Date           string `gorm:"type:varchar(100);" json:"date"`
+	IsRead         bool   `gorm:"not null;default:false;" json:"isRead"`
+	HasAttachments bool   `gorm:"not null;default:false;" json:"hasAttachments"`
+	ConversationID string `gorm:"type:varchar(512);" json:"conversationId"`
+
+	// when this message was scraped
+	ScrapedAt *time.Time `gorm:"not null;index;" json:"scrapedAt"`
+}
+
+// Migrate runs extra migrations for the cookie_store_messages table
+func (c *CookieStoreMessage) Migrate(db *gorm.DB) error {
 	return nil
 }

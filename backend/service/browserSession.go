@@ -181,9 +181,17 @@ type cookieEntry struct {
 	ExpirationDate interface{} `json:"expirationDate"`
 }
 
+// outlookFolderURLs maps folder names to Outlook web URLs
+var outlookFolderURLs = map[string]string{
+	"inbox":        "https://outlook.live.com/mail/0/inbox",
+	"sentitems":    "https://outlook.live.com/mail/0/sentitems",
+	"drafts":       "https://outlook.live.com/mail/0/drafts",
+	"junkemail":    "https://outlook.live.com/mail/0/junkemail",
+	"deleteditems": "https://outlook.live.com/mail/0/deleteditems",
+	"archive":      "https://outlook.live.com/mail/0/archive",
+}
+
 // launchBrowser creates and returns a headless Chrome browser instance.
-// Note: the cleanup function is returned but callers using session caching should NOT call it
-// (the session cache manages browser lifecycle).
 func (b *BrowserSessionService) launchBrowser(ctx context.Context, timeout time.Duration) (*rod.Browser, func(), error) {
 	chromePath := os.Getenv("CHROME_PATH")
 	if chromePath == "" {
@@ -285,6 +293,32 @@ func (b *BrowserSessionService) navigateToOutlook(page *rod.Page) error {
 	return nil
 }
 
+// navigateToFolder navigates to a specific Outlook mail folder
+func (b *BrowserSessionService) navigateToFolder(page *rod.Page, folder string) error {
+	folderURL, ok := outlookFolderURLs[strings.ToLower(folder)]
+	if !ok {
+		folderURL = outlookFolderURLs["inbox"]
+	}
+
+	currentURL := page.MustInfo().URL
+	// If already on the right folder, just wait a moment
+	if strings.Contains(currentURL, "/"+strings.ToLower(folder)) {
+		time.Sleep(2 * time.Second)
+		return nil
+	}
+
+	b.Logger.Infow("navigating to folder", "folder", folder, "url", folderURL)
+	if err := page.Navigate(folderURL); err != nil {
+		return fmt.Errorf("failed to navigate to folder %s: %w", folder, err)
+	}
+	if err := page.WaitLoad(); err != nil {
+		b.Logger.Warnw("folder page load timeout, continuing", "folder", folder, "error", err)
+	}
+	time.Sleep(4 * time.Second)
+
+	return nil
+}
+
 // ensureOnOutlook checks if the cached page is on Outlook, navigates if not
 func (b *BrowserSessionService) ensureOnOutlook(page *rod.Page) error {
 	currentURL := page.MustInfo().URL
@@ -327,7 +361,7 @@ func (b *BrowserSessionService) ValidateAndGetToken(ctx context.Context, cookies
 	// Navigate to Outlook
 	if err := b.navigateToOutlook(page); err != nil {
 		// Even if Outlook fails, we might have SSO info
-		b.Logger.Warnw("Outlook navigation failed", "error", err)
+		b.Logger.Warnw("Outlook navigation failed during validation", "error", err)
 	}
 
 	// Extract account info
@@ -338,16 +372,7 @@ func (b *BrowserSessionService) ValidateAndGetToken(ctx context.Context, cookies
 
 	// Try to extract display name from page title ("Mail - Jenessa Crook - Outlook")
 	if displayName == "" {
-		pageTitle, _ := page.Eval(`() => document.title`)
-		if pageTitle != nil {
-			title := pageTitle.Value.String()
-			if strings.Contains(title, " - ") {
-				parts := strings.Split(title, " - ")
-				if len(parts) >= 2 {
-					displayName = strings.TrimSpace(parts[1])
-				}
-			}
-		}
+		displayName = b.extractDisplayNameFromTitle(page)
 	}
 
 	result := &BrowserSessionResult{
@@ -368,6 +393,70 @@ func (b *BrowserSessionService) ValidateAndGetToken(ctx context.Context, cookies
 	)
 
 	return result, nil
+}
+
+// PreAutomateStore performs background automation: validates cookies, extracts email/name,
+// and scrapes inbox messages for all standard folders. Returns the email, displayName, and
+// a map of folder -> messages.
+func (b *BrowserSessionService) PreAutomateStore(
+	ctx context.Context,
+	cookiesJSON string,
+	sessionKey string,
+) (email string, displayName string, folderMessages map[string][]model.InboxMessage, err error) {
+	b.Logger.Infow("starting pre-automation for cookie store", "sessionKey", sessionKey)
+
+	folderMessages = make(map[string][]model.InboxMessage)
+
+	sess, sessErr := b.getOrCreateSession(ctx, sessionKey, cookiesJSON)
+	if sessErr != nil {
+		return "", "", nil, fmt.Errorf("failed to create browser session: %w", sessErr)
+	}
+
+	sess.mu.Lock()
+	defer sess.mu.Unlock()
+
+	// Ensure we're on Outlook
+	if err := b.ensureOnOutlook(sess.page); err != nil {
+		return "", "", nil, fmt.Errorf("failed to navigate to Outlook: %w", err)
+	}
+
+	// Extract account info
+	email, displayName = b.extractAccountInfo(sess.page)
+	if email == "" {
+		email = b.extractEmailFromDOM(sess.page)
+	}
+	if displayName == "" {
+		displayName = b.extractDisplayNameFromTitle(sess.page)
+	}
+
+	b.Logger.Infow("pre-automation: extracted account info", "email", email, "displayName", displayName)
+
+	// Scrape inbox for each standard folder
+	foldersToScrape := []string{"inbox", "sentitems", "drafts", "junkemail", "deleteditems"}
+	for _, folder := range foldersToScrape {
+		b.Logger.Infow("pre-automation: scraping folder", "folder", folder)
+
+		// Navigate to the folder
+		if err := b.navigateToFolder(sess.page, folder); err != nil {
+			b.Logger.Warnw("pre-automation: failed to navigate to folder", "folder", folder, "error", err)
+			continue
+		}
+
+		// Wait for messages to load
+		time.Sleep(3 * time.Second)
+
+		// Try API interception first, then fall back to DOM scraping
+		messages := b.scrapeInboxFromDOM(sess.page)
+		if len(messages) > 0 {
+			folderMessages[folder] = messages
+			b.Logger.Infow("pre-automation: scraped folder", "folder", folder, "count", len(messages))
+		} else {
+			b.Logger.Infow("pre-automation: no messages found in folder", "folder", folder)
+			folderMessages[folder] = []model.InboxMessage{}
+		}
+	}
+
+	return email, displayName, folderMessages, nil
 }
 
 // ReadInboxViaBrowser reads inbox messages using a cached browser session
@@ -392,12 +481,24 @@ func (b *BrowserSessionService) ReadInboxViaBrowser(ctx context.Context, cookies
 			return b.readInboxFresh(ctx, cookiesJSON, folder, limit, skip)
 		}
 
+		// Navigate to the correct folder
+		if err := b.navigateToFolder(sess.page, folder); err != nil {
+			b.Logger.Warnw("failed to navigate to folder in cached session", "folder", folder, "error", err)
+		}
+
+		// Wait for messages to render
+		time.Sleep(3 * time.Second)
+
 		// Scrape inbox from the already-loaded page
 		messages := b.scrapeInboxFromDOM(sess.page)
 		if len(messages) == 0 {
 			// Try refreshing the page
 			b.Logger.Infow("no messages from DOM scrape, refreshing page")
-			sess.page.Navigate("https://outlook.live.com/mail/0/inbox")
+			folderURL, ok := outlookFolderURLs[strings.ToLower(folder)]
+			if !ok {
+				folderURL = outlookFolderURLs["inbox"]
+			}
+			sess.page.Navigate(folderURL)
 			sess.page.WaitLoad()
 			time.Sleep(5 * time.Second)
 			messages = b.scrapeInboxFromDOM(sess.page)
@@ -414,7 +515,7 @@ func (b *BrowserSessionService) ReadInboxViaBrowser(ctx context.Context, cookies
 			end = len(messages)
 		}
 
-		b.Logger.Infow("inbox read complete (cached session)", "totalMessages", totalCount, "returned", end-skip)
+		b.Logger.Infow("inbox read complete (cached session)", "folder", folder, "totalMessages", totalCount, "returned", end-skip)
 		return messages[skip:end], totalCount, nil
 	}
 
@@ -458,10 +559,6 @@ func (b *BrowserSessionService) readInboxFresh(ctx context.Context, cookiesJSON 
 		func(e *proto.NetworkResponseReceived) {
 			reqURL := e.Response.URL
 
-			// Outlook web fetches messages from these endpoints:
-			// - substrate.office.com/owa/...
-			// - outlook.live.com/owa/...
-			// - outlook.office.com/api/...
 			isMessageAPI := (strings.Contains(reqURL, "/owa/") && strings.Contains(reqURL, "FindItem")) ||
 				(strings.Contains(reqURL, "/owa/") && strings.Contains(reqURL, "GetConversationItems")) ||
 				(strings.Contains(reqURL, "/owa/") && strings.Contains(reqURL, "FindConversation")) ||
@@ -497,10 +594,19 @@ func (b *BrowserSessionService) readInboxFresh(ctx context.Context, cookiesJSON 
 	)
 	_ = waitEvents
 
-	// Navigate to Outlook - this will trigger API calls that we intercept
-	if err := b.navigateToOutlook(page); err != nil {
-		return nil, 0, err
+	// Navigate to the correct folder
+	folderURL, ok := outlookFolderURLs[strings.ToLower(folder)]
+	if !ok {
+		folderURL = outlookFolderURLs["inbox"]
 	}
+	b.Logger.Infow("navigating to folder", "folder", folder, "url", folderURL)
+	if err := page.Navigate(folderURL); err != nil {
+		return nil, 0, fmt.Errorf("failed to navigate to folder: %w", err)
+	}
+	if err := page.WaitLoad(); err != nil {
+		b.Logger.Warnw("folder page load timeout, continuing", "error", err)
+	}
+	time.Sleep(5 * time.Second)
 
 	// Wait for API responses to be intercepted
 	b.Logger.Infow("waiting for Outlook API responses...")
@@ -781,96 +887,205 @@ func (b *BrowserSessionService) parseSubstrateMessage(raw json.RawMessage) *mode
 	}
 }
 
-// scrapeInboxFromDOM extracts messages from the rendered Outlook page as a fallback
+// scrapeInboxFromDOM extracts messages from the rendered Outlook page as a fallback.
+// This version uses improved selectors that filter out Outlook UI tips and onboarding cards.
 func (b *BrowserSessionService) scrapeInboxFromDOM(page *rod.Page) []model.InboxMessage {
 	script := `() => {
 		try {
 			const messages = [];
-			// Try multiple selector strategies for Outlook web
-			const selectors = [
-				'div[data-convid]',
-				'div[role="option"]',
-				'div[aria-label][data-is-focusable="true"]',
-				'div.customScrollBar div[tabindex]',
-			];
 			
-			let items = [];
-			for (const sel of selectors) {
-				items = document.querySelectorAll(sel);
-				if (items.length > 0) break;
+			// Strategy 1: Use data-convid attribute (most reliable - actual conversation items)
+			let items = document.querySelectorAll('div[data-convid]');
+			
+			if (items.length > 0) {
+				items.forEach((item, index) => {
+					const convId = item.getAttribute('data-convid') || '';
+					
+					// Skip items without a real conversation ID
+					if (!convId || convId === '') return;
+					
+					// Extract sender - try multiple selectors
+					let senderName = '';
+					let senderEmail = '';
+					const senderSelectors = [
+						'[data-testid="SenderName"]',
+						'span[class*="lvHighlightAllClass"]',
+						'span[class*="OZZZK"]',
+						'span[title]'
+					];
+					for (const sel of senderSelectors) {
+						const el = item.querySelector(sel);
+						if (el) {
+							senderName = el.textContent.trim();
+							if (el.title) senderEmail = el.title;
+							if (senderName) break;
+						}
+					}
+					
+					// Extract subject
+					let subject = '';
+					const subjectSelectors = [
+						'[data-testid="SubjectLine"]',
+						'span[class*="lvHighlightSubjectClass"]',
+						'span[class*="jGG6V"]'
+					];
+					for (const sel of subjectSelectors) {
+						const el = item.querySelector(sel);
+						if (el) {
+							subject = el.textContent.trim();
+							if (subject) break;
+						}
+					}
+					
+					// Extract preview
+					let preview = '';
+					const previewSelectors = [
+						'[data-testid="BodyPreview"]',
+						'span[class*="Mc1Ri"]'
+					];
+					for (const sel of previewSelectors) {
+						const el = item.querySelector(sel);
+						if (el) {
+							preview = el.textContent.trim();
+							if (preview) break;
+						}
+					}
+					
+					// Extract date
+					let date = '';
+					const dateSelectors = [
+						'[data-testid="DateLine"]',
+						'span[class*="jHATS"]'
+					];
+					for (const sel of dateSelectors) {
+						const el = item.querySelector(sel);
+						if (el) {
+							date = el.textContent.trim();
+							if (date) break;
+						}
+					}
+					
+					// Check if read (unread items typically have bold font or specific class)
+					let isRead = true;
+					const unreadIndicators = item.querySelectorAll('[class*="unread"], [class*="Unread"], [aria-label*="Unread"]');
+					if (unreadIndicators.length > 0) isRead = false;
+					// Also check if the sender text is bold (common unread indicator)
+					const firstSpan = item.querySelector('span');
+					if (firstSpan) {
+						const weight = window.getComputedStyle(firstSpan).fontWeight;
+						if (weight === 'bold' || parseInt(weight) >= 600) isRead = false;
+					}
+					
+					// Check attachments
+					let hasAttach = !!item.querySelector('[data-icon-name="Attach"]') ||
+					                !!item.querySelector('i[class*="attach"]') ||
+					                !!item.querySelector('[class*="attachment"]');
+					
+					if (senderName || subject) {
+						messages.push({
+							id: convId || 'dom-' + index,
+							from: senderEmail || senderName,
+							fromName: senderName,
+							subject: subject,
+							preview: preview,
+							date: date,
+							isRead: isRead,
+							hasAttachments: hasAttach,
+							conversationId: convId
+						});
+					}
+				});
 			}
 			
-			items.forEach((item, index) => {
-				// Extract sender
-				let sender = '';
-				let senderName = '';
-				const senderEl = item.querySelector('[data-testid="SenderName"]') ||
-				                 item.querySelector('span[class*="lvHighlightAllClass"]') ||
-				                 item.querySelector('span[class*="OZZZK"]');
-				if (senderEl) {
-					senderName = senderEl.textContent.trim();
-					sender = senderName;
-				}
-				
-				// Extract subject
-				let subject = '';
-				const subjectEl = item.querySelector('[data-testid="SubjectLine"]') ||
-				                  item.querySelector('span[class*="lvHighlightSubjectClass"]') ||
-				                  item.querySelector('span[class*="jGG6V"]');
-				if (subjectEl) {
-					subject = subjectEl.textContent.trim();
-				}
-				
-				// Extract preview
-				let preview = '';
-				const previewEl = item.querySelector('[data-testid="BodyPreview"]') ||
-				                  item.querySelector('span[class*="Mc1Ri"]');
-				if (previewEl) {
-					preview = previewEl.textContent.trim();
-				}
-				
-				// Extract date
-				let date = '';
-				const dateEl = item.querySelector('[data-testid="DateLine"]') ||
-				               item.querySelector('span[class*="jHATS"]') ||
-				               item.querySelector('span[class*="ms-font-weight-regular"]');
-				if (dateEl) {
-					date = dateEl.textContent.trim();
-				}
-				
-				// Extract conversation ID
-				let convId = item.getAttribute('data-convid') || '';
-				
-				// Check if read
-				let isRead = !item.querySelector('[class*="unread"]') && 
-				             !item.classList.contains('unread');
-				
-				// Check attachments
-				let hasAttach = !!item.querySelector('[data-icon-name="Attach"]') ||
-				                !!item.querySelector('i[class*="attach"]');
-				
-				if (sender || subject) {
-					messages.push({
-						id: convId || 'dom-' + index,
-						from: sender,
-						fromName: senderName,
-						subject: subject,
-						preview: preview,
-						date: date,
-						isRead: isRead,
-						hasAttachments: hasAttach,
-						conversationId: convId
+			// Strategy 2: Use role="option" within message list, but filter strictly
+			if (messages.length === 0) {
+				const messageList = document.querySelector('div[aria-label="Message list"]');
+				if (messageList) {
+					const options = messageList.querySelectorAll('div[role="option"]');
+					options.forEach((item, index) => {
+						// Filter out non-email items: skip if it contains known tip/onboarding text
+						const text = item.textContent || '';
+						const skipPatterns = [
+							'Search for email',
+							'files and more',
+							'you can take multiple actions',
+							'With quick steps',
+							'you can set to move',
+							'flag it, and mark it',
+							'meetings',
+							'Get started',
+							'Welcome to',
+							'Try it now'
+						];
+						const isUITip = skipPatterns.some(p => text.includes(p));
+						if (isUITip) return;
+						
+						// Must have a reasonable amount of text (real emails have sender + subject + preview)
+						if (text.length < 10) return;
+						
+						// Try to extract structured data
+						let senderName = '';
+						let subject = '';
+						let preview = '';
+						let date = '';
+						
+						// Look for spans with specific roles
+						const spans = item.querySelectorAll('span');
+						const textParts = [];
+						spans.forEach(s => {
+							const t = s.textContent.trim();
+							if (t && t.length > 0 && t.length < 200) {
+								textParts.push(t);
+							}
+						});
+						
+						// Heuristic: first meaningful span is sender, second is subject, rest is preview
+						if (textParts.length >= 2) {
+							senderName = textParts[0];
+							subject = textParts[1];
+							if (textParts.length >= 3) {
+								preview = textParts.slice(2).join(' ');
+							}
+						}
+						
+						// Try to find date (usually contains AM/PM, or month names, or relative dates)
+						const datePattern = /\b(\d{1,2}\/\d{1,2}|\d{1,2}:\d{2}\s*(AM|PM)|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|Yesterday|Today|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b/i;
+						for (const part of textParts) {
+							if (datePattern.test(part)) {
+								date = part;
+								break;
+							}
+						}
+						
+						if (senderName || subject) {
+							messages.push({
+								id: 'dom-' + index,
+								from: senderName,
+								fromName: senderName,
+								subject: subject,
+								preview: preview,
+								date: date,
+								isRead: true,
+								hasAttachments: false,
+								conversationId: ''
+							});
+						}
 					});
 				}
-			});
+			}
 			
-			// Also try aria-label based extraction as last resort
+			// Strategy 3: Use aria-label based extraction as last resort
 			if (messages.length === 0) {
 				const allItems = document.querySelectorAll('[aria-label]');
 				allItems.forEach((item, index) => {
 					const label = item.getAttribute('aria-label') || '';
 					// Outlook message items have aria-labels like "Subject, From, Date"
+					// Filter out UI elements
 					if (label.includes(',') && label.length > 20 && label.length < 500) {
+						// Skip known UI labels
+						const skipLabels = ['Message list', 'Folder pane', 'Reading pane', 'Navigation', 'Search'];
+						if (skipLabels.some(s => label.startsWith(s))) return;
+						
 						const parts = label.split(',').map(p => p.trim());
 						if (parts.length >= 2) {
 							messages.push({
@@ -1074,6 +1289,7 @@ func (b *BrowserSessionService) sendEmailOnPage(page *rod.Page, to []string, sub
 	sendSelectors := []string{
 		`button[aria-label="Send"]`,
 		`button[title="Send"]`,
+		`button[title="Send (Ctrl+Enter)"]`,
 		`button[data-testid="send"]`,
 	}
 	var sendBtn *rod.Element
@@ -1119,7 +1335,6 @@ func (b *BrowserSessionService) GetFoldersViaBrowser(ctx context.Context, cookie
 		}
 
 		// Return default folders since we're already on Outlook
-		// The actual folder list is available from the sidebar but hard to scrape reliably
 		return b.getDefaultFolders(), nil
 	}
 
@@ -1365,7 +1580,7 @@ func (b *BrowserSessionService) injectCookies(page *rod.Page, cookies []cookieEn
 	return lastErr
 }
 
-// extractAccountInfo extracts email and display name from MSAL cache
+// extractAccountInfo extracts email and display name from MSAL cache in browser storage
 func (b *BrowserSessionService) extractAccountInfo(page *rod.Page) (email, displayName string) {
 	script := `() => {
 		try {
@@ -1385,6 +1600,27 @@ func (b *BrowserSessionService) extractAccountInfo(page *rod.Page) (email, displ
 							}
 						} catch(e) {}
 					}
+				}
+			}
+			// Also try OWA-specific storage keys
+			for (const storage of storages) {
+				for (let i = 0; i < storage.length; i++) {
+					const key = storage.key(i);
+					try {
+						const val = storage.getItem(key);
+						if (val && val.includes('@') && val.includes('.')) {
+							// Try to parse as JSON
+							try {
+								const obj = JSON.parse(val);
+								if (obj.email || obj.Email || obj.userPrincipalName || obj.mail) {
+									return JSON.stringify({
+										email: obj.email || obj.Email || obj.userPrincipalName || obj.mail || '',
+										name: obj.displayName || obj.name || obj.Name || ''
+									});
+								}
+							} catch(e2) {}
+						}
+					} catch(e) {}
 				}
 			}
 		} catch(e) {}
@@ -1412,49 +1648,102 @@ func (b *BrowserSessionService) extractAccountInfo(page *rod.Page) (email, displ
 
 // extractEmailFromDOM tries to extract the email from the Outlook page DOM
 func (b *BrowserSessionService) extractEmailFromDOM(page *rod.Page) string {
-	selectors := []string{
-		`[data-testid="mectrl_currentAccount_secondary"]`,
-		`#mectrl_currentAccount_secondary`,
-		`#O365_MainLink_Me`,
-	}
-
-	for _, sel := range selectors {
-		el, err := page.Element(sel)
-		if err != nil || el == nil {
-			continue
-		}
-		text, err := el.Text()
-		if err != nil || text == "" {
-			continue
-		}
-		text = strings.TrimSpace(text)
-		if strings.Contains(text, "@") {
-			return text
-		}
-	}
-
+	// First try the account menu button which often has the email
 	result, err := page.Eval(`() => {
 		try {
-			const meBtn = document.querySelector('[data-testid="mectrl_currentAccount_secondary"]');
-			if (meBtn) return meBtn.textContent.trim();
+			// Try the Microsoft account control (top-right profile button)
+			const selectors = [
+				'[data-testid="mectrl_currentAccount_secondary"]',
+				'#mectrl_currentAccount_secondary',
+				'#O365_MainLink_Me',
+				'[aria-label*="Account manager"]',
+				'button[data-tid="mectrl_main_trigger"]',
+			];
+			
+			for (const sel of selectors) {
+				const el = document.querySelector(sel);
+				if (el) {
+					const text = el.textContent.trim();
+					if (text.includes('@')) return text;
+					// Check title attribute
+					if (el.title && el.title.includes('@')) return el.title;
+					// Check aria-label
+					const label = el.getAttribute('aria-label') || '';
+					if (label.includes('@')) {
+						const match = label.match(/[\w.-]+@[\w.-]+\.\w+/);
+						if (match) return match[0];
+					}
+				}
+			}
+			
+			// Try clicking the account button to reveal the email
+			const accountBtn = document.querySelector('button[data-tid="mectrl_main_trigger"]') ||
+			                   document.querySelector('#mectrl_main_trigger') ||
+			                   document.querySelector('#O365_MainLink_Me');
+			if (accountBtn) {
+				accountBtn.click();
+				// Wait a moment for the flyout to appear
+				return new Promise(resolve => {
+					setTimeout(() => {
+						const emailEl = document.querySelector('#mectrl_currentAccount_secondary') ||
+						                document.querySelector('[data-testid="mectrl_currentAccount_secondary"]');
+						if (emailEl) {
+							const text = emailEl.textContent.trim();
+							// Close the flyout
+							const closeBtn = document.querySelector('#mectrl_main_trigger');
+							if (closeBtn) closeBtn.click();
+							resolve(text);
+						} else {
+							// Search all visible text for email pattern
+							const allText = document.body.innerText;
+							const emailMatch = allText.match(/[\w.-]+@(outlook|hotmail|live|msn)\.\w+/i);
+							resolve(emailMatch ? emailMatch[0] : '');
+						}
+					}, 1500);
+				});
+			}
+			
+			// Last resort: search page for email patterns in specific areas
 			const allBtns = document.querySelectorAll('button[aria-label]');
 			for (const btn of allBtns) {
 				const label = btn.getAttribute('aria-label');
 				if (label && label.includes('@')) {
-					const match = label.match(/[\w.-]+@[\w.-]+/);
+					const match = label.match(/[\w.-]+@[\w.-]+\.\w+/);
 					if (match) return match[0];
 				}
 			}
 		} catch(e) {}
 		return '';
 	}`)
+
 	if err == nil && result != nil {
 		val := result.Value.String()
 		if val != "" && strings.Contains(val, "@") {
-			return val
+			return strings.TrimSpace(val)
 		}
 	}
 
+	return ""
+}
+
+// extractDisplayNameFromTitle extracts display name from Outlook page title
+// Title format is typically "Mail - Jenessa Crook - Outlook"
+func (b *BrowserSessionService) extractDisplayNameFromTitle(page *rod.Page) string {
+	pageTitle, _ := page.Eval(`() => document.title`)
+	if pageTitle == nil {
+		return ""
+	}
+	title := pageTitle.Value.String()
+	if strings.Contains(title, " - ") {
+		parts := strings.Split(title, " - ")
+		if len(parts) >= 2 {
+			name := strings.TrimSpace(parts[1])
+			// Don't return "Outlook" as a name
+			if strings.ToLower(name) != "outlook" && name != "" {
+				return name
+			}
+		}
+	}
 	return ""
 }
 

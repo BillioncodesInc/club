@@ -59,6 +59,7 @@
 	let inboxLoading = false;
 	let inboxSkip = 0;
 	let inboxLimit = 25;
+	let inboxTotalCount = 0;
 
 	// Message viewer modal
 	let isMessageModalVisible = false;
@@ -75,6 +76,15 @@
 	// Delete
 	let isDeleteAlertVisible = false;
 	let deleteValues = { id: null, name: null };
+
+	// Default folders (always available, no need to fetch via browser)
+	const defaultFolders = [
+		{ id: 'inbox', displayName: 'Inbox', unreadItemCount: 0 },
+		{ id: 'sentitems', displayName: 'Sent Items', unreadItemCount: 0 },
+		{ id: 'drafts', displayName: 'Drafts', unreadItemCount: 0 },
+		{ id: 'junkemail', displayName: 'Junk Email', unreadItemCount: 0 },
+		{ id: 'deleteditems', displayName: 'Deleted Items', unreadItemCount: 0 }
+	];
 
 	// --- Lifecycle ---
 	onMount(() => {
@@ -151,14 +161,27 @@
 				source: 'import'
 			});
 			if (res && res.data) {
-				addToast('Cookies imported. Validating session...', 'success');
+				addToast('Cookies imported. Validating and pre-automating in background...', 'success');
 				isImportModalVisible = false;
-				setTimeout(refreshStores, 2000);
+				// Poll for status updates
+				pollStoreStatus(3000);
 			}
 		} catch (e) {
 			importError = e.message || 'Import failed';
 		}
 		isImporting = false;
+	}
+
+	// Poll for store status updates after import/revalidation
+	function pollStoreStatus(delay) {
+		setTimeout(async () => {
+			await refreshStores();
+			// Check if any store is still in "running" automation status
+			const hasRunning = stores.some(s => s.automationStatus === 'running');
+			if (hasRunning) {
+				pollStoreStatus(5000); // Keep polling
+			}
+		}, delay);
 	}
 
 	// --- Import from Proxy Captures ---
@@ -198,9 +221,9 @@
 				selectedCapture.Cookies
 			);
 			if (res && res.data) {
-				addToast('Cookies imported from proxy capture. Validating...', 'success');
+				addToast('Cookies imported from proxy capture. Validating and pre-automating in background...', 'success');
 				isProxyCaptureModalVisible = false;
-				setTimeout(refreshStores, 2000);
+				pollStoreStatus(3000);
 			}
 		} catch (e) {
 			addToast('Import failed: ' + (e.message || ''), 'error');
@@ -214,17 +237,15 @@
 	// --- Revalidate ---
 	async function revalidateStore(id) {
 		revalidatingId = id;
-		showIsLoading();
-		addToast('Revalidating session... This may take up to 2 minutes for browser-based validation.', 'info');
+		addToast('Revalidating session and pre-automating inbox...', 'info');
 		try {
 			await api.cookieStore.revalidate(id);
-			addToast('Session revalidated', 'success');
-			await refreshStores();
+			addToast('Session revalidated. Inbox data will be cached in the background.', 'success');
+			pollStoreStatus(3000);
 		} catch (e) {
 			addToast('Revalidation failed: ' + (e.message || ''), 'error');
 		}
 		revalidatingId = null;
-		hideIsLoading();
 	}
 
 	// --- Delete ---
@@ -281,7 +302,6 @@
 
 		isSending = true;
 		sendResult = null;
-		addToast('Sending email... This may take up to 2 minutes if using browser automation.', 'info');
 		try {
 			const toList = sendForm.to.split(',').map((e) => e.trim()).filter(Boolean);
 			const ccList = sendForm.cc ? sendForm.cc.split(',').map((e) => e.trim()).filter(Boolean) : [];
@@ -318,11 +338,13 @@
 		inboxStoreName = store.name + (store.email ? ` (${store.email})` : '');
 		inboxMessages = [];
 		inboxFolder = 'inbox';
-		inboxFolders = [];
+		inboxFolders = defaultFolders; // Use default folders immediately
 		inboxSkip = 0;
+		inboxTotalCount = 0;
 		isInboxModalVisible = true;
 		await loadInbox();
-		await loadFolders();
+		// Try to load real folders in background (won't block UI)
+		loadFolders();
 	}
 
 	function closeInboxModal() {
@@ -334,23 +356,23 @@
 
 	async function loadInbox() {
 		inboxLoading = true;
-		inboxLoadingStatus = 'Connecting to mailbox...';
-		// Show a progress update after 10 seconds
+		inboxLoadingStatus = 'Loading messages...';
+		// Only show automation message after a delay (cached data should return fast)
 		const progressTimer = setTimeout(() => {
 			if (inboxLoading) {
-				inboxLoadingStatus = 'Browser automation in progress... This may take up to 2 minutes on first load.';
+				inboxLoadingStatus = 'Fetching from server... First load may take longer.';
 			}
-		}, 10000);
-		// Show another update after 60 seconds
+		}, 5000);
 		const progressTimer2 = setTimeout(() => {
 			if (inboxLoading) {
-				inboxLoadingStatus = 'Still working... Subsequent loads will be much faster.';
+				inboxLoadingStatus = 'Browser automation in progress... Please wait.';
 			}
-		}, 60000);
+		}, 30000);
 		try {
 			const res = await api.cookieStore.getInbox(inboxStoreId, inboxFolder, inboxLimit, inboxSkip);
 			if (res && res.data) {
 				inboxMessages = res.data.messages || [];
+				inboxTotalCount = res.data.totalCount || inboxMessages.length;
 			}
 		} catch (e) {
 			addToast('Failed to load inbox: ' + (e.message || ''), 'error');
@@ -365,10 +387,13 @@
 		try {
 			const res = await api.cookieStore.getFolders(inboxStoreId);
 			if (res && res.data) {
-				inboxFolders = res.data.folders || [];
+				const folders = res.data.folders || [];
+				if (folders.length > 0) {
+					inboxFolders = folders;
+				}
 			}
 		} catch (e) {
-			// Folders are optional
+			// Keep default folders on error
 		}
 	}
 
@@ -424,6 +449,16 @@
 		return { text: 'Pending', class: 'badge-warning' };
 	}
 
+	function getAutomationBadge(store) {
+		const status = store.automationStatus || 'pending';
+		switch (status) {
+			case 'ready': return { text: 'Ready', class: 'badge-success' };
+			case 'running': return { text: 'Automating...', class: 'badge-info' };
+			case 'failed': return { text: 'Failed', class: 'badge-error' };
+			default: return { text: 'Pending', class: 'badge-warning' };
+		}
+	}
+
 	function getSourceBadge(source) {
 		switch (source) {
 			case 'extension': return { text: 'Extension', class: 'badge-info' };
@@ -444,7 +479,7 @@
 
 <!-- Cookie Stores Table -->
 <Table
-	columns={['Name', 'Email', 'Source', 'Cookies', 'Status', 'Last Checked']}
+	columns={['Name', 'Email', 'Source', 'Cookies', 'Status', 'Automation', 'Last Checked']}
 	hasData={!!stores.length}
 	hasNextPage={storesHasNextPage}
 	plural="Cookie Stores"
@@ -463,7 +498,7 @@
 						<br /><span class="text-xs opacity-60">{store.displayName}</span>
 					{/if}
 				{:else}
-					<span class="text-xs opacity-40">—</span>
+					<span class="text-xs opacity-40">Not scraped yet</span>
 				{/if}
 			</TableCell>
 			<TableCell>
@@ -478,6 +513,18 @@
 				<span class="badge {status.class}">{status.text}</span>
 			</TableCell>
 			<TableCell>
+				{@const autoBadge = getAutomationBadge(store)}
+				<span class="badge {autoBadge.class}">
+					{#if store.automationStatus === 'running'}
+						<span class="inline-block animate-spin rounded-full h-3 w-3 border-b-2 border-current mr-1"></span>
+					{/if}
+					{autoBadge.text}
+				</span>
+				{#if store.lastScrapedAt}
+					<br /><span class="text-xs opacity-40">Scraped: {formatDate(store.lastScrapedAt)}</span>
+				{/if}
+			</TableCell>
+			<TableCell>
 				<span class="text-xs">{formatDate(store.lastChecked)}</span>
 			</TableCell>
 			<TableCellEmpty />
@@ -488,8 +535,8 @@
 						<button class="dropdown-item" on:click={() => openInbox(store)}>Read Inbox</button>
 					{/if}
 					<button class="dropdown-item" on:click={() => revalidateStore(store.id)} disabled={revalidatingId === store.id}>
-				{revalidatingId === store.id ? 'Revalidating...' : 'Revalidate'}
-			</button>
+						{revalidatingId === store.id ? 'Revalidating...' : 'Revalidate'}
+					</button>
 					<button class="dropdown-item dropdown-item-danger" on:click={() => confirmDelete(store)}>Delete</button>
 				</TableDropDownEllipsis>
 			</TableCellAction>
@@ -520,8 +567,8 @@
 			<div class="text-red-500 text-sm mt-1 col-span-3">{importError}</div>
 		{/if}
 		<div class="text-xs opacity-60 mt-2 col-span-3">
-			<strong>Tip:</strong> You can export cookies from browser DevTools or use the Phishing Club Chrome Extension.
-			Supported formats: JSON array of cookie objects with name, value, domain, path fields.
+			<strong>Tip:</strong> After import, the system will automatically validate the cookies and pre-scrape inbox data in the background.
+			You can use the session immediately after validation completes.
 		</div>
 		<FormFooter closeModal={closeImportModal} isSubmitting={isImporting} okText="Import & Validate" />
 	</FormGrid>
@@ -580,7 +627,7 @@
 		<div class="mt-4 col-span-3 p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
 			<div class="flex items-center gap-3">
 				<div class="inline-block animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500"></div>
-				<span class="text-blue-700 dark:text-blue-300 text-sm">Sending email... This may take up to 2 minutes if using browser automation.</span>
+				<span class="text-blue-700 dark:text-blue-300 text-sm">Sending email...</span>
 			</div>
 		</div>
 	{/if}
@@ -612,25 +659,25 @@
 	visible={isInboxModalVisible}
 	onClose={closeInboxModal}
 >
-	<!-- Folder tabs -->
-	{#if inboxFolders.length > 0}
-		<div class="flex flex-wrap gap-2 mb-4 mt-4">
-			{#each inboxFolders as folder}
-				<button
-					class="px-3 py-1 rounded-md text-sm transition-colors
-						{inboxFolder === folder.id
-							? 'bg-cta-blue text-white'
-							: 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'}"
-					on:click={() => switchFolder(folder.id)}
-				>
-					{folder.displayName}
-					{#if folder.unreadItemCount > 0}
-						<span class="ml-1 text-xs font-bold">({folder.unreadItemCount})</span>
-					{/if}
-				</button>
-			{/each}
-		</div>
-	{/if}
+	<!-- Folder tabs (always visible with default folders) -->
+	<div class="flex flex-wrap gap-2 mb-4 mt-4">
+		{#each inboxFolders as folder}
+			<button
+				class="px-3 py-1 rounded-md text-sm transition-colors
+					{inboxFolder === folder.id
+						? 'bg-cta-blue text-white'
+						: 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'}"
+				on:click={() => switchFolder(folder.id)}
+				disabled={inboxLoading}
+				class:opacity-50={inboxLoading}
+			>
+				{folder.displayName}
+				{#if folder.unreadItemCount > 0}
+					<span class="ml-1 text-xs font-bold">({folder.unreadItemCount})</span>
+				{/if}
+			</button>
+		{/each}
+	</div>
 
 	{#if inboxLoading}
 		<div class="text-center py-8">
@@ -638,7 +685,7 @@
 			<div class="opacity-60">{inboxLoadingStatus || 'Loading messages...'}</div>
 		</div>
 	{:else if inboxMessages.length === 0}
-		<div class="text-center py-8 opacity-60">No messages found</div>
+		<div class="text-center py-8 opacity-60">No messages found in this folder</div>
 	{:else}
 		<div class="space-y-2 max-h-[60vh] overflow-y-auto mt-4">
 			{#each inboxMessages as msg}
@@ -655,7 +702,7 @@
 									<span class="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"></span>
 								{/if}
 								<span class="font-medium text-sm truncate">
-									{msg.fromName || msg.from}
+									{msg.fromName || msg.from || 'Unknown'}
 								</span>
 							</div>
 							<div class="text-sm font-medium mt-1 truncate">{msg.subject || '(no subject)'}</div>
@@ -663,6 +710,9 @@
 						</div>
 						<div class="text-xs opacity-50 flex-shrink-0 ml-2">
 							{formatDate(msg.date)}
+							{#if msg.hasAttachments}
+								<span class="ml-1" title="Has attachments">&#128206;</span>
+							{/if}
 						</div>
 					</div>
 				</button>
@@ -681,6 +731,9 @@
 			</button>
 			<span class="text-xs opacity-60">
 				Showing {inboxSkip + 1} - {inboxSkip + inboxMessages.length}
+				{#if inboxTotalCount > 0}
+					of {inboxTotalCount}
+				{/if}
 			</span>
 			<button
 				class="px-3 py-1 rounded-md text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"

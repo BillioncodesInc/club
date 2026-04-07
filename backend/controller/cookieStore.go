@@ -249,9 +249,10 @@ func (c *CookieStoreController) GetInbox(g *gin.Context) {
 	}
 
 	c.Response.OK(g, gin.H{
-		"messages": messages,
-		"total":    total,
-		"folder":   folder,
+		"messages":   messages,
+		"total":      total,
+		"totalCount": total,
+		"folder":     folder,
 	})
 }
 
