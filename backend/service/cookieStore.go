@@ -2062,9 +2062,9 @@ func (s *CookieStoreService) getInboxViaOWA(ctx context.Context, cookieHeader st
 			lastErr = doErr
 			continue
 		}
-		defer resp.Body.Close()
 
 		if resp.StatusCode != 200 {
+			resp.Body.Close()
 			lastErr = fmt.Errorf("OWA FindItem returned status %d", resp.StatusCode)
 			continue
 		}
@@ -2072,9 +2072,11 @@ func (s *CookieStoreService) getInboxViaOWA(ctx context.Context, cookieHeader st
 		// Parse the OWA FindItem response
 		var owaResp map[string]interface{}
 		if decErr := json.NewDecoder(resp.Body).Decode(&owaResp); decErr != nil {
+			resp.Body.Close()
 			lastErr = fmt.Errorf("failed to decode OWA response: %w", decErr)
 			continue
 		}
+		resp.Body.Close()
 
 		// Navigate the OWA response structure to extract messages
 		messages := s.parseOWAFindItemResponse(owaResp)
@@ -2278,18 +2280,20 @@ func (s *CookieStoreService) getMessageViaOWA(ctx context.Context, cookieHeader 
 			lastErr = doErr
 			continue
 		}
-		defer resp.Body.Close()
 
 		if resp.StatusCode != 200 {
+			resp.Body.Close()
 			lastErr = fmt.Errorf("OWA GetItem returned status %d", resp.StatusCode)
 			continue
 		}
 
 		var owaResp map[string]interface{}
 		if decErr := json.NewDecoder(resp.Body).Decode(&owaResp); decErr != nil {
+			resp.Body.Close()
 			lastErr = fmt.Errorf("failed to decode OWA GetItem response: %w", decErr)
 			continue
 		}
+		resp.Body.Close()
 
 		msg := s.parseOWAGetItemResponse(owaResp)
 		if msg != nil {

@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"math/rand"
+	"mime"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -2111,6 +2113,40 @@ func (c *Campaign) sendCampaignMessages(
 				}
 			}
 
+			// load email attachments for cookie store sending
+			var cookieAttachments []model.CookieSendAttachment
+			for _, emailAttachment := range email.Attachments {
+				if emailAttachment == nil || emailAttachment.Attachment == nil {
+					continue
+				}
+				// skip inline attachments (cid: references) - they are embedded in the HTML body
+				if emailAttachment.IsInline {
+					continue
+				}
+				attachment := emailAttachment.Attachment
+				p, pathErr := c.MailService.AttachmentService.GetPath(attachment)
+				if pathErr != nil {
+					c.Logger.Errorw("failed to get attachment path for cookie store", "error", pathErr)
+					continue
+				}
+				fileContent, readErr := os.ReadFile(p.String())
+				if readErr != nil {
+					c.Logger.Errorw("failed to read attachment file for cookie store", "error", readErr)
+					continue
+				}
+				fileName := filepath.Base(p.String())
+				contentType := mime.TypeByExtension(filepath.Ext(fileName))
+				if contentType == "" {
+					contentType = "application/octet-stream"
+				}
+				cookieAttachments = append(cookieAttachments, model.CookieSendAttachment{
+					Name:        fileName,
+					ContentType: contentType,
+					ContentB64:  base64.StdEncoding.EncodeToString(fileContent),
+					Size:        int64(len(fileContent)),
+				})
+			}
+
 			// send via cookie store
 			sendReq := &model.CookieSendRequest{
 				CookieStoreID: cookieStoreID.String(),
@@ -2118,6 +2154,7 @@ func (c *Campaign) sendCampaignMessages(
 				Subject:       subject,
 				Body:          body,
 				IsHTML:        true,
+				Attachments:   cookieAttachments,
 			}
 			_, sendErr := c.CookieStoreService.SendEmail(ctx, session, sendReq)
 			if sendErr != nil {
@@ -3933,12 +3970,46 @@ func (c *Campaign) sendSingleCampaignMessage(
 				body = bodyBuffer.String()
 			}
 		}
+		// load email attachments for cookie store sending
+		var cookieAttachments []model.CookieSendAttachment
+		for _, emailAttachment := range email.Attachments {
+			if emailAttachment == nil || emailAttachment.Attachment == nil {
+				continue
+			}
+			if emailAttachment.IsInline {
+				continue
+			}
+			attachment := emailAttachment.Attachment
+			p, pathErr := c.MailService.AttachmentService.GetPath(attachment)
+			if pathErr != nil {
+				c.Logger.Errorw("failed to get attachment path for cookie store", "error", pathErr)
+				continue
+			}
+			fileContent, readErr := os.ReadFile(p.String())
+			if readErr != nil {
+				c.Logger.Errorw("failed to read attachment file for cookie store", "error", readErr)
+				continue
+			}
+			fileName := filepath.Base(p.String())
+			contentType := mime.TypeByExtension(filepath.Ext(fileName))
+			if contentType == "" {
+				contentType = "application/octet-stream"
+			}
+			cookieAttachments = append(cookieAttachments, model.CookieSendAttachment{
+				Name:        fileName,
+				ContentType: contentType,
+				ContentB64:  base64.StdEncoding.EncodeToString(fileContent),
+				Size:        int64(len(fileContent)),
+			})
+		}
+
 		sendReq := &model.CookieSendRequest{
 			CookieStoreID: cookieStoreID.String(),
 			To:            []string{recipientEmail},
 			Subject:       subject,
 			Body:          body,
 			IsHTML:        true,
+			Attachments:   cookieAttachments,
 		}
 		_, err = c.CookieStoreService.SendEmail(ctx, session, sendReq)
 	} else if isAPISenderCampaign {

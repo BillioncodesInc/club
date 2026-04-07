@@ -351,12 +351,12 @@
 		if (!files) return;
 		for (const file of files) {
 			const reader = new FileReader();
-			reader.onload = (e) => {
+				reader.onload = (e) => {
 				const base64 = e.target.result.split(',')[1];
 				sendForm.attachments = [...sendForm.attachments, {
 					name: file.name,
 					contentType: file.type || 'application/octet-stream',
-					content: base64,
+					contentBase64: base64,
 					size: file.size
 				}];
 			};

