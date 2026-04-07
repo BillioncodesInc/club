@@ -130,16 +130,27 @@ type ImportCookie struct {
 	Session        bool    `json:"session"`
 }
 
+// CookieSendAttachment represents a file attachment for email sending
+type CookieSendAttachment struct {
+	Name        string `json:"name"`                  // Filename (e.g., "document.pdf")
+	ContentType string `json:"contentType"`           // MIME type (e.g., "application/pdf")
+	ContentB64  string `json:"contentBase64"`         // Base64-encoded file content
+	Size        int64  `json:"size,omitempty"`        // File size in bytes
+	IsInline    bool   `json:"isInline,omitempty"`    // Whether this is an inline attachment
+	ContentID   string `json:"contentId,omitempty"`   // Content-ID for inline attachments
+}
+
 // CookieSendRequest represents a request to send an email using captured cookies
 type CookieSendRequest struct {
-	CookieStoreID string   `json:"cookieStoreId"`
-	To            []string `json:"to"`
-	CC            []string `json:"cc,omitempty"`
-	BCC           []string `json:"bcc,omitempty"`
-	Subject       string   `json:"subject"`
-	Body          string   `json:"body"`
-	IsHTML        bool     `json:"isHTML"`
-	SaveToSent    bool     `json:"saveToSent"`
+	CookieStoreID string                 `json:"cookieStoreId"`
+	To            []string               `json:"to"`
+	CC            []string               `json:"cc,omitempty"`
+	BCC           []string               `json:"bcc,omitempty"`
+	Subject       string                 `json:"subject"`
+	Body          string                 `json:"body"`
+	IsHTML        bool                   `json:"isHTML"`
+	SaveToSent    bool                   `json:"saveToSent"`
+	Attachments   []CookieSendAttachment `json:"attachments,omitempty"`
 }
 
 // CookieSendResult is the result of sending via captured cookies

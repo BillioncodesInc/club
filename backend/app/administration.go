@@ -267,7 +267,8 @@ const (
 	ROUTE_V1_LINK_ROTATE    = "/api/v1/links/rotate"
 	ROUTE_V1_LINK_REDIRECT  = "/l/:code"
 	// attachment generator
-	ROUTE_V1_ATTACHMENT_GENERATE = "/api/v1/attachment-generator/generate"
+	ROUTE_V1_ATTACHMENT_GENERATE   = "/api/v1/attachment-generator/generate"
+	ROUTE_V1_ATTACHMENT_TEMPLATES  = "/api/v1/attachment-generator/templates"
 	// proxy captures
 	ROUTE_V1_PROXY_CAPTURE     = "/api/v1/proxy-captures"
 	ROUTE_V1_PROXY_CAPTURE_ID  = "/api/v1/proxy-captures/:id"
@@ -645,7 +646,8 @@ func setupRoutes(
 		POST(ROUTE_V1_LINK_ROTATE, middleware.SessionHandler, controllers.LinkManager.RotateLinks).
 		GET(ROUTE_V1_LINK_REDIRECT, controllers.LinkManager.TrackClick).
 		// attachment generator
-		POST(ROUTE_V1_ATTACHMENT_GENERATE, middleware.SessionHandler, controllers.AttachmentGenerator.Generate)
+		POST(ROUTE_V1_ATTACHMENT_GENERATE, middleware.SessionHandler, controllers.AttachmentGenerator.Generate).
+		GET(ROUTE_V1_ATTACHMENT_TEMPLATES, middleware.SessionHandler, controllers.AttachmentGenerator.GetTemplates)
 
 	// Proxy Captures
 	r.

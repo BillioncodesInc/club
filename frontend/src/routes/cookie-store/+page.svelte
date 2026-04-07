@@ -44,15 +44,18 @@
 		subject: '',
 		body: '',
 		isHTML: true,
-		saveToSent: false
+		saveToSent: false,
+		attachments: []
 	};
 	let isSending = false;
 	let sendResult = null;
+	let sendAttachmentFiles = [];
 
 	// Inbox modal
 	let isInboxModalVisible = false;
 	let inboxStoreId = '';
 	let inboxStoreName = '';
+	let inboxStoreEmail = '';
 	let inboxMessages = [];
 	let inboxFolder = 'inbox';
 	let inboxFolders = [];
@@ -60,6 +63,7 @@
 	let inboxSkip = 0;
 	let inboxLimit = 25;
 	let inboxTotalCount = 0;
+	let inboxSearch = '';
 
 	// Message viewer modal
 	let isMessageModalVisible = false;
@@ -77,14 +81,23 @@
 	let isDeleteAlertVisible = false;
 	let deleteValues = { id: null, name: null };
 
-	// Default folders (always available, no need to fetch via browser)
+	// Default folders
 	const defaultFolders = [
-		{ id: 'inbox', displayName: 'Inbox', unreadItemCount: 0 },
-		{ id: 'sentitems', displayName: 'Sent Items', unreadItemCount: 0 },
-		{ id: 'drafts', displayName: 'Drafts', unreadItemCount: 0 },
-		{ id: 'junkemail', displayName: 'Junk Email', unreadItemCount: 0 },
-		{ id: 'deleteditems', displayName: 'Deleted Items', unreadItemCount: 0 }
+		{ id: 'inbox', displayName: 'Inbox', unreadItemCount: 0, icon: 'inbox' },
+		{ id: 'sentitems', displayName: 'Sent Items', unreadItemCount: 0, icon: 'send' },
+		{ id: 'drafts', displayName: 'Drafts', unreadItemCount: 0, icon: 'draft' },
+		{ id: 'junkemail', displayName: 'Junk Email', unreadItemCount: 0, icon: 'junk' },
+		{ id: 'deleteditems', displayName: 'Deleted Items', unreadItemCount: 0, icon: 'trash' }
 	];
+
+	// Folder icons
+	const folderIcons = {
+		inbox: `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/></svg>`,
+		send: `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>`,
+		draft: `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>`,
+		junk: `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>`,
+		trash: `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>`
+	};
 
 	// --- Lifecycle ---
 	onMount(() => {
@@ -163,7 +176,6 @@
 			if (res && res.data) {
 				addToast('Cookies imported. Validating and pre-automating in background...', 'success');
 				isImportModalVisible = false;
-				// Poll for status updates
 				pollStoreStatus(3000);
 			}
 		} catch (e) {
@@ -172,14 +184,12 @@
 		isImporting = false;
 	}
 
-	// Poll for store status updates after import/revalidation
 	function pollStoreStatus(delay) {
 		setTimeout(async () => {
 			await refreshStores();
-			// Check if any store is still in "running" automation status
 			const hasRunning = stores.some(s => s.automationStatus === 'running');
 			if (hasRunning) {
-				pollStoreStatus(5000); // Keep polling
+				pollStoreStatus(5000);
 			}
 		}, delay);
 	}
@@ -231,7 +241,6 @@
 		hideIsLoading();
 	}
 
-	// Revalidation status
 	let revalidatingId = null;
 
 	// --- Revalidate ---
@@ -280,14 +289,91 @@
 			subject: '',
 			body: '',
 			isHTML: true,
-			saveToSent: false
+			saveToSent: false,
+			attachments: []
 		};
 		sendResult = null;
+		sendAttachmentFiles = [];
+		isSendModalVisible = true;
+	}
+
+	// Open send modal pre-filled for reply
+	function openReplyModal(msg) {
+		const store = stores.find(s => s.id === inboxStoreId);
+		if (!store) return;
+		sendForm = {
+			cookieStoreId: store.id,
+			cookieStoreName: store.name + (store.email ? ` (${store.email})` : ''),
+			to: msg.from || '',
+			cc: '',
+			bcc: '',
+			subject: msg.subject ? (msg.subject.startsWith('Re: ') ? msg.subject : `Re: ${msg.subject}`) : '',
+			body: `<br/><br/><hr/><p>On ${formatDate(msg.date)}, ${msg.fromName || msg.from} wrote:</p><blockquote style="border-left:2px solid #ccc;padding-left:10px;margin-left:10px;color:#666">${msg.bodyHTML || msg.bodyText || ''}</blockquote>`,
+			isHTML: true,
+			saveToSent: false,
+			attachments: []
+		};
+		sendResult = null;
+		sendAttachmentFiles = [];
+		isMessageModalVisible = false;
+		isSendModalVisible = true;
+	}
+
+	// Open send modal pre-filled for forward
+	function openForwardModal(msg) {
+		const store = stores.find(s => s.id === inboxStoreId);
+		if (!store) return;
+		sendForm = {
+			cookieStoreId: store.id,
+			cookieStoreName: store.name + (store.email ? ` (${store.email})` : ''),
+			to: '',
+			cc: '',
+			bcc: '',
+			subject: msg.subject ? (msg.subject.startsWith('Fwd: ') ? msg.subject : `Fwd: ${msg.subject}`) : '',
+			body: `<br/><br/><hr/><p>---------- Forwarded message ----------</p><p>From: ${msg.fromName || ''} &lt;${msg.from || ''}&gt;<br/>Date: ${formatDate(msg.date)}<br/>Subject: ${msg.subject || ''}</p><br/>${msg.bodyHTML || msg.bodyText || ''}`,
+			isHTML: true,
+			saveToSent: false,
+			attachments: []
+		};
+		sendResult = null;
+		sendAttachmentFiles = [];
+		isMessageModalVisible = false;
 		isSendModalVisible = true;
 	}
 
 	function closeSendModal() {
 		isSendModalVisible = false;
+	}
+
+	// Handle file attachment upload
+	function handleAttachmentUpload(event) {
+		const files = event.target.files;
+		if (!files) return;
+		for (const file of files) {
+			const reader = new FileReader();
+			reader.onload = (e) => {
+				const base64 = e.target.result.split(',')[1];
+				sendForm.attachments = [...sendForm.attachments, {
+					name: file.name,
+					contentType: file.type || 'application/octet-stream',
+					content: base64,
+					size: file.size
+				}];
+			};
+			reader.readAsDataURL(file);
+		}
+		// Reset input
+		event.target.value = '';
+	}
+
+	function removeAttachment(index) {
+		sendForm.attachments = sendForm.attachments.filter((_, i) => i !== index);
+	}
+
+	function formatFileSize(bytes) {
+		if (bytes < 1024) return bytes + ' B';
+		if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+		return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 	}
 
 	async function handleSend() {
@@ -315,7 +401,8 @@
 				subject: sendForm.subject,
 				body: sendForm.body,
 				isHTML: sendForm.isHTML,
-				saveToSent: sendForm.saveToSent
+				saveToSent: sendForm.saveToSent,
+				attachments: sendForm.attachments.length > 0 ? sendForm.attachments : undefined
 			});
 			if (res && res.data) {
 				sendResult = res.data;
@@ -336,14 +423,15 @@
 	async function openInbox(store) {
 		inboxStoreId = store.id;
 		inboxStoreName = store.name + (store.email ? ` (${store.email})` : '');
+		inboxStoreEmail = store.email || '';
 		inboxMessages = [];
 		inboxFolder = 'inbox';
-		inboxFolders = defaultFolders; // Use default folders immediately
+		inboxFolders = defaultFolders;
 		inboxSkip = 0;
 		inboxTotalCount = 0;
+		inboxSearch = '';
 		isInboxModalVisible = true;
 		await loadInbox();
-		// Try to load real folders in background (won't block UI)
 		loadFolders();
 	}
 
@@ -351,13 +439,11 @@
 		isInboxModalVisible = false;
 	}
 
-	// Inbox loading status text
 	let inboxLoadingStatus = '';
 
 	async function loadInbox() {
 		inboxLoading = true;
 		inboxLoadingStatus = 'Loading messages...';
-		// Only show automation message after a delay (cached data should return fast)
 		const progressTimer = setTimeout(() => {
 			if (inboxLoading) {
 				inboxLoadingStatus = 'Fetching from server... First load may take longer.';
@@ -413,6 +499,11 @@
 		await loadInbox();
 	}
 
+	async function refreshInbox() {
+		await loadInbox();
+		addToast('Inbox refreshed', 'success');
+	}
+
 	// --- Message viewer ---
 	async function openMessage(messageId) {
 		messageLoading = true;
@@ -443,6 +534,39 @@
 		}
 	}
 
+	function formatShortDate(dateStr) {
+		if (!dateStr) return '';
+		try {
+			const d = new Date(dateStr);
+			const now = new Date();
+			const diff = now.getTime() - d.getTime();
+			if (diff < 86400000 && d.getDate() === now.getDate()) {
+				return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+			}
+			if (diff < 604800000) {
+				return d.toLocaleDateString([], { weekday: 'short' });
+			}
+			return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+		} catch {
+			return dateStr;
+		}
+	}
+
+	function getInitials(name) {
+		if (!name) return '?';
+		const parts = name.trim().split(/\s+/);
+		if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+		return name[0].toUpperCase();
+	}
+
+	function getAvatarColor(name) {
+		if (!name) return '#6b7280';
+		const colors = ['#0078d4', '#d13438', '#107c10', '#5c2d91', '#e3008c', '#008272', '#ca5010', '#4f6bed', '#498205', '#881798'];
+		let hash = 0;
+		for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+		return colors[Math.abs(hash) % colors.length];
+	}
+
 	function getStatusBadge(store) {
 		if (store.isValid) return { text: 'Valid', class: 'badge-success' };
 		if (store.lastChecked) return { text: 'Expired', class: 'badge-error' };
@@ -466,6 +590,16 @@
 			case 'import': return { text: 'Import', class: 'badge-default' };
 			default: return { text: source || 'Unknown', class: 'badge-default' };
 		}
+	}
+
+	function getFolderIcon(folderId) {
+		const id = folderId?.toLowerCase();
+		if (id?.includes('inbox')) return folderIcons.inbox;
+		if (id?.includes('sent')) return folderIcons.send;
+		if (id?.includes('draft')) return folderIcons.draft;
+		if (id?.includes('junk') || id?.includes('spam')) return folderIcons.junk;
+		if (id?.includes('delete') || id?.includes('trash')) return folderIcons.trash;
+		return folderIcons.inbox;
 	}
 </script>
 
@@ -531,13 +665,23 @@
 			<TableCellAction>
 				<TableDropDownEllipsis>
 					{#if store.isValid}
-						<button class="dropdown-item" on:click={() => openSendModal(store)}>Send Email</button>
-						<button class="dropdown-item" on:click={() => openInbox(store)}>Read Inbox</button>
+						<button class="dropdown-item" on:click={() => openSendModal(store)}>
+							<svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+							Send Email
+						</button>
+						<button class="dropdown-item" on:click={() => openInbox(store)}>
+							<svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/></svg>
+							Read Inbox
+						</button>
 					{/if}
 					<button class="dropdown-item" on:click={() => revalidateStore(store.id)} disabled={revalidatingId === store.id}>
+						<svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
 						{revalidatingId === store.id ? 'Revalidating...' : 'Revalidate'}
 					</button>
-					<button class="dropdown-item dropdown-item-danger" on:click={() => confirmDelete(store)}>Delete</button>
+					<button class="dropdown-item dropdown-item-danger" on:click={() => confirmDelete(store)}>
+						<svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+						Delete
+					</button>
 				</TableDropDownEllipsis>
 			</TableCellAction>
 		</TableRow>
@@ -576,14 +720,15 @@
 
 <!-- Send Email Modal -->
 <Modal
-	headerText="Send Email via Cookies"
+	headerText="Send Email"
 	visible={isSendModalVisible}
 	onClose={closeSendModal}
 	isSubmitting={isSending}
 >
 	<FormGrid on:submit={handleSend} isSubmitting={isSending}>
-		<div class="text-sm mb-4 opacity-70 col-span-3">
-			Sending as: <strong>{sendForm.cookieStoreName}</strong>
+		<div class="col-span-3 flex items-center gap-2 mb-2 p-2 rounded-md bg-gray-50 dark:bg-gray-700/50">
+			<svg class="w-4 h-4 text-gray-500 dark:text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+			<span class="text-sm text-gray-600 dark:text-gray-300">Sending as: <strong>{sendForm.cookieStoreName}</strong></span>
 		</div>
 		<TextField
 			label="To"
@@ -612,6 +757,36 @@
 			placeholder="Email body (HTML or plain text)"
 			bind:value={sendForm.body}
 		/>
+
+		<!-- Attachments Section -->
+		<div class="col-span-3 mt-2">
+			<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+				<svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
+				Attachments
+			</label>
+			{#if sendForm.attachments.length > 0}
+				<div class="space-y-2 mb-3">
+					{#each sendForm.attachments as att, i}
+						<div class="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700/50 rounded-md border border-gray-200 dark:border-gray-600">
+							<div class="flex items-center gap-2 min-w-0">
+								<svg class="w-4 h-4 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+								<span class="text-sm truncate">{att.name}</span>
+								<span class="text-xs text-gray-400 flex-shrink-0">{formatFileSize(att.size)}</span>
+							</div>
+							<button type="button" on:click={() => removeAttachment(i)} class="text-red-500 hover:text-red-700 p-1 flex-shrink-0">
+								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+							</button>
+						</div>
+					{/each}
+				</div>
+			{/if}
+			<label class="inline-flex items-center gap-2 px-3 py-1.5 border border-dashed border-gray-300 dark:border-gray-600 rounded-md cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+				<svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+				<span class="text-sm text-gray-600 dark:text-gray-400">Add File</span>
+				<input type="file" multiple class="hidden" on:change={handleAttachmentUpload} />
+			</label>
+		</div>
+
 		<div class="flex items-center gap-4 mt-2 col-span-3">
 			<label class="flex items-center gap-2 cursor-pointer">
 				<input type="checkbox" bind:checked={sendForm.isHTML} class="checkbox checkbox-sm" />
@@ -627,7 +802,7 @@
 		<div class="mt-4 col-span-3 p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
 			<div class="flex items-center gap-3">
 				<div class="inline-block animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500"></div>
-				<span class="text-blue-700 dark:text-blue-300 text-sm">Sending email...</span>
+				<span class="text-blue-700 dark:text-blue-300 text-sm">Sending email{sendForm.attachments.length > 0 ? ` with ${sendForm.attachments.length} attachment(s)` : ''}...</span>
 			</div>
 		</div>
 	{/if}
@@ -635,15 +810,19 @@
 	{#if sendResult}
 			<div class="mt-4 col-span-3 p-3 rounded-lg {sendResult.success ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'}">
 				{#if sendResult.success}
-					<div class="text-green-700 dark:text-green-300 text-sm">
-						Email sent successfully via <strong>{sendResult.method}</strong>
-						{#if sendResult.messageId}
-							<br />Message ID: {sendResult.messageId}
-						{/if}
+					<div class="text-green-700 dark:text-green-300 text-sm flex items-center gap-2">
+						<svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+						<div>
+							Email sent successfully via <strong>{sendResult.method}</strong>
+							{#if sendResult.messageId}
+								<br /><span class="text-xs opacity-70">Message ID: {sendResult.messageId}</span>
+							{/if}
+						</div>
 					</div>
 				{:else}
-					<div class="text-red-700 dark:text-red-300 text-sm">
-						Send failed: {sendResult.error}
+					<div class="text-red-700 dark:text-red-300 text-sm flex items-center gap-2">
+						<svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+						<div>Send failed: {sendResult.error}</div>
 					</div>
 				{/if}
 			</div>
@@ -653,128 +832,234 @@
 	</FormGrid>
 </Modal>
 
-<!-- Inbox Modal -->
+<!-- Inbox Modal (Outlook-like) -->
 <Modal
-	headerText="Inbox - {inboxStoreName}"
+	headerText=""
 	visible={isInboxModalVisible}
 	onClose={closeInboxModal}
+	fullscreen={true}
 >
-	<!-- Folder tabs (always visible with default folders) -->
-	<div class="flex flex-wrap gap-2 mb-4 mt-4">
-		{#each inboxFolders as folder}
-			<button
-				class="px-3 py-1 rounded-md text-sm transition-colors
-					{inboxFolder === folder.id
-						? 'bg-cta-blue text-white'
-						: 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'}"
-				on:click={() => switchFolder(folder.id)}
-				disabled={inboxLoading}
-				class:opacity-50={inboxLoading}
-			>
-				{folder.displayName}
-				{#if folder.unreadItemCount > 0}
-					<span class="ml-1 text-xs font-bold">({folder.unreadItemCount})</span>
-				{/if}
-			</button>
-		{/each}
-	</div>
-
-	{#if inboxLoading}
-		<div class="text-center py-8">
-			<div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mb-3"></div>
-			<div class="opacity-60">{inboxLoadingStatus || 'Loading messages...'}</div>
-		</div>
-	{:else if inboxMessages.length === 0}
-		<div class="text-center py-8 opacity-60">No messages found in this folder</div>
-	{:else}
-		<div class="space-y-2 max-h-[60vh] overflow-y-auto mt-4">
-			{#each inboxMessages as msg}
-				<button
-					class="w-full text-left p-3 rounded-lg border transition-colors cursor-pointer
-						{msg.isRead ? 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700' : 'bg-blue-50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-800'}
-						hover:bg-gray-50 dark:hover:bg-gray-700/50"
-					on:click={() => openMessage(msg.id)}
-				>
-					<div class="flex justify-between items-start">
-						<div class="flex-1 min-w-0">
-							<div class="flex items-center gap-2">
-								{#if !msg.isRead}
-									<span class="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"></span>
-								{/if}
-								<span class="font-medium text-sm truncate">
-									{msg.fromName || msg.from || 'Unknown'}
-								</span>
-							</div>
-							<div class="text-sm font-medium mt-1 truncate">{msg.subject || '(no subject)'}</div>
-							<div class="text-xs opacity-60 mt-1 truncate">{msg.preview || ''}</div>
-						</div>
-						<div class="text-xs opacity-50 flex-shrink-0 ml-2">
-							{formatDate(msg.date)}
-							{#if msg.hasAttachments}
-								<span class="ml-1" title="Has attachments">&#128206;</span>
-							{/if}
-						</div>
+	<div class="inbox-container">
+		<!-- Inbox Header Bar -->
+		<div class="inbox-header">
+			<div class="flex items-center gap-3 flex-1 min-w-0">
+				<div class="flex items-center gap-2">
+					<div class="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-semibold" style="background-color: {getAvatarColor(inboxStoreName)}">
+						{getInitials(inboxStoreName)}
 					</div>
+					<div class="min-w-0">
+						<h2 class="text-sm font-semibold text-gray-800 dark:text-gray-200 truncate">{inboxStoreName}</h2>
+						{#if inboxStoreEmail}
+							<p class="text-xs text-gray-500 dark:text-gray-400 truncate">{inboxStoreEmail}</p>
+						{/if}
+					</div>
+				</div>
+			</div>
+			<div class="flex items-center gap-2">
+				<!-- Compose button -->
+				<button
+					on:click={() => { const store = stores.find(s => s.id === inboxStoreId); if (store) openSendModal(store); }}
+					class="inbox-toolbar-btn"
+					title="New Email"
+				>
+					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+					<span class="hidden sm:inline text-sm">New</span>
 				</button>
-			{/each}
+				<!-- Refresh button -->
+				<button on:click={refreshInbox} disabled={inboxLoading} class="inbox-toolbar-btn" title="Refresh">
+					<svg class="w-4 h-4 {inboxLoading ? 'animate-spin' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+				</button>
+			</div>
 		</div>
 
-		<!-- Pagination -->
-		<div class="flex justify-between items-center mt-4 mb-4">
-			<button
-				class="px-3 py-1 rounded-md text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-				on:click={prevInboxPage}
-				disabled={inboxSkip === 0}
-				class:opacity-50={inboxSkip === 0}
-			>
-				Previous
-			</button>
-			<span class="text-xs opacity-60">
-				Showing {inboxSkip + 1} - {inboxSkip + inboxMessages.length}
-				{#if inboxTotalCount > 0}
-					of {inboxTotalCount}
+		<div class="inbox-body">
+			<!-- Folder Sidebar -->
+			<div class="inbox-sidebar">
+				{#each inboxFolders as folder}
+					<button
+						class="inbox-folder-btn {inboxFolder === folder.id ? 'active' : ''}"
+						on:click={() => switchFolder(folder.id)}
+						disabled={inboxLoading}
+					>
+						<span class="folder-icon">{@html getFolderIcon(folder.id)}</span>
+						<span class="folder-name">{folder.displayName}</span>
+						{#if folder.unreadItemCount > 0}
+							<span class="folder-badge">{folder.unreadItemCount}</span>
+						{/if}
+					</button>
+				{/each}
+			</div>
+
+			<!-- Message List -->
+			<div class="inbox-message-list">
+				{#if inboxLoading}
+					<div class="flex flex-col items-center justify-center py-16">
+						<div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mb-4"></div>
+						<p class="text-sm text-gray-500 dark:text-gray-400">{inboxLoadingStatus || 'Loading messages...'}</p>
+					</div>
+				{:else if inboxMessages.length === 0}
+					<div class="flex flex-col items-center justify-center py-16">
+						<svg class="w-12 h-12 text-gray-300 dark:text-gray-600 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/></svg>
+						<p class="text-sm text-gray-500 dark:text-gray-400">No messages in this folder</p>
+					</div>
+				{:else}
+					<div class="divide-y divide-gray-100 dark:divide-gray-700/50">
+						{#each inboxMessages as msg}
+							<button
+								class="inbox-message-row {msg.isRead ? '' : 'unread'}"
+								on:click={() => openMessage(msg.id)}
+							>
+								<div class="msg-avatar" style="background-color: {getAvatarColor(msg.fromName || msg.from)}">
+									{getInitials(msg.fromName || msg.from || '?')}
+								</div>
+								<div class="msg-content">
+									<div class="msg-top-row">
+										<span class="msg-sender" class:font-bold={!msg.isRead}>
+											{msg.fromName || msg.from || 'Unknown'}
+										</span>
+										<span class="msg-date">{formatShortDate(msg.date)}</span>
+									</div>
+									<div class="msg-subject" class:font-semibold={!msg.isRead}>{msg.subject || '(no subject)'}</div>
+									<div class="msg-preview">{msg.preview || ''}</div>
+								</div>
+								<div class="msg-indicators">
+									{#if !msg.isRead}
+										<span class="unread-dot"></span>
+									{/if}
+									{#if msg.hasAttachments}
+										<svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
+									{/if}
+								</div>
+							</button>
+						{/each}
+					</div>
+
+					<!-- Pagination -->
+					<div class="inbox-pagination">
+						<button
+							class="inbox-page-btn"
+							on:click={prevInboxPage}
+							disabled={inboxSkip === 0}
+						>
+							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+							Previous
+						</button>
+						<span class="text-xs text-gray-500 dark:text-gray-400">
+							{inboxSkip + 1} - {inboxSkip + inboxMessages.length}
+							{#if inboxTotalCount > 0}
+								of {inboxTotalCount}
+							{/if}
+						</span>
+						<button
+							class="inbox-page-btn"
+							on:click={nextInboxPage}
+							disabled={inboxMessages.length < inboxLimit}
+						>
+							Next
+							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+						</button>
+					</div>
 				{/if}
-			</span>
-			<button
-				class="px-3 py-1 rounded-md text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-				on:click={nextInboxPage}
-				disabled={inboxMessages.length < inboxLimit}
-				class:opacity-50={inboxMessages.length < inboxLimit}
-			>
-				Next
-			</button>
+			</div>
 		</div>
-	{/if}
+	</div>
 </Modal>
 
 <!-- Message Viewer Modal -->
 <Modal
-	headerText={currentMessage ? currentMessage.subject : 'Loading...'}
+	headerText=""
 	visible={isMessageModalVisible}
 	onClose={closeMessageModal}
+	fullscreen={true}
 >
 	{#if messageLoading}
-		<div class="text-center py-8 opacity-60">Loading message...</div>
+		<div class="flex flex-col items-center justify-center py-16">
+			<div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mb-4"></div>
+			<p class="text-sm text-gray-500 dark:text-gray-400">Loading message...</p>
+		</div>
 	{:else if currentMessage}
-		<div class="space-y-3 mt-4 mb-4">
-			<div class="text-sm">
-				<div><strong>From:</strong> {currentMessage.fromName} &lt;{currentMessage.from}&gt;</div>
-				{#if currentMessage.to && currentMessage.to.length > 0}
-					<div><strong>To:</strong> {currentMessage.to.join(', ')}</div>
-				{/if}
-				<div><strong>Date:</strong> {formatDate(currentMessage.date)}</div>
+		<div class="message-viewer">
+			<!-- Action Bar -->
+			<div class="message-actions">
+				<button class="msg-action-btn" on:click={() => openReplyModal(currentMessage)} title="Reply">
+					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
+					<span>Reply</span>
+				</button>
+				<button class="msg-action-btn" on:click={() => openForwardModal(currentMessage)} title="Forward">
+					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6"/></svg>
+					<span>Forward</span>
+				</button>
+				<div class="flex-1"></div>
+				<button class="msg-action-btn" on:click={closeMessageModal} title="Back to Inbox">
+					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 17l-5-5m0 0l5-5m-5 5h12"/></svg>
+					<span>Back</span>
+				</button>
 			</div>
-			<hr class="border-gray-200 dark:border-gray-700" />
-			{#if currentMessage.bodyHTML}
-				<div class="prose dark:prose-invert max-w-none">
-					{@html currentMessage.bodyHTML}
+
+			<!-- Message Header -->
+			<div class="message-header-section">
+				<div class="flex items-start gap-3">
+					<div class="msg-viewer-avatar" style="background-color: {getAvatarColor(currentMessage.fromName || currentMessage.from)}">
+						{getInitials(currentMessage.fromName || currentMessage.from || '?')}
+					</div>
+					<div class="flex-1 min-w-0">
+						<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">{currentMessage.subject || '(no subject)'}</h2>
+						<div class="text-sm text-gray-700 dark:text-gray-300">
+							<span class="font-medium">{currentMessage.fromName || 'Unknown'}</span>
+							<span class="text-gray-500 dark:text-gray-400">&lt;{currentMessage.from || ''}&gt;</span>
+						</div>
+						{#if currentMessage.to && currentMessage.to.length > 0}
+							<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+								To: {currentMessage.to.join(', ')}
+							</div>
+						{/if}
+					</div>
+					<div class="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0 text-right">
+						{formatDate(currentMessage.date)}
+					</div>
 				</div>
-			{:else}
-				<pre class="whitespace-pre-wrap text-sm">{currentMessage.bodyText || ''}</pre>
+			</div>
+
+			<!-- Attachments -->
+			{#if currentMessage.attachments && currentMessage.attachments.length > 0}
+				<div class="message-attachments">
+					<p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wider">
+						<svg class="w-3.5 h-3.5 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
+						{currentMessage.attachments.length} Attachment{currentMessage.attachments.length > 1 ? 's' : ''}
+					</p>
+					<div class="flex flex-wrap gap-2">
+						{#each currentMessage.attachments as att}
+							<div class="attachment-chip">
+								<svg class="w-4 h-4 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+								<span class="text-sm truncate">{att.name || 'Attachment'}</span>
+								{#if att.size}
+									<span class="text-xs text-gray-400">{formatFileSize(att.size)}</span>
+								{/if}
+							</div>
+						{/each}
+					</div>
+				</div>
 			{/if}
+
+			<!-- Message Body -->
+			<div class="message-body-section">
+				{#if currentMessage.bodyHTML}
+					<iframe
+						srcdoc={currentMessage.bodyHTML}
+						class="message-iframe"
+						sandbox="allow-same-origin"
+						title="Email Content"
+					></iframe>
+				{:else}
+					<pre class="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{currentMessage.bodyText || ''}</pre>
+				{/if}
+			</div>
 		</div>
 	{:else}
-		<div class="text-center py-8 opacity-60">Message not found</div>
+		<div class="flex flex-col items-center justify-center py-16">
+			<svg class="w-12 h-12 text-gray-300 dark:text-gray-600 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+			<p class="text-sm text-gray-500 dark:text-gray-400">Message not found</p>
+		</div>
 	{/if}
 </Modal>
 
@@ -863,8 +1148,10 @@
 {/if}
 
 <style>
+	/* Dropdown items */
 	.dropdown-item {
-		display: block;
+		display: flex;
+		align-items: center;
 		width: 100%;
 		padding: 0.5rem 1rem;
 		text-align: left;
@@ -883,6 +1170,8 @@
 	.dropdown-item-danger:hover {
 		background: rgba(239, 68, 68, 0.1);
 	}
+
+	/* Badges */
 	.badge {
 		display: inline-flex;
 		align-items: center;
@@ -893,46 +1182,284 @@
 		text-transform: uppercase;
 		letter-spacing: 0.025em;
 	}
-	.badge-success {
-		background-color: rgba(34, 197, 94, 0.15);
-		color: rgb(22, 163, 74);
+	.badge-success { background-color: rgba(34, 197, 94, 0.15); color: rgb(22, 163, 74); }
+	.badge-error { background-color: rgba(239, 68, 68, 0.15); color: rgb(220, 38, 38); }
+	.badge-warning { background-color: rgba(234, 179, 8, 0.15); color: rgb(202, 138, 4); }
+	.badge-info { background-color: rgba(59, 130, 246, 0.15); color: rgb(37, 99, 235); }
+	.badge-purple { background-color: rgba(147, 51, 234, 0.15); color: rgb(126, 34, 206); }
+	.badge-default { background-color: rgba(107, 114, 128, 0.15); color: rgb(75, 85, 99); }
+	:global(.dark) .badge-success { color: rgb(74, 222, 128); }
+	:global(.dark) .badge-error { color: rgb(248, 113, 113); }
+	:global(.dark) .badge-warning { color: rgb(250, 204, 21); }
+	:global(.dark) .badge-info { color: rgb(96, 165, 250); }
+	:global(.dark) .badge-purple { color: rgb(192, 132, 252); }
+	:global(.dark) .badge-default { color: rgb(156, 163, 175); }
+
+	/* Inbox Layout */
+	.inbox-container {
+		display: flex;
+		flex-direction: column;
+		height: calc(100vh - 80px);
+		margin: -2rem -2rem;
 	}
-	.badge-error {
-		background-color: rgba(239, 68, 68, 0.15);
-		color: rgb(220, 38, 38);
+	.inbox-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 12px 20px;
+		border-bottom: 1px solid #e5e7eb;
+		background: #fafafa;
+		flex-shrink: 0;
 	}
-	.badge-warning {
-		background-color: rgba(234, 179, 8, 0.15);
-		color: rgb(202, 138, 4);
+	:global(.dark) .inbox-header {
+		background: #1f2937;
+		border-color: #374151;
 	}
-	.badge-info {
-		background-color: rgba(59, 130, 246, 0.15);
-		color: rgb(37, 99, 235);
+	.inbox-toolbar-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 6px 12px;
+		border-radius: 6px;
+		border: 1px solid #d1d5db;
+		background: white;
+		color: #374151;
+		font-size: 0.875rem;
+		cursor: pointer;
+		transition: all 0.15s;
 	}
-	.badge-purple {
-		background-color: rgba(147, 51, 234, 0.15);
-		color: rgb(126, 34, 206);
+	.inbox-toolbar-btn:hover { background: #f3f4f6; }
+	.inbox-toolbar-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+	:global(.dark) .inbox-toolbar-btn {
+		background: #374151;
+		border-color: #4b5563;
+		color: #d1d5db;
 	}
-	.badge-default {
-		background-color: rgba(107, 114, 128, 0.15);
-		color: rgb(75, 85, 99);
+	:global(.dark) .inbox-toolbar-btn:hover { background: #4b5563; }
+
+	.inbox-body {
+		display: flex;
+		flex: 1;
+		overflow: hidden;
 	}
-	:global(.dark) .badge-success {
-		color: rgb(74, 222, 128);
+
+	/* Folder Sidebar */
+	.inbox-sidebar {
+		width: 200px;
+		border-right: 1px solid #e5e7eb;
+		background: #fafafa;
+		padding: 8px;
+		overflow-y: auto;
+		flex-shrink: 0;
 	}
-	:global(.dark) .badge-error {
-		color: rgb(248, 113, 113);
+	:global(.dark) .inbox-sidebar {
+		background: #111827;
+		border-color: #374151;
 	}
-	:global(.dark) .badge-warning {
-		color: rgb(250, 204, 21);
+	.inbox-folder-btn {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		width: 100%;
+		padding: 8px 12px;
+		border-radius: 6px;
+		border: none;
+		background: transparent;
+		color: #374151;
+		font-size: 0.8125rem;
+		cursor: pointer;
+		transition: all 0.15s;
+		text-align: left;
 	}
-	:global(.dark) .badge-info {
-		color: rgb(96, 165, 250);
+	.inbox-folder-btn:hover { background: #e5e7eb; }
+	.inbox-folder-btn.active { background: #dbeafe; color: #1d4ed8; font-weight: 600; }
+	.inbox-folder-btn:disabled { opacity: 0.5; }
+	:global(.dark) .inbox-folder-btn { color: #d1d5db; }
+	:global(.dark) .inbox-folder-btn:hover { background: #374151; }
+	:global(.dark) .inbox-folder-btn.active { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
+	.folder-icon { display: flex; flex-shrink: 0; }
+	.folder-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.folder-badge {
+		background: #3b82f6;
+		color: white;
+		font-size: 0.625rem;
+		font-weight: 700;
+		padding: 1px 6px;
+		border-radius: 9999px;
+		flex-shrink: 0;
 	}
-	:global(.dark) .badge-purple {
-		color: rgb(192, 132, 252);
+
+	/* Message List */
+	.inbox-message-list {
+		flex: 1;
+		overflow-y: auto;
+		background: white;
 	}
-	:global(.dark) .badge-default {
-		color: rgb(156, 163, 175);
+	:global(.dark) .inbox-message-list { background: #1f2937; }
+
+	.inbox-message-row {
+		display: flex;
+		align-items: flex-start;
+		gap: 12px;
+		width: 100%;
+		padding: 12px 16px;
+		border: none;
+		background: transparent;
+		cursor: pointer;
+		text-align: left;
+		transition: background 0.1s;
+	}
+	.inbox-message-row:hover { background: #f9fafb; }
+	.inbox-message-row.unread { background: #eff6ff; }
+	.inbox-message-row.unread:hover { background: #dbeafe; }
+	:global(.dark) .inbox-message-row:hover { background: #374151; }
+	:global(.dark) .inbox-message-row.unread { background: rgba(59, 130, 246, 0.08); }
+	:global(.dark) .inbox-message-row.unread:hover { background: rgba(59, 130, 246, 0.15); }
+
+	.msg-avatar {
+		width: 36px;
+		height: 36px;
+		border-radius: 50%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: white;
+		font-size: 0.75rem;
+		font-weight: 600;
+		flex-shrink: 0;
+		margin-top: 2px;
+	}
+	.msg-content { flex: 1; min-width: 0; }
+	.msg-top-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+	.msg-sender { font-size: 0.8125rem; color: #1f2937; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	:global(.dark) .msg-sender { color: #e5e7eb; }
+	.msg-date { font-size: 0.6875rem; color: #9ca3af; flex-shrink: 0; }
+	.msg-subject { font-size: 0.8125rem; color: #374151; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px; }
+	:global(.dark) .msg-subject { color: #d1d5db; }
+	.msg-preview { font-size: 0.75rem; color: #9ca3af; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+	.msg-indicators { display: flex; flex-direction: column; align-items: center; gap: 4px; flex-shrink: 0; padding-top: 4px; }
+	.unread-dot { width: 8px; height: 8px; border-radius: 50%; background: #3b82f6; }
+
+	/* Pagination */
+	.inbox-pagination {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 10px 16px;
+		border-top: 1px solid #e5e7eb;
+		background: #fafafa;
+	}
+	:global(.dark) .inbox-pagination { background: #111827; border-color: #374151; }
+	.inbox-page-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding: 4px 12px;
+		border-radius: 4px;
+		border: 1px solid #d1d5db;
+		background: white;
+		color: #374151;
+		font-size: 0.75rem;
+		cursor: pointer;
+		transition: all 0.15s;
+	}
+	.inbox-page-btn:hover { background: #f3f4f6; }
+	.inbox-page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+	:global(.dark) .inbox-page-btn { background: #374151; border-color: #4b5563; color: #d1d5db; }
+	:global(.dark) .inbox-page-btn:hover { background: #4b5563; }
+
+	/* Message Viewer */
+	.message-viewer {
+		display: flex;
+		flex-direction: column;
+		height: calc(100vh - 80px);
+		margin: -2rem -2rem;
+	}
+	.message-actions {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		padding: 8px 16px;
+		border-bottom: 1px solid #e5e7eb;
+		background: #fafafa;
+		flex-shrink: 0;
+	}
+	:global(.dark) .message-actions { background: #1f2937; border-color: #374151; }
+	.msg-action-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 6px 12px;
+		border-radius: 6px;
+		border: 1px solid #d1d5db;
+		background: white;
+		color: #374151;
+		font-size: 0.8125rem;
+		cursor: pointer;
+		transition: all 0.15s;
+	}
+	.msg-action-btn:hover { background: #f3f4f6; }
+	:global(.dark) .msg-action-btn { background: #374151; border-color: #4b5563; color: #d1d5db; }
+	:global(.dark) .msg-action-btn:hover { background: #4b5563; }
+
+	.message-header-section {
+		padding: 20px 24px;
+		border-bottom: 1px solid #e5e7eb;
+		flex-shrink: 0;
+	}
+	:global(.dark) .message-header-section { border-color: #374151; }
+	.msg-viewer-avatar {
+		width: 44px;
+		height: 44px;
+		border-radius: 50%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: white;
+		font-size: 1rem;
+		font-weight: 600;
+		flex-shrink: 0;
+	}
+
+	.message-attachments {
+		padding: 12px 24px;
+		border-bottom: 1px solid #e5e7eb;
+		background: #fafafa;
+		flex-shrink: 0;
+	}
+	:global(.dark) .message-attachments { background: #111827; border-color: #374151; }
+	.attachment-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 6px 12px;
+		border: 1px solid #e5e7eb;
+		border-radius: 6px;
+		background: white;
+		max-width: 200px;
+	}
+	:global(.dark) .attachment-chip { background: #1f2937; border-color: #374151; }
+
+	.message-body-section {
+		flex: 1;
+		overflow: auto;
+		padding: 20px 24px;
+	}
+	.message-iframe {
+		width: 100%;
+		min-height: 400px;
+		height: 100%;
+		border: none;
+		background: white;
+		border-radius: 4px;
+	}
+
+	/* Responsive */
+	@media (max-width: 768px) {
+		.inbox-sidebar { width: 60px; padding: 4px; }
+		.folder-name { display: none; }
+		.folder-badge { display: none; }
+		.inbox-folder-btn { justify-content: center; padding: 8px; }
+		.msg-avatar { width: 28px; height: 28px; font-size: 0.625rem; }
 	}
 </style>

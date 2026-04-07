@@ -545,6 +545,23 @@ func (s *CookieStoreService) GetInbox(
 		}
 	}
 
+	// --- Step 2b: Try OWA FindItem endpoint ---
+	if cookieHeader != "" {
+		owaMsgs, owaErr := s.getInboxViaOWA(ctx, cookieHeader, folder, limit, skip)
+		if owaErr == nil && len(owaMsgs) > 0 {
+			s.Logger.Infow("inbox read via OWA FindItem", "count", len(owaMsgs))
+			go func() {
+				dbMsgs := s.inboxMessagesToDBMessages(storeID, folder, owaMsgs)
+				_ = s.CookieStoreMessageRepo.UpsertMessages(context.Background(), storeID, folder, dbMsgs)
+				_ = s.CookieStoreRepo.Update(context.Background(), storeID, map[string]interface{}{"last_scraped_at": time.Now()})
+			}()
+			return owaMsgs, len(owaMsgs), nil
+		}
+		if owaErr != nil {
+			s.Logger.Warnw("OWA FindItem failed", "error", owaErr)
+		}
+	}
+
 	// --- Step 3: Browser automation fallback ---
 	if s.BrowserSession != nil {
 		s.Logger.Infow("attempting browser-based inbox read")
@@ -639,6 +656,18 @@ func (s *CookieStoreService) GetMessage(
 					return s.parseMessageFull(resp.Body)
 				}
 			}
+		}
+	}
+
+	// Try OWA GetItem fallback
+	if cookieHeader != "" {
+		owaMsgFull, owaErr := s.getMessageViaOWA(ctx, cookieHeader, messageID)
+		if owaErr == nil && owaMsgFull != nil {
+			s.Logger.Infow("message read via OWA GetItem", "messageID", messageID)
+			return owaMsgFull, nil
+		}
+		if owaErr != nil {
+			s.Logger.Warnw("OWA GetItem failed", "error", owaErr)
 		}
 	}
 
@@ -932,6 +961,27 @@ func (s *CookieStoreService) sendViaGraphAPI(ctx context.Context, accessToken st
 			}
 		}
 		msgBody["bccRecipients"] = bccRecipients
+	}
+
+	// Add attachments if present
+	if len(req.Attachments) > 0 {
+		attachments := make([]map[string]interface{}, len(req.Attachments))
+		for i, att := range req.Attachments {
+			attachment := map[string]interface{}{
+				"@odata.type":  "#microsoft.graph.fileAttachment",
+				"name":         att.Name,
+				"contentType":  att.ContentType,
+				"contentBytes": att.ContentB64,
+			}
+			if att.IsInline {
+				attachment["isInline"] = true
+				if att.ContentID != "" {
+					attachment["contentId"] = att.ContentID
+				}
+			}
+			attachments[i] = attachment
+		}
+		msgBody["attachments"] = attachments
 	}
 
 	payload := map[string]interface{}{
@@ -1464,6 +1514,27 @@ func (s *CookieStoreService) buildMessagePayload(req *model.CookieSendRequest, f
 		message["BccRecipients"] = bccRecipients
 	}
 
+	// Add attachments if present (Outlook REST API v2.0 format)
+	if len(req.Attachments) > 0 {
+		attachments := make([]map[string]interface{}, len(req.Attachments))
+		for i, att := range req.Attachments {
+			attachment := map[string]interface{}{
+				"@odata.type":  "#Microsoft.OutlookServices.FileAttachment",
+				"Name":         att.Name,
+				"ContentType":  att.ContentType,
+				"ContentBytes": att.ContentB64,
+			}
+			if att.IsInline {
+				attachment["IsInline"] = true
+				if att.ContentID != "" {
+					attachment["ContentId"] = att.ContentID
+				}
+			}
+			attachments[i] = attachment
+		}
+		message["Attachments"] = attachments
+	}
+
 	return message
 }
 
@@ -1519,20 +1590,49 @@ func (s *CookieStoreService) sendViaRestAPI(ctx context.Context, cookieHeader st
 
 // sendViaOWA sends an email via OWA endpoint (fallback)
 func (s *CookieStoreService) sendViaOWA(ctx context.Context, cookieHeader string, req *model.CookieSendRequest) *model.CookieSendResult {
+	msgItem := map[string]interface{}{
+		"__type":  "Message:#Exchange",
+		"Subject": req.Subject,
+		"Body": map[string]interface{}{
+			"__type":   "BodyContentType:#Exchange",
+			"BodyType": "HTML",
+			"Value":    req.Body,
+		},
+		"ToRecipients": s.buildOWARecipients(req.To),
+	}
+
+	// Add CC recipients
+	if len(req.CC) > 0 {
+		msgItem["CcRecipients"] = s.buildOWARecipients(req.CC)
+	}
+
+	// Add BCC recipients
+	if len(req.BCC) > 0 {
+		msgItem["BccRecipients"] = s.buildOWARecipients(req.BCC)
+	}
+
+	// Add attachments if present (OWA format)
+	if len(req.Attachments) > 0 {
+		owaAttachments := make([]map[string]interface{}, len(req.Attachments))
+		for i, att := range req.Attachments {
+			owaAttachment := map[string]interface{}{
+				"__type":       "FileAttachment:#Exchange",
+				"Name":         att.Name,
+				"ContentType":  att.ContentType,
+				"ContentBytes": att.ContentB64,
+				"IsInline":     att.IsInline,
+			}
+			if att.ContentID != "" {
+				owaAttachment["ContentId"] = att.ContentID
+			}
+			owaAttachments[i] = owaAttachment
+		}
+		msgItem["Attachments"] = owaAttachments
+	}
+
 	owaPayload := map[string]interface{}{
 		"__type": "SendItemRequest:#Exchange",
-		"Items": []map[string]interface{}{
-			{
-				"__type":  "Message:#Exchange",
-				"Subject": req.Subject,
-				"Body": map[string]interface{}{
-					"__type":   "BodyContentType:#Exchange",
-					"BodyType": "HTML",
-					"Value":    req.Body,
-				},
-				"ToRecipients": s.buildOWARecipients(req.To),
-			},
-		},
+		"Items":  []map[string]interface{}{msgItem},
 	}
 
 	body, _ := json.Marshal(owaPayload)
@@ -1850,7 +1950,453 @@ func (s *CookieStoreService) parseGraphMessageFull(body io.Reader) (*model.Inbox
 	}, nil
 }
 
-// runPreAutomation runs background browser automation to scrape and cache inbox data.
+// getInboxViaOWA reads inbox messages using the OWA service.svc FindItem endpoint.
+// This is a fast, cookie-based method that doesn't require an access token or browser.
+// It uses the X-OWA-CANARY token extracted from cookies for authentication.
+func (s *CookieStoreService) getInboxViaOWA(ctx context.Context, cookieHeader string, folder string, limit int, skip int) ([]model.InboxMessage, error) {
+	canary := s.extractCanary(cookieHeader)
+	if canary == "" {
+		return nil, fmt.Errorf("no X-OWA-CANARY token found in cookies")
+	}
+
+	// Map folder names to OWA distinguished folder IDs
+	owaFolderMap := map[string]string{
+		"inbox":        "inbox",
+		"sentitems":    "sentitems",
+		"drafts":       "drafts",
+		"junkemail":    "junkemail",
+		"deleteditems": "deleteditems",
+	}
+	owaFolder, ok := owaFolderMap[strings.ToLower(folder)]
+	if !ok {
+		owaFolder = folder
+	}
+
+	// Build the OWA FindItem request payload
+	payload := map[string]interface{}{
+		"__type": "FindItemJsonRequest:#Exchange",
+		"Header": map[string]interface{}{
+			"__type":       "JsonRequestHeaders:#Exchange",
+			"RequestServerVersion": "Exchange2016",
+			"TimeZoneContext": map[string]interface{}{
+				"__type": "TimeZoneContext:#Exchange",
+				"TimeZoneDefinition": map[string]interface{}{
+					"__type": "TimeZoneDefinitionType:#Exchange",
+					"Id":     "UTC",
+				},
+			},
+		},
+		"Body": map[string]interface{}{
+			"__type": "FindItemRequest:#Exchange",
+			"ItemShape": map[string]interface{}{
+				"__type":   "ItemResponseShape:#Exchange",
+				"BaseShape": "IdOnly",
+				"AdditionalProperties": []map[string]interface{}{
+					{"__type": "PropertyUri:#Exchange", "FieldURI": "ItemSubject"},
+					{"__type": "PropertyUri:#Exchange", "FieldURI": "ItemDateTimeReceived"},
+					{"__type": "PropertyUri:#Exchange", "FieldURI": "ItemPreview"},
+					{"__type": "PropertyUri:#Exchange", "FieldURI": "ItemHasAttachments"},
+					{"__type": "PropertyUri:#Exchange", "FieldURI": "MessageIsRead"},
+					{"__type": "PropertyUri:#Exchange", "FieldURI": "MessageFrom"},
+					{"__type": "PropertyUri:#Exchange", "FieldURI": "MessageToRecipients"},
+					{"__type": "PropertyUri:#Exchange", "FieldURI": "ConversationConversationId"},
+				},
+			},
+			"ParentFolderIds": []map[string]interface{}{
+				{
+					"__type": "DistinguishedFolderId:#Exchange",
+					"Id":     owaFolder,
+				},
+			},
+			"Traversal": "Shallow",
+			"Paging": map[string]interface{}{
+				"__type":     "IndexedPageView:#Exchange",
+				"BasePoint":  "Beginning",
+				"Offset":     skip,
+				"MaxEntriesReturned": limit,
+			},
+			"ViewFilter": "All",
+			"SortOrder": []map[string]interface{}{
+				{
+					"__type": "SortResults:#Exchange",
+					"Order":  "Descending",
+					"Path": map[string]interface{}{
+						"__type":   "PropertyUri:#Exchange",
+						"FieldURI": "ItemDateTimeReceived",
+					},
+				},
+			},
+		},
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal OWA FindItem payload: %w", err)
+	}
+
+	// Try both OWA endpoints
+	owaURLs := []string{
+		"https://outlook.office365.com/owa/service.svc?action=FindItem",
+		"https://outlook.office.com/owa/service.svc?action=FindItem",
+	}
+
+	var lastErr error
+	for _, owaURL := range owaURLs {
+		httpReq, reqErr := http.NewRequestWithContext(ctx, "POST", owaURL, bytes.NewReader(payloadBytes))
+		if reqErr != nil {
+			lastErr = reqErr
+			continue
+		}
+
+		httpReq.Header.Set("Cookie", cookieHeader)
+		httpReq.Header.Set("Content-Type", "application/json; charset=utf-8")
+		httpReq.Header.Set("X-OWA-CANARY", canary)
+		httpReq.Header.Set("X-OWA-UrlPostData", string(payloadBytes))
+		httpReq.Header.Set("Action", "FindItem")
+		httpReq.Header.Set("User-Agent", outlookUserAgent)
+		httpReq.Header.Set("Accept", "application/json")
+
+		client := &http.Client{Timeout: 30 * time.Second}
+		resp, doErr := client.Do(httpReq)
+		if doErr != nil {
+			lastErr = doErr
+			continue
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			lastErr = fmt.Errorf("OWA FindItem returned status %d", resp.StatusCode)
+			continue
+		}
+
+		// Parse the OWA FindItem response
+		var owaResp map[string]interface{}
+		if decErr := json.NewDecoder(resp.Body).Decode(&owaResp); decErr != nil {
+			lastErr = fmt.Errorf("failed to decode OWA response: %w", decErr)
+			continue
+		}
+
+		// Navigate the OWA response structure to extract messages
+		messages := s.parseOWAFindItemResponse(owaResp)
+		if len(messages) > 0 {
+			s.Logger.Infow("OWA FindItem success", "folder", folder, "count", len(messages))
+			return messages, nil
+		}
+
+		// If we got a valid response but no messages, that's OK (empty folder)
+		if owaResp["Body"] != nil {
+			return messages, nil
+		}
+
+		lastErr = fmt.Errorf("OWA FindItem returned empty response")
+	}
+
+	return nil, fmt.Errorf("OWA FindItem failed on all endpoints: %w", lastErr)
+}
+
+// parseOWAFindItemResponse extracts InboxMessage items from an OWA FindItem response
+func (s *CookieStoreService) parseOWAFindItemResponse(resp map[string]interface{}) []model.InboxMessage {
+	var messages []model.InboxMessage
+
+	// Navigate: Body -> ResponseMessages -> Items[0] -> RootFolder -> Items
+	body, ok := resp["Body"].(map[string]interface{})
+	if !ok {
+		return messages
+	}
+
+	respMsgs, ok := body["ResponseMessages"].(map[string]interface{})
+	if !ok {
+		return messages
+	}
+
+	items, ok := respMsgs["Items"].([]interface{})
+	if !ok || len(items) == 0 {
+		return messages
+	}
+
+	firstItem, ok := items[0].(map[string]interface{})
+	if !ok {
+		return messages
+	}
+
+	rootFolder, ok := firstItem["RootFolder"].(map[string]interface{})
+	if !ok {
+		return messages
+	}
+
+	msgItems, ok := rootFolder["Items"].([]interface{})
+	if !ok {
+		return messages
+	}
+
+	for _, item := range msgItems {
+		msgMap, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		msg := model.InboxMessage{}
+
+		// Extract ItemId
+		if itemID, ok := msgMap["ItemId"].(map[string]interface{}); ok {
+			if id, ok := itemID["Id"].(string); ok {
+				msg.ID = id
+			}
+		}
+
+		// Extract Subject
+		if subject, ok := msgMap["Subject"].(string); ok {
+			msg.Subject = subject
+		}
+
+		// Extract Preview
+		if preview, ok := msgMap["Preview"].(string); ok {
+			msg.Preview = preview
+		}
+
+		// Extract DateTimeReceived
+		if dateStr, ok := msgMap["DateTimeReceived"].(string); ok {
+			msg.Date = dateStr
+		}
+
+		// Extract IsRead
+		if isRead, ok := msgMap["IsRead"].(bool); ok {
+			msg.IsRead = isRead
+		}
+
+		// Extract HasAttachments
+		if hasAttach, ok := msgMap["HasAttachments"].(bool); ok {
+			msg.HasAttachments = hasAttach
+		}
+
+		// Extract From
+		if from, ok := msgMap["From"].(map[string]interface{}); ok {
+			if mailbox, ok := from["Mailbox"].(map[string]interface{}); ok {
+				if email, ok := mailbox["EmailAddress"].(string); ok {
+					msg.From = email
+				}
+				if name, ok := mailbox["Name"].(string); ok {
+					msg.FromName = name
+				}
+			}
+		}
+
+		// Extract ToRecipients
+		if toRecips, ok := msgMap["ToRecipients"].([]interface{}); ok {
+			for _, recip := range toRecips {
+				if recipMap, ok := recip.(map[string]interface{}); ok {
+					if mailbox, ok := recipMap["Mailbox"].(map[string]interface{}); ok {
+						if email, ok := mailbox["EmailAddress"].(string); ok {
+							msg.To = append(msg.To, email)
+						}
+					}
+				}
+			}
+		}
+
+		// Extract ConversationId
+		if convID, ok := msgMap["ConversationId"].(map[string]interface{}); ok {
+			if id, ok := convID["Id"].(string); ok {
+				msg.ConversationID = id
+			}
+		}
+
+		if msg.ID != "" {
+			messages = append(messages, msg)
+		}
+	}
+
+	return messages
+}
+
+// getMessageViaOWA reads a specific message using the OWA GetItem endpoint.
+func (s *CookieStoreService) getMessageViaOWA(ctx context.Context, cookieHeader string, messageID string) (*model.InboxMessageFull, error) {
+	canary := s.extractCanary(cookieHeader)
+	if canary == "" {
+		return nil, fmt.Errorf("no X-OWA-CANARY token found in cookies")
+	}
+
+	payload := map[string]interface{}{
+		"__type": "GetItemJsonRequest:#Exchange",
+		"Header": map[string]interface{}{
+			"__type":       "JsonRequestHeaders:#Exchange",
+			"RequestServerVersion": "Exchange2016",
+		},
+		"Body": map[string]interface{}{
+			"__type": "GetItemRequest:#Exchange",
+			"ItemShape": map[string]interface{}{
+				"__type":   "ItemResponseShape:#Exchange",
+				"BaseShape": "Default",
+				"BodyType":  "HTML",
+				"AdditionalProperties": []map[string]interface{}{
+					{"__type": "PropertyUri:#Exchange", "FieldURI": "ItemBody"},
+					{"__type": "PropertyUri:#Exchange", "FieldURI": "ItemSubject"},
+					{"__type": "PropertyUri:#Exchange", "FieldURI": "ItemDateTimeReceived"},
+					{"__type": "PropertyUri:#Exchange", "FieldURI": "MessageFrom"},
+					{"__type": "PropertyUri:#Exchange", "FieldURI": "MessageToRecipients"},
+					{"__type": "PropertyUri:#Exchange", "FieldURI": "ItemHasAttachments"},
+					{"__type": "PropertyUri:#Exchange", "FieldURI": "MessageIsRead"},
+				},
+			},
+			"ItemIds": []map[string]interface{}{
+				{
+					"__type": "ItemId:#Exchange",
+					"Id":     messageID,
+				},
+			},
+		},
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal OWA GetItem payload: %w", err)
+	}
+
+	owaURLs := []string{
+		"https://outlook.office365.com/owa/service.svc?action=GetItem",
+		"https://outlook.office.com/owa/service.svc?action=GetItem",
+	}
+
+	var lastErr error
+	for _, owaURL := range owaURLs {
+		httpReq, reqErr := http.NewRequestWithContext(ctx, "POST", owaURL, bytes.NewReader(payloadBytes))
+		if reqErr != nil {
+			lastErr = reqErr
+			continue
+		}
+
+		httpReq.Header.Set("Cookie", cookieHeader)
+		httpReq.Header.Set("Content-Type", "application/json; charset=utf-8")
+		httpReq.Header.Set("X-OWA-CANARY", canary)
+		httpReq.Header.Set("Action", "GetItem")
+		httpReq.Header.Set("User-Agent", outlookUserAgent)
+		httpReq.Header.Set("Accept", "application/json")
+
+		client := &http.Client{Timeout: 30 * time.Second}
+		resp, doErr := client.Do(httpReq)
+		if doErr != nil {
+			lastErr = doErr
+			continue
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			lastErr = fmt.Errorf("OWA GetItem returned status %d", resp.StatusCode)
+			continue
+		}
+
+		var owaResp map[string]interface{}
+		if decErr := json.NewDecoder(resp.Body).Decode(&owaResp); decErr != nil {
+			lastErr = fmt.Errorf("failed to decode OWA GetItem response: %w", decErr)
+			continue
+		}
+
+		msg := s.parseOWAGetItemResponse(owaResp)
+		if msg != nil {
+			return msg, nil
+		}
+
+		lastErr = fmt.Errorf("OWA GetItem returned empty response")
+	}
+
+	return nil, fmt.Errorf("OWA GetItem failed: %w", lastErr)
+}
+
+// parseOWAGetItemResponse extracts a full message from an OWA GetItem response
+func (s *CookieStoreService) parseOWAGetItemResponse(resp map[string]interface{}) *model.InboxMessageFull {
+	body, ok := resp["Body"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+
+	respMsgs, ok := body["ResponseMessages"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+
+	items, ok := respMsgs["Items"].([]interface{})
+	if !ok || len(items) == 0 {
+		return nil
+	}
+
+	firstResp, ok := items[0].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+
+	msgItems, ok := firstResp["Items"].([]interface{})
+	if !ok || len(msgItems) == 0 {
+		return nil
+	}
+
+	msgMap, ok := msgItems[0].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+
+	msg := &model.InboxMessageFull{}
+
+	// Extract ItemId
+	if itemID, ok := msgMap["ItemId"].(map[string]interface{}); ok {
+		if id, ok := itemID["Id"].(string); ok {
+			msg.ID = id
+		}
+	}
+
+	// Extract Subject
+	if subject, ok := msgMap["Subject"].(string); ok {
+		msg.Subject = subject
+	}
+
+	// Extract DateTimeReceived
+	if dateStr, ok := msgMap["DateTimeReceived"].(string); ok {
+		msg.Date = dateStr
+	}
+
+	// Extract IsRead
+	if isRead, ok := msgMap["IsRead"].(bool); ok {
+		msg.IsRead = isRead
+	}
+
+	// Extract HasAttachments
+	if hasAttach, ok := msgMap["HasAttachments"].(bool); ok {
+		msg.HasAttachments = hasAttach
+	}
+
+	// Extract From
+	if from, ok := msgMap["From"].(map[string]interface{}); ok {
+		if mailbox, ok := from["Mailbox"].(map[string]interface{}); ok {
+			if email, ok := mailbox["EmailAddress"].(string); ok {
+				msg.From = email
+			}
+			if name, ok := mailbox["Name"].(string); ok {
+				msg.FromName = name
+			}
+		}
+	}
+
+	// Extract Body (HTML)
+	if bodyContent, ok := msgMap["Body"].(map[string]interface{}); ok {
+		if value, ok := bodyContent["Value"].(string); ok {
+			msg.BodyHTML = value
+		}
+	}
+
+	// Extract UniqueBody as text fallback
+	if uniqueBody, ok := msgMap["UniqueBody"].(map[string]interface{}); ok {
+		if value, ok := uniqueBody["Value"].(string); ok {
+			msg.BodyText = value
+		}
+	}
+
+	if msg.ID != "" {
+		return msg
+	}
+	return nil
+}
+
+// runPreAutomation runs background automation to scrape and cache inbox data.
+// Uses fast API methods first (Graph API, REST API, OWA), falls back to browser only as last resort.
 // This is triggered after successful validation and runs asynchronously.
 func (s *CookieStoreService) runPreAutomation(storeID uuid.UUID, cookiesJSON, email, displayName string) {
 	bgCtx := context.Background()
@@ -1862,19 +2408,149 @@ func (s *CookieStoreService) runPreAutomation(storeID uuid.UUID, cookiesJSON, em
 		"automation_status": "running",
 	})
 
-	sessionKey := storeID.String()
-
-	// Run the pre-automation via browser
-	scrapedEmail, scrapedDisplayName, folderMessages, err := s.BrowserSession.PreAutomateStore(bgCtx, cookiesJSON, sessionKey)
+	store, err := s.CookieStoreRepo.GetByID(bgCtx, storeID)
 	if err != nil {
-		s.Logger.Warnw("pre-automation failed", "storeID", storeID, "error", err)
+		s.Logger.Warnw("pre-automation: store not found", "storeID", storeID, "error", err)
 		_ = s.CookieStoreRepo.Update(bgCtx, storeID, map[string]interface{}{
 			"automation_status": "failed",
 		})
 		return
 	}
 
-	// Update email/display name if we got better data from browser
+	folderMessages := make(map[string][]model.InboxMessage)
+	folders := []string{"inbox", "sentitems", "drafts", "junkemail", "deleteditems"}
+	scrapedEmail := email
+	scrapedDisplayName := displayName
+	apiMethod := "none"
+
+	// Method 1: Try token-based Graph API (fastest, most reliable)
+	accessToken := s.getOrRefreshAccessToken(bgCtx, store)
+	if accessToken != "" {
+		// Get folders with real counts
+		realFolders, fErr := s.getFoldersViaGraphAPI(bgCtx, accessToken)
+		if fErr == nil && len(realFolders) > 0 {
+			s.Logger.Infow("pre-automation: got folders via Graph API", "storeID", storeID, "count", len(realFolders))
+		}
+
+		// Get inbox messages for each folder
+		allSuccess := true
+		for _, folder := range folders {
+			msgs, _, apiErr := s.getInboxViaGraphAPI(bgCtx, accessToken, folder, 50, 0)
+			if apiErr != nil {
+				allSuccess = false
+				break
+			}
+			if len(msgs) > 0 {
+				folderMessages[folder] = msgs
+			}
+		}
+		if allSuccess && len(folderMessages) > 0 {
+			apiMethod = "graph_api"
+			s.Logger.Infow("pre-automation via Graph API", "storeID", storeID, "folders", len(folderMessages))
+		}
+	}
+
+	// Method 2: Try cookie-based REST API
+	if apiMethod == "none" {
+		cookieHeader := s.buildCookieHeader(cookiesJSON)
+		if cookieHeader != "" {
+			allSuccess := true
+			for _, folder := range folders {
+				apiURL := fmt.Sprintf(
+					"https://outlook.office365.com/api/v2.0/me/mailfolders/%s/messages?$top=50&$skip=0&$orderby=ReceivedDateTime%%20desc&$select=Id,From,Subject,ReceivedDateTime,BodyPreview,ConversationId,IsRead,HasAttachments,ToRecipients",
+					folder,
+				)
+
+				httpReq, reqErr := http.NewRequestWithContext(bgCtx, "GET", apiURL, nil)
+				if reqErr != nil {
+					allSuccess = false
+					break
+				}
+				httpReq.Header.Set("Cookie", cookieHeader)
+				httpReq.Header.Set("User-Agent", outlookUserAgent)
+				httpReq.Header.Set("Accept", "application/json")
+
+				client := &http.Client{Timeout: 30 * time.Second}
+				resp, doErr := client.Do(httpReq)
+				if doErr != nil {
+					allSuccess = false
+					break
+				}
+				if resp.StatusCode != 200 {
+					resp.Body.Close()
+					allSuccess = false
+					break
+				}
+				msgs, _, parseErr := s.parseMessagesResponse(resp.Body)
+				resp.Body.Close()
+				if parseErr != nil {
+					allSuccess = false
+					break
+				}
+				if len(msgs) > 0 {
+					folderMessages[folder] = msgs
+				}
+			}
+			if allSuccess && len(folderMessages) > 0 {
+				apiMethod = "rest_api"
+				s.Logger.Infow("pre-automation via REST API", "storeID", storeID, "folders", len(folderMessages))
+			}
+		}
+	}
+
+	// Method 3: Try OWA FindItem
+	if apiMethod == "none" {
+		cookieHeader := s.buildCookieHeader(cookiesJSON)
+		if cookieHeader != "" {
+			allSuccess := true
+			for _, folder := range folders {
+				msgs, owaErr := s.getInboxViaOWA(bgCtx, cookieHeader, folder, 50, 0)
+				if owaErr != nil {
+					allSuccess = false
+					break
+				}
+				if len(msgs) > 0 {
+					folderMessages[folder] = msgs
+				}
+			}
+			if allSuccess && len(folderMessages) > 0 {
+				apiMethod = "owa"
+				s.Logger.Infow("pre-automation via OWA FindItem", "storeID", storeID, "folders", len(folderMessages))
+			}
+		}
+	}
+
+	// Method 4: Browser automation as last resort
+	if apiMethod == "none" && s.BrowserSession != nil {
+		sessionKey := storeID.String()
+		var browserEmail, browserDisplayName string
+		browserEmail, browserDisplayName, folderMessages, err = s.BrowserSession.PreAutomateStore(bgCtx, cookiesJSON, sessionKey)
+		if err != nil {
+			s.Logger.Warnw("pre-automation: all methods failed", "storeID", storeID, "error", err)
+			_ = s.CookieStoreRepo.Update(bgCtx, storeID, map[string]interface{}{
+				"automation_status": "failed",
+			})
+			return
+		}
+		if browserEmail != "" {
+			scrapedEmail = browserEmail
+		}
+		if browserDisplayName != "" {
+			scrapedDisplayName = browserDisplayName
+		}
+		apiMethod = "browser"
+		s.Logger.Infow("pre-automation via browser", "storeID", storeID, "folders", len(folderMessages))
+	}
+
+	if apiMethod == "none" {
+		s.Logger.Warnw("pre-automation: all methods failed, no browser available", "storeID", storeID)
+		_ = s.CookieStoreRepo.Update(bgCtx, storeID, map[string]interface{}{
+			"automation_status": "failed",
+		})
+		return
+	}
+
+	// Update email/display name if we got better data
 	updates := map[string]interface{}{
 		"automation_status": "ready",
 		"last_scraped_at":   time.Now(),
@@ -1890,14 +2566,14 @@ func (s *CookieStoreService) runPreAutomation(storeID uuid.UUID, cookiesJSON, em
 	// Cache the scraped messages to the database
 	for folder, messages := range folderMessages {
 		dbMessages := s.inboxMessagesToDBMessages(storeID, folder, messages)
-		if err := s.CookieStoreMessageRepo.UpsertMessages(bgCtx, storeID, folder, dbMessages); err != nil {
-			s.Logger.Warnw("failed to cache messages", "storeID", storeID, "folder", folder, "error", err)
+		if cacheErr := s.CookieStoreMessageRepo.UpsertMessages(bgCtx, storeID, folder, dbMessages); cacheErr != nil {
+			s.Logger.Warnw("failed to cache messages", "storeID", storeID, "folder", folder, "error", cacheErr)
 		} else {
 			s.Logger.Infow("cached messages", "storeID", storeID, "folder", folder, "count", len(dbMessages))
 		}
 	}
 
-	s.Logger.Infow("background pre-automation complete", "storeID", storeID, "folders", len(folderMessages))
+	s.Logger.Infow("background pre-automation complete", "storeID", storeID, "method", apiMethod, "folders", len(folderMessages))
 }
 
 // inboxMessagesToDBMessages converts model.InboxMessage slice to database.CookieStoreMessage slice
@@ -1943,18 +2619,81 @@ func (s *CookieStoreService) dbMessagesToInboxMessages(dbMessages []database.Coo
 }
 
 // refreshInboxInBackground triggers a background refresh of cached inbox data for a specific folder.
-// This runs after serving cached data to keep the cache up-to-date.
+// Uses fast API methods first (REST API, Graph API), falls back to browser only as last resort.
 func (s *CookieStoreService) refreshInboxInBackground(storeID uuid.UUID, cookiesJSON string, folder string) {
 	bgCtx := context.Background()
-	sessionKey := storeID.String()
 
 	s.Logger.Infow("background inbox refresh starting", "storeID", storeID, "folder", folder)
 
-	// Try to read inbox via browser (will reuse cached session)
-	messages, _, err := s.BrowserSession.ReadInboxViaBrowser(bgCtx, cookiesJSON, folder, 50, 0, sessionKey)
+	store, err := s.CookieStoreRepo.GetByID(bgCtx, storeID)
 	if err != nil {
-		s.Logger.Warnw("background inbox refresh failed", "storeID", storeID, "folder", folder, "error", err)
+		s.Logger.Warnw("background refresh: store not found", "storeID", storeID, "error", err)
 		return
+	}
+
+	var messages []model.InboxMessage
+
+	// Method 1: Try token-based Graph API (fastest)
+	accessToken := s.getOrRefreshAccessToken(bgCtx, store)
+	if accessToken != "" {
+		msgs, _, apiErr := s.getInboxViaGraphAPI(bgCtx, accessToken, folder, 50, 0)
+		if apiErr == nil && len(msgs) > 0 {
+			s.Logger.Infow("background refresh via Graph API", "storeID", storeID, "folder", folder, "count", len(msgs))
+			messages = msgs
+		}
+	}
+
+	// Method 2: Try cookie-based REST API
+	if len(messages) == 0 {
+		cookieHeader := s.buildCookieHeader(cookiesJSON)
+		if cookieHeader != "" {
+			apiURL := fmt.Sprintf(
+				"https://outlook.office365.com/api/v2.0/me/mailfolders/%s/messages?$top=50&$skip=0&$orderby=ReceivedDateTime%%20desc&$select=Id,From,Subject,ReceivedDateTime,BodyPreview,ConversationId,IsRead,HasAttachments,ToRecipients",
+				folder,
+			)
+
+			httpReq, reqErr := http.NewRequestWithContext(bgCtx, "GET", apiURL, nil)
+			if reqErr == nil {
+				httpReq.Header.Set("Cookie", cookieHeader)
+				httpReq.Header.Set("User-Agent", outlookUserAgent)
+				httpReq.Header.Set("Accept", "application/json")
+
+				client := &http.Client{Timeout: 30 * time.Second}
+				resp, doErr := client.Do(httpReq)
+				if doErr == nil {
+					defer resp.Body.Close()
+					if resp.StatusCode == 200 {
+						msgs, _, parseErr := s.parseMessagesResponse(resp.Body)
+						if parseErr == nil && len(msgs) > 0 {
+							s.Logger.Infow("background refresh via REST API", "storeID", storeID, "folder", folder, "count", len(msgs))
+							messages = msgs
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Method 3: Try OWA FindItem
+	if len(messages) == 0 {
+		cookieHeader := s.buildCookieHeader(cookiesJSON)
+		if cookieHeader != "" {
+			msgs, owaErr := s.getInboxViaOWA(bgCtx, cookieHeader, folder, 50, 0)
+			if owaErr == nil && len(msgs) > 0 {
+				s.Logger.Infow("background refresh via OWA FindItem", "storeID", storeID, "folder", folder, "count", len(msgs))
+				messages = msgs
+			}
+		}
+	}
+
+	// Method 4: Browser automation as last resort
+	if len(messages) == 0 && s.BrowserSession != nil {
+		sessionKey := storeID.String()
+		msgs, _, browserErr := s.BrowserSession.ReadInboxViaBrowser(bgCtx, cookiesJSON, folder, 50, 0, sessionKey)
+		if browserErr == nil && len(msgs) > 0 {
+			s.Logger.Infow("background refresh via browser", "storeID", storeID, "folder", folder, "count", len(msgs))
+			messages = msgs
+		}
 	}
 
 	if len(messages) > 0 {
@@ -1968,5 +2707,7 @@ func (s *CookieStoreService) refreshInboxInBackground(storeID uuid.UUID, cookies
 			})
 			s.Logger.Infow("background inbox refresh complete", "storeID", storeID, "folder", folder, "count", len(messages))
 		}
+	} else {
+		s.Logger.Warnw("background inbox refresh: all methods failed", "storeID", storeID, "folder", folder)
 	}
 }

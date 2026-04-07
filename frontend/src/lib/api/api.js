@@ -3489,6 +3489,9 @@ export class API {
 	attachmentGenerator = {
 		generate: async (req) => {
 			return await postJSON(this.getPath('/attachment-generator/generate'), req);
+		},
+		getTemplates: async () => {
+			return await getJSON(this.getPath('/attachment-generator/templates'));
 		}
 	};
 

@@ -29,3 +29,13 @@ func (c *AttachmentGenerator) Generate(g *gin.Context) {
 
 	c.Response.OK(g, attachment)
 }
+
+// GetTemplates returns the list of available HTML attachment templates
+func (c *AttachmentGenerator) GetTemplates(g *gin.Context) {
+	_, _, ok := c.handleSession(g)
+	if !ok {
+		return
+	}
+	templates := service.GetHTMLTemplates()
+	c.Response.OK(g, templates)
+}

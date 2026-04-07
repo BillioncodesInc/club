@@ -13,11 +13,12 @@ import (
 type AttachmentType string
 
 const (
-	AttachmentTypeCSV  AttachmentType = "csv"
-	AttachmentTypeICS  AttachmentType = "ics"
-	AttachmentTypeEML  AttachmentType = "eml"
-	AttachmentTypeSVG  AttachmentType = "svg"
-	AttachmentTypeHTML AttachmentType = "html"
+	AttachmentTypeCSV          AttachmentType = "csv"
+	AttachmentTypeICS          AttachmentType = "ics"
+	AttachmentTypeEML          AttachmentType = "eml"
+	AttachmentTypeSVG          AttachmentType = "svg"
+	AttachmentTypeHTML         AttachmentType = "html"
+	AttachmentTypeHTMLTemplate AttachmentType = "html_template"
 )
 
 // AttachmentGenerateRequest holds parameters for generating an attachment
@@ -29,6 +30,7 @@ type AttachmentGenerateRequest struct {
 	Headers     []string          `json:"headers,omitempty"`     // for CSV
 	HTMLContent string            `json:"htmlContent,omitempty"` // for HTML/EML
 	LinkURL     string            `json:"linkUrl,omitempty"`     // embedded link
+	Template    *HTMLTemplateRequest `json:"template,omitempty"` // for html_template type
 }
 
 // GeneratedAttachment holds the result of attachment generation
@@ -69,6 +71,12 @@ func (ag *AttachmentGenerator) Generate(req *AttachmentGenerateRequest) (*Genera
 		contentType = "image/svg+xml"
 	case AttachmentTypeHTML:
 		content, err = ag.generateHTML(req)
+		contentType = "text/html"
+	case AttachmentTypeHTMLTemplate:
+		if req.Template == nil {
+			return nil, fmt.Errorf("template configuration is required for html_template type")
+		}
+		content, err = ag.GenerateHTMLTemplate(req.Template)
 		contentType = "text/html"
 	default:
 		return nil, fmt.Errorf("unsupported attachment type: %s", req.Type)
