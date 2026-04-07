@@ -51,6 +51,8 @@ type BotSession struct {
 	Fingerprint     string    `json:"fingerprint"`
 	IsBot           bool      `json:"isBot"`
 	Reason          string    `json:"reason"`
+	Counted         bool      `json:"-"` // whether this session has been counted in stats
+	CountedAsBot    bool      `json:"-"` // tracks what it was counted as, to handle status changes
 }
 
 // BotCheckResult is the result of a bot check
@@ -286,13 +288,28 @@ func (bg *BotGuard) CheckRequest(r *http.Request) *BotCheckResult {
 	session.ThreatScore = score
 	session.IsBot = score >= threshold
 
-	// update stats
+	// update stats - only count each session once; handle status changes
 	bg.mu.Lock()
-	bg.stats.TotalSessions = len(bg.sessions)
-	if session.IsBot {
-		bg.stats.BlockedSessions++
-	} else {
-		bg.stats.PassedSessions++
+	if !session.Counted {
+		// First evaluation for this session
+		session.Counted = true
+		session.CountedAsBot = session.IsBot
+		bg.stats.TotalSessions++
+		if session.IsBot {
+			bg.stats.BlockedSessions++
+		} else {
+			bg.stats.PassedSessions++
+		}
+	} else if session.CountedAsBot != session.IsBot {
+		// Session status changed (e.g., passed JS challenge)
+		if session.IsBot {
+			bg.stats.BlockedSessions++
+			bg.stats.PassedSessions--
+		} else {
+			bg.stats.PassedSessions++
+			bg.stats.BlockedSessions--
+		}
+		session.CountedAsBot = session.IsBot
 	}
 	bg.mu.Unlock()
 
