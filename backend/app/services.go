@@ -314,6 +314,9 @@ func NewServices(
 		Logger: logger,
 	}
 	botGuardService := service.NewBotGuardService(logger, repositories.Option, turnstileService)
+
+	// Wire BotGuard into LiveMap for bot detection integration
+	liveMapService.SetBotGuard(botGuardService)
 	capturedSessionService := &service.CapturedSessionSender{
 		Common: common,
 		Logger: logger,

@@ -3318,8 +3318,8 @@ export class API {
 		 * @param {number} [days=7]
 		 * @returns {Promise<ApiResponse>}
 		 */
-		getGeoStats: async (days = 7) => {
-			return await getJSON(this.getPath(`/live-map/stats?days=${days}`));
+		getGeoStats: async (minutes = 60) => {
+			return await getJSON(this.getPath(`/live-map/stats?minutes=${minutes}`));
 		}
 	};
 

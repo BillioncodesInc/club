@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,13 +20,22 @@ import (
 
 // ============================================================================
 // Live Map Dashboard Service
-// Provides real-time geographic visualization of campaign events
-// Ported concept from Evilginx's evilfeed live map dashboard
+// Provides real-time geographic visualization of campaign events.
+//
+// Key design decisions:
+// - Events are deduplicated per unique session (IP+UA hash), NOT per-request.
+//   A single browser session generates many sub-requests (CSS, JS, images, etc.)
+//   but should only appear as ONE event on the map.
+// - Bot traffic is tagged separately so the frontend can filter/display it differently.
+// - Time-based filtering is supported so the frontend can request events for
+//   specific time windows (last 15min, 1hr, 24hr, etc.).
+// - Cleanup routines run automatically to prevent unbounded memory growth.
 // ============================================================================
 
 // MapEvent represents a single event on the live map
 type MapEvent struct {
 	ID          string    `json:"id"`
+	SessionKey  string    `json:"-"` // internal dedup key, not sent to frontend
 	Latitude    float64   `json:"latitude"`
 	Longitude   float64   `json:"longitude"`
 	City        string    `json:"city"`
@@ -34,16 +44,20 @@ type MapEvent struct {
 	CountryCode string    `json:"countryCode"`
 	IPAddress   string    `json:"ipAddress"`
 	UserAgent   string    `json:"userAgent"`
-	EventType   string    `json:"eventType"` // "visit", "click", "submit", "capture", "proxy_visit", "proxy_submit", "proxy_cookie"
+	EventType   string    `json:"eventType"`
 	CampaignID  string    `json:"campaignId"`
 	Timestamp   time.Time `json:"timestamp"`
+	IsBot       bool      `json:"isBot"`
 }
 
 // MapStats holds aggregate statistics for the map
 type MapStats struct {
 	TotalEvents     int            `json:"totalEvents"`
+	UniqueVisitors  int            `json:"uniqueVisitors"`
 	ActiveCountries int            `json:"activeCountries"`
 	ActiveCities    int            `json:"activeCities"`
+	BotEvents       int            `json:"botEvents"`
+	RealEvents      int            `json:"realEvents"`
 	EventsByType    map[string]int `json:"eventsByType"`
 	EventsByCountry map[string]int `json:"eventsByCountry"`
 	RecentEvents    []*MapEvent    `json:"recentEvents"`
@@ -64,9 +78,10 @@ type GeoIPResponse struct {
 	ASN         string  `json:"asn"`
 }
 
-// visitDedup tracks when we last recorded a proxy_visit for an IP
-type visitDedup struct {
-	lastSeen time.Time
+// sessionDedup tracks when we last recorded each event type for a session
+type sessionDedup struct {
+	lastSeen map[string]time.Time
+	mu       sync.Mutex
 }
 
 // LiveMap manages the live map dashboard data
@@ -74,16 +89,26 @@ type LiveMap struct {
 	Common
 	OptionRepository   *repository.Option
 	CampaignRepository *repository.Campaign
+	BotGuard           *BotGuard
 	mu                 sync.RWMutex
 	recentEvents       []*MapEvent
 	maxRecentEvents    int
-	geoCache           sync.Map // IP -> *GeoIPResponse
-	visitDedup         sync.Map // "eventType:IP" -> *visitDedup
+	geoCache           sync.Map
+	sessionDedup       sync.Map
 	httpClient         *http.Client
+	cleanupDone        chan struct{}
 }
 
-// visitDedupWindow is the time window for deduplicating proxy_visit events per IP
-const visitDedupWindow = 5 * time.Minute
+// Dedup windows per event type
+var eventDedupWindows = map[string]time.Duration{
+	"proxy_visit":  10 * time.Minute,
+	"visit":        5 * time.Minute,
+	"proxy_submit": 2 * time.Minute,
+	"proxy_cookie": 2 * time.Minute,
+	"submit":       2 * time.Minute,
+}
+
+const defaultDedupWindow = 5 * time.Minute
 
 // NewLiveMapService creates a new live map service
 func NewLiveMapService(
@@ -91,44 +116,74 @@ func NewLiveMapService(
 	optionRepo *repository.Option,
 	campaignRepo *repository.Campaign,
 ) *LiveMap {
-	return &LiveMap{
+	lm := &LiveMap{
 		Common: Common{
 			Logger: logger,
 		},
 		OptionRepository:   optionRepo,
 		CampaignRepository: campaignRepo,
-		maxRecentEvents:         100,
+		maxRecentEvents:    1000,
 		httpClient: &http.Client{
 			Timeout: 5 * time.Second,
 		},
+		cleanupDone: make(chan struct{}),
+	}
+	go lm.runCleanup()
+	return lm
+}
+
+// SetBotGuard sets the BotGuard reference for bot detection integration.
+func (lm *LiveMap) SetBotGuard(bg *BotGuard) {
+	lm.BotGuard = bg
+}
+
+// runCleanup periodically cleans up old events and dedup entries
+func (lm *LiveMap) runCleanup() {
+	ticker := time.NewTicker(2 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			lm.CleanupOldEvents(24 * time.Hour)
+			lm.CleanupSessionDedup()
+		case <-lm.cleanupDone:
+			return
+		}
 	}
 }
 
-// RecordEvent records a new event on the live map
+// RecordEvent records a new event on the live map.
+// Deduplicates per session (IP+UA) per event type within a time window.
 func (lm *LiveMap) RecordEvent(
 	ipAddress string,
 	userAgent string,
 	eventType string,
 	campaignID string,
 ) {
-	// Deduplicate proxy_visit events: only record one per IP within the dedup window.
-	// This prevents a single page load (which generates many sub-requests for CSS, JS, images, etc.)
-	// from creating dozens of proxy_visit events. proxy_submit and proxy_cookie are NOT deduplicated
-	// since each represents a meaningful capture event.
-	if eventType == "proxy_visit" {
-		dedupKey := eventType + ":" + ipAddress
-		if existing, ok := lm.visitDedup.Load(dedupKey); ok {
-			dedup := existing.(*visitDedup)
-			if time.Since(dedup.lastSeen) < visitDedupWindow {
-				// Already recorded a proxy_visit for this IP recently, skip
-				return
-			}
-		}
-		// Record the visit and update the dedup tracker
-		lm.visitDedup.Store(eventType+":"+ipAddress, &visitDedup{lastSeen: time.Now()})
+	sessionKey := ipAddress + "|" + userAgent
+
+	dedupWindow := defaultDedupWindow
+	if w, ok := eventDedupWindows[eventType]; ok {
+		dedupWindow = w
 	}
 
-	// look up geo data
+	dedupVal, _ := lm.sessionDedup.LoadOrStore(sessionKey, &sessionDedup{
+		lastSeen: make(map[string]time.Time),
+	})
+	dedup := dedupVal.(*sessionDedup)
+
+	dedup.mu.Lock()
+	if lastTime, exists := dedup.lastSeen[eventType]; exists {
+		if time.Since(lastTime) < dedupWindow {
+			dedup.mu.Unlock()
+			return
+		}
+	}
+	dedup.lastSeen[eventType] = time.Now()
+	dedup.mu.Unlock()
+
+	isBot := lm.checkIsBot(ipAddress, userAgent)
+
 	geo, err := lm.lookupGeoIP(ipAddress)
 	if err != nil {
 		lm.Logger.Debugw("geo lookup failed", "ip", ipAddress, "error", err)
@@ -137,6 +192,7 @@ func (lm *LiveMap) RecordEvent(
 
 	event := &MapEvent{
 		ID:          fmt.Sprintf("%d", time.Now().UnixNano()),
+		SessionKey:  sessionKey,
 		Latitude:    geo.Latitude,
 		Longitude:   geo.Longitude,
 		City:        geo.City,
@@ -148,6 +204,7 @@ func (lm *LiveMap) RecordEvent(
 		EventType:   eventType,
 		CampaignID:  campaignID,
 		Timestamp:   time.Now(),
+		IsBot:       isBot,
 	}
 
 	lm.mu.Lock()
@@ -159,10 +216,45 @@ func (lm *LiveMap) RecordEvent(
 	}
 }
 
-// GetRecentEvents returns recent map events
+// checkIsBot checks if the given IP+UA is flagged as a bot
+func (lm *LiveMap) checkIsBot(ip, ua string) bool {
+	lower := strings.ToLower(ua)
+	botPatterns := []string{
+		"bot", "crawler", "spider", "scraper", "curl", "wget",
+		"python-requests", "go-http-client", "httpie", "postman",
+		"phantomjs", "headlesschrome", "selenium", "puppeteer",
+		"nessus", "nikto", "nmap", "masscan", "qualys", "acunetix",
+		"burpsuite", "zap", "sqlmap", "dirbuster", "gobuster",
+		"barracuda", "proofpoint", "mimecast", "fireeye", "sophos",
+		"forcepoint", "ironport", "messagelabs", "symantec",
+	}
+	for _, pattern := range botPatterns {
+		if strings.Contains(lower, pattern) {
+			return true
+		}
+	}
+	if ua == "" {
+		return true
+	}
+
+	if lm.BotGuard != nil {
+		lm.BotGuard.mu.RLock()
+		defer lm.BotGuard.mu.RUnlock()
+		for _, session := range lm.BotGuard.sessions {
+			if session.IP == ip && session.UserAgent == ua {
+				return session.IsBot
+			}
+		}
+	}
+
+	return false
+}
+
+// GetRecentEvents returns recent map events filtered by time window
 func (lm *LiveMap) GetRecentEvents(
 	ctx context.Context,
 	session *model.Session,
+	minutes int,
 	limit int,
 ) ([]*MapEvent, error) {
 	isAuthorized, err := IsAuthorized(session, data.PERMISSION_ALLOW_GLOBAL)
@@ -177,19 +269,27 @@ func (lm *LiveMap) GetRecentEvents(
 	lm.mu.RLock()
 	defer lm.mu.RUnlock()
 
-	if limit <= 0 || limit > len(lm.recentEvents) {
-		limit = len(lm.recentEvents)
+	cutoff := time.Now().Add(-time.Duration(minutes) * time.Minute)
+
+	var result []*MapEvent
+	for _, e := range lm.recentEvents {
+		if e.Timestamp.Before(cutoff) {
+			break
+		}
+		result = append(result, e)
+		if limit > 0 && len(result) >= limit {
+			break
+		}
 	}
 
-	result := make([]*MapEvent, limit)
-	copy(result, lm.recentEvents[:limit])
 	return result, nil
 }
 
-// GetMapStats returns aggregate map statistics
+// GetMapStats returns aggregate map statistics filtered by time window
 func (lm *LiveMap) GetMapStats(
 	ctx context.Context,
 	session *model.Session,
+	minutes int,
 ) (*MapStats, error) {
 	isAuthorized, err := IsAuthorized(session, data.PERMISSION_ALLOW_GLOBAL)
 	if err != nil {
@@ -203,43 +303,69 @@ func (lm *LiveMap) GetMapStats(
 	lm.mu.RLock()
 	defer lm.mu.RUnlock()
 
+	cutoff := time.Now().Add(-time.Duration(minutes) * time.Minute)
+
 	stats := &MapStats{
-		TotalEvents:     len(lm.recentEvents),
 		EventsByType:    make(map[string]int),
 		EventsByCountry: make(map[string]int),
 	}
 
 	countries := make(map[string]bool)
 	cities := make(map[string]bool)
+	uniqueVisitors := make(map[string]bool)
 
 	for _, e := range lm.recentEvents {
+		if e.Timestamp.Before(cutoff) {
+			break
+		}
+
+		stats.TotalEvents++
 		stats.EventsByType[e.EventType]++
-		stats.EventsByCountry[e.Country]++
-		countries[e.Country] = true
-		cities[e.City+","+e.Country] = true
+		if e.Country != "" {
+			stats.EventsByCountry[e.Country]++
+			countries[e.Country] = true
+		}
+		if e.City != "" && e.Country != "" {
+			cities[e.City+","+e.Country] = true
+		}
+		uniqueVisitors[e.IPAddress] = true
+
+		if e.IsBot {
+			stats.BotEvents++
+		} else {
+			stats.RealEvents++
+		}
 	}
 
 	stats.ActiveCountries = len(countries)
 	stats.ActiveCities = len(cities)
+	stats.UniqueVisitors = len(uniqueVisitors)
 
-	// include last 10 events
 	limit := 10
-	if len(lm.recentEvents) < limit {
-		limit = len(lm.recentEvents)
+	if stats.TotalEvents < limit {
+		limit = stats.TotalEvents
 	}
-	stats.RecentEvents = lm.recentEvents[:limit]
+	if limit > 0 {
+		for _, e := range lm.recentEvents {
+			if e.Timestamp.Before(cutoff) {
+				break
+			}
+			stats.RecentEvents = append(stats.RecentEvents, e)
+			if len(stats.RecentEvents) >= limit {
+				break
+			}
+		}
+	}
 
 	return stats, nil
 }
 
 // lookupGeoIP performs a GeoIP lookup for an IP address
 func (lm *LiveMap) lookupGeoIP(ip string) (*GeoIPResponse, error) {
-	// check cache first
 	if cached, ok := lm.geoCache.Load(ip); ok {
 		return cached.(*GeoIPResponse), nil
 	}
 
-	// skip private IPs
 	parsedIP := net.ParseIP(ip)
 	if parsedIP == nil || parsedIP.IsPrivate() || parsedIP.IsLoopback() {
 		return &GeoIPResponse{
@@ -249,7 +375,6 @@ func (lm *LiveMap) lookupGeoIP(ip string) (*GeoIPResponse, error) {
 		}, nil
 	}
 
-	// Use ip-api.com (free, no key required, 45 req/min)
 	url := fmt.Sprintf("http://ip-api.com/json/%s?fields=status,message,country,countryCode,regionName,city,lat,lon,timezone,isp,org,as", ip)
 
 	resp, err := lm.httpClient.Get(url)
@@ -300,14 +425,11 @@ func (lm *LiveMap) lookupGeoIP(ip string) (*GeoIPResponse, error) {
 		ASN:         apiResp.AS,
 	}
 
-	// cache the result
 	lm.geoCache.Store(ip, geo)
-
 	return geo, nil
 }
 
 // maskIP partially masks an IP address for privacy
-// e.g., "192.168.1.100" -> "192.168.1.***"
 func maskIP(ip string) string {
 	parts := make([]byte, 0, len(ip))
 	dotCount := 0
@@ -341,17 +463,35 @@ func (lm *LiveMap) CleanupOldEvents(maxAge time.Duration) {
 
 // CleanupGeoCache removes old entries from the geo cache
 func (lm *LiveMap) CleanupGeoCache(maxAge time.Duration) {
-	// Since sync.Map doesn't track insertion time, we just clear it periodically
 	lm.geoCache = sync.Map{}
 }
 
-// CleanupVisitDedup removes old dedup entries
-func (lm *LiveMap) CleanupVisitDedup() {
-	lm.visitDedup.Range(func(key, value interface{}) bool {
-		dedup := value.(*visitDedup)
-		if time.Since(dedup.lastSeen) > visitDedupWindow*2 {
-			lm.visitDedup.Delete(key)
+// CleanupSessionDedup removes old dedup entries
+func (lm *LiveMap) CleanupSessionDedup() {
+	lm.sessionDedup.Range(func(key, value interface{}) bool {
+		dedup := value.(*sessionDedup)
+		dedup.mu.Lock()
+		allExpired := true
+		for eventType, lastTime := range dedup.lastSeen {
+			window := defaultDedupWindow
+			if w, ok := eventDedupWindows[eventType]; ok {
+				window = w
+			}
+			if time.Since(lastTime) > window*2 {
+				delete(dedup.lastSeen, eventType)
+			} else {
+				allExpired = false
+			}
+		}
+		dedup.mu.Unlock()
+		if allExpired {
+			lm.sessionDedup.Delete(key)
 		}
 		return true
 	})
+}
+
+// Stop gracefully stops the cleanup routine
+func (lm *LiveMap) Stop() {
+	close(lm.cleanupDone)
 }
