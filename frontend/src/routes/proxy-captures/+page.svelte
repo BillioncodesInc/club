@@ -310,8 +310,11 @@
 				formatName = 'Raw JSON';
 				break;
 		}
-		copyToClipboard(text);
-		addToast(`Copied as ${formatName}`, 'Success');
+		navigator.clipboard.writeText(text).then(() => {
+			addToast(`Copied as ${formatName}`, 'Success');
+		}).catch(() => {
+			addToast('Failed to copy to clipboard', 'Error');
+		});
 	};
 
 	const sendToCookieStore = async (capture) => {

