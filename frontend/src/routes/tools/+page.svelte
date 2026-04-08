@@ -604,15 +604,84 @@
 				</div>
 			</div>
 
-			<!-- GeoIP Lookup Card -->
-			<div
-				class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm dark:shadow-gray-900/50 border border-gray-100 dark:border-gray-700 h-[420px] flex flex-col transition-colors duration-200"
-			>
-				<h2
-					class="text-xl font-semibold text-gray-700 dark:text-gray-200 mb-6 transition-colors duration-200"
+<!-- Browser Extension Card -->
+				<div
+					class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm dark:shadow-gray-900/50 border border-gray-100 dark:border-gray-700 h-[420px] flex flex-col transition-colors duration-200"
 				>
-					GeoIP Lookup
-				</h2>
+					<h2
+						class="text-xl font-semibold text-gray-700 dark:text-gray-200 mb-4 transition-colors duration-200"
+					>
+						Cookie Capture Extension
+					</h2>
+
+					<div class="flex-1 flex flex-col">
+						<div class="space-y-3 flex-1">
+							<div class="flex items-center gap-3 p-3 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800">
+								<div class="w-10 h-10 rounded-lg bg-indigo-600 flex items-center justify-center flex-shrink-0">
+									<svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+									</svg>
+								</div>
+								<div>
+									<p class="text-sm font-medium text-indigo-700 dark:text-indigo-300">Chrome Extension</p>
+									<p class="text-xs text-indigo-600 dark:text-indigo-400">Manifest V3 &middot; v1.0.0</p>
+								</div>
+							</div>
+
+							<p class="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
+								Captures Outlook/Microsoft session cookies directly from the browser for use with the Cookie Store. Required for proper OWA inbox access and email sending.
+							</p>
+
+							<div class="space-y-2">
+								<p class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Features</p>
+								<ul class="text-xs text-gray-600 dark:text-gray-400 space-y-1">
+									<li class="flex items-center gap-2">
+										<span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+										Auto-capture on Outlook login
+									</li>
+									<li class="flex items-center gap-2">
+										<span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+										Captures all Microsoft auth cookies (ESTSAUTH, WLSSC, X-OWA-CANARY, etc.)
+									</li>
+									<li class="flex items-center gap-2">
+										<span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+										Auto-sends to Cookie Store
+									</li>
+									<li class="flex items-center gap-2">
+										<span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+										OAuth code interception
+									</li>
+								</ul>
+							</div>
+
+							<div class="p-2.5 rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800">
+								<p class="text-xs text-amber-700 dark:text-amber-300">
+									<strong>Install:</strong> Unzip, go to <code class="bg-amber-100 dark:bg-amber-800/50 px-1 rounded">chrome://extensions</code>, enable Developer Mode, click "Load unpacked", and select the folder.
+								</p>
+							</div>
+						</div>
+
+						<div class="mt-auto pt-4">
+							<a
+								href="/phishingclub-cookie-capture-extension.zip"
+								download
+								class="block w-full text-center px-4 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm transition-colors duration-200"
+							>
+								Download Extension (.zip)
+							</a>
+						</div>
+					</div>
+				</div>
+
+				<!-- GeoIP Lookup Card -->
+				<div
+					class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm dark:shadow-gray-900/50 border border-gray-100 dark:border-gray-700 h-[420px] flex flex-col transition-colors duration-200"
+				>
+					<h2
+						class="text-xl font-semibold text-gray-700 dark:text-gray-200 mb-6 transition-colors duration-200"
+					>
+						GeoIP Lookup
+					</h2>
 				<div class="flex flex-col h-full">
 					<div class="space-y-4">
 						<TextField

