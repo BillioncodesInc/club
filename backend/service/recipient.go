@@ -576,6 +576,18 @@ func (r *Recipient) Import(
 		return result, validate.WrapErrorWithField(errors.New("no recipients"), "add recipients")
 	}
 
+	// deduplicate within the batch before hitting the DB
+	originalCount := len(recipients)
+	recipients = deduplicateRecipientsBatch(recipients)
+	if deduped := originalCount - len(recipients); deduped > 0 {
+		r.Logger.Debugw("removed in-batch duplicates",
+			"original", originalCount,
+			"deduped", deduped,
+			"remaining", len(recipients),
+		)
+		result.Summary.Total = len(recipients)
+	}
+
 	// process each recipient individually, collecting successes and failures
 	for i, incoming := range recipients {
 		// validate the recipient

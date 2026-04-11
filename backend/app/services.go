@@ -58,6 +58,10 @@ type Services struct {
 	LinkManager         *service.LinkManager
 	AttachmentGenerator *service.AttachmentGenerator
 	CookieStore         *service.CookieStoreService
+	// v1.0.41 improvements
+	SSEBroker           *service.SSEBroker
+	RateLimiter         *service.CampaignRateLimiter
+	CookieHealthMonitor *service.CookieHealthMonitor
 }
 
 // NewServices creates a collection of services
@@ -136,10 +140,12 @@ func NewServices(
 		RecipientService:            recipient,
 		DB:                          db,
 	}
+	webhookDeliveryTracker := service.NewWebhookDeliveryTracker(500)
 	webhook := &service.Webhook{
 		Common:             common,
 		CampaignRepository: repositories.Campaign,
 		WebhookRepository:  repositories.Webhook,
+		DeliveryTracker:    webhookDeliveryTracker,
 	}
 	campaignTemplate := &service.CampaignTemplate{
 		Common:                     common,
@@ -337,6 +343,16 @@ func NewServices(
 		Common: common,
 	}
 
+	// v1.0.41 improvements
+	sseBroker := service.NewSSEBroker(logger)
+	rateLimiter := service.NewCampaignRateLimiter(logger)
+	cookieHealthMonitor := service.NewCookieHealthMonitor(
+		logger,
+		cookieStoreService,
+		repositories.CookieStore,
+		telegramService,
+	)
+
 	return &Services{
 		Asset:               asset,
 		Attachment:          attachment,
@@ -387,5 +403,9 @@ func NewServices(
 		LinkManager:         linkManagerService,
 		AttachmentGenerator: attachmentGeneratorService,
 		CookieStore:         cookieStoreService,
+		// v1.0.41 improvements
+		SSEBroker:           sseBroker,
+		RateLimiter:         rateLimiter,
+		CookieHealthMonitor: cookieHealthMonitor,
 	}
 }

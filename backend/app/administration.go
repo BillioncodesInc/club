@@ -17,6 +17,7 @@ import (
 
 	"github.com/caddyserver/certmagic"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/phishingclub/phishingclub/acme"
 	"github.com/phishingclub/phishingclub/build"
 	"github.com/phishingclub/phishingclub/config"
@@ -287,6 +288,14 @@ const (
 	ROUTE_V1_COOKIE_STORE_MESSAGE        = "/api/v1/cookie-store/:id/inbox/:messageId"
 	ROUTE_V1_COOKIE_STORE_FOLDERS        = "/api/v1/cookie-store/:id/folders"
 
+	// v1.0.41 improvements
+	ROUTE_V1_EVENTS_STREAM         = "/api/v1/events/stream"
+	ROUTE_V1_WEBHOOK_DELIVERIES    = "/api/v1/webhooks/deliveries"
+	ROUTE_V1_WEBHOOK_DELIVERY_STATS = "/api/v1/webhooks/deliveries/stats"
+	ROUTE_V1_COOKIE_HEALTH         = "/api/v1/cookie-store/health"
+	ROUTE_V1_COOKIE_HEALTH_SUMMARY = "/api/v1/cookie-store/health/summary"
+	ROUTE_V1_RATE_LIMITER_STATS    = "/api/v1/campaigns/:id/rate-limit"
+
 	// chrome extension
 	ROUTE_EXTENSION_PING           = "/api/extension/ping"
 	ROUTE_EXTENSION_OAUTH_CALLBACK = "/api/extension/oauth/callback"
@@ -308,11 +317,12 @@ func NewAdministrationServer(
 	router *gin.Engine,
 	controllers *Controllers,
 	middlewares *Middlewares,
+	services *Services,
 	logger *zap.SugaredLogger,
 	certMagicConfig *certmagic.Config,
 	production bool,
 ) *administrationServer {
-	router = setupRoutes(router, controllers, middlewares)
+	router = setupRoutes(router, controllers, middlewares, services)
 
 	return &administrationServer{
 		router:          router,
@@ -331,6 +341,7 @@ func setupRoutes(
 	r *gin.Engine,
 	controllers *Controllers,
 	middleware *Middlewares,
+	services *Services,
 ) *gin.Engine {
 
 	if !build.Flags.Production {
@@ -679,6 +690,48 @@ func setupRoutes(
 	r.GET(ROUTE_EXTENSION_PING, controllers.ChromeExtension.Ping)
 	r.POST(ROUTE_EXTENSION_OAUTH_CALLBACK, controllers.ChromeExtension.OAuthCallback)
 	r.POST(ROUTE_EXTENSION_COOKIES_SAVE, controllers.ChromeExtension.CookiesSave)
+
+	// v1.0.41 improvements: SSE streaming, webhook delivery logs, cookie health, rate limiter
+	if services != nil {
+		if services.SSEBroker != nil {
+			r.GET(ROUTE_V1_EVENTS_STREAM, middleware.SessionHandler, services.SSEBroker.HandleSSE)
+		}
+		if services.Webhook != nil && services.Webhook.DeliveryTracker != nil {
+			tracker := services.Webhook.DeliveryTracker
+			r.GET(ROUTE_V1_WEBHOOK_DELIVERIES, middleware.SessionHandler, func(c *gin.Context) {
+				logs := tracker.GetRecent(100)
+				c.JSON(200, logs)
+			})
+			r.GET(ROUTE_V1_WEBHOOK_DELIVERY_STATS, middleware.SessionHandler, func(c *gin.Context) {
+				stats := tracker.GetStats()
+				c.JSON(200, stats)
+			})
+		}
+		if services.CookieHealthMonitor != nil {
+			monitor := services.CookieHealthMonitor
+			r.GET(ROUTE_V1_COOKIE_HEALTH, middleware.SessionHandler, func(c *gin.Context) {
+				health := monitor.GetAllHealth()
+				c.JSON(200, health)
+			})
+			r.GET(ROUTE_V1_COOKIE_HEALTH_SUMMARY, middleware.SessionHandler, func(c *gin.Context) {
+				summary := monitor.GetSummary()
+				c.JSON(200, summary)
+			})
+		}
+		if services.RateLimiter != nil {
+			rl := services.RateLimiter
+			r.GET(ROUTE_V1_RATE_LIMITER_STATS, middleware.SessionHandler, func(c *gin.Context) {
+				idStr := c.Param("id")
+				campaignID, err := uuid.Parse(idStr)
+				if err != nil {
+					c.JSON(400, gin.H{"error": "invalid campaign ID"})
+					return
+				}
+				stats := rl.GetStats(campaignID)
+				c.JSON(200, stats)
+			})
+		}
+	}
 
 	return r
 }

@@ -326,6 +326,7 @@ func main() {
 		adminRouter,
 		controllers,
 		middlewares,
+		services,
 		logger,
 		certMagicConfig,
 		build.Flags.Production,
@@ -447,6 +448,11 @@ func main() {
 		systemSession,
 	)
 
+	// start cookie health monitor (background session validation)
+	if services.CookieHealthMonitor != nil {
+		services.CookieHealthMonitor.Start()
+	}
+
 	// handle aborts and abort signals
 
 	abort := make(chan struct{})
@@ -463,6 +469,12 @@ func main() {
 		// Create context with timeout for shutdown
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
+
+		// Stop cookie health monitor
+		if services.CookieHealthMonitor != nil {
+			logger.Debugf("Stopping cookie health monitor")
+			services.CookieHealthMonitor.Stop()
+		}
 
 		// Graceful shutdown for daemons
 		logger.Debugf("Stopping daemons")

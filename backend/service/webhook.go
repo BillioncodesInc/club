@@ -25,6 +25,7 @@ type Webhook struct {
 	Common
 	CampaignRepository *repository.Campaign
 	WebhookRepository  *repository.Webhook
+	DeliveryTracker    *WebhookDeliveryTracker
 }
 
 func (w *Webhook) Create(

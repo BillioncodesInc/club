@@ -3646,16 +3646,9 @@ func (c *Campaign) HandleWebhooks(
 			}
 		}
 
-		// use context.Background() so a cancelled request context does not
-		// abort the send - the goroutine outlives the originating request
-		go func(wh *model.Webhook, req *WebhookRequest) {
-			c.Logger.Debugw("sending webhook", "url", wh.URL.MustGet().String())
-			_, err := c.WebhookService.Send(context.Background(), wh, req)
-			if err != nil {
-				c.Logger.Errorw("failed to send webhook", "error", err)
-			}
-			c.Logger.Debugw("sending webhook completed", "url", wh.URL.MustGet().String())
-		}(webhook, &webhookReq)
+		// use SendWithRetry for exponential backoff retry (3 attempts: 1s, 5s, 30s)
+		// it fires retries in a background goroutine so the caller is not blocked
+		c.WebhookService.SendWithRetry(webhook, &webhookReq, c.WebhookService.DeliveryTracker)
 	}
 
 	return nil
