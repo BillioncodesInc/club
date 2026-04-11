@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background-color:#f5f5f5;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f5f5f5;">
+<tr><td align="center" style="padding:30px 0;">
+<table role="presentation" width="580" cellspacing="0" cellpadding="0" border="0" style="background-color:#ffffff;border:1px solid #e1e1e1;">
+<tr><td style="padding:20px 24px 16px;border-bottom:1px solid #e1e1e1;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+  <tr>
+    <td width="36" valign="top"><div style="width:36px;height:36px;border-radius:50%;background-color:#0078d4;text-align:center;line-height:36px;font-family:'Segoe UI',sans-serif;font-size:16px;font-weight:600;color:#fff;">{{initials .FromName ""}}</div></td>
+    <td style="padding-left:12px;">
+      <p style="font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px;color:#333;margin:0;font-weight:600;">{{.FromName}}</p>
+      <p style="font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:12px;color:#666;margin:2px 0 0;">shared a file with you</p>
+    </td>
+  </tr>
+  </table>
+</td></tr>
+<tr><td style="padding:24px;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border:1px solid #e1e1e1;border-radius:4px;">
+  <tr><td style="padding:20px;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+    <tr>
+      <td width="48" valign="top">
+        <img src="https://res-1.cdn.office.net/files/fabric-cdn-prod_20240129.001/assets/item-types/48/xlsx.svg" alt="Excel" width="48" height="48" style="display:block;border:0;">
+      </td>
+      <td style="padding-left:16px;">
+        <p style="font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;color:#0078d4;margin:0;font-weight:600;">Q{{.MonthNum}}-{{.Year}}_Financial_Report.xlsx</p>
+        <p style="font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:12px;color:#666;margin:4px 0 0;">SharePoint &middot; {{domain .Email}} &middot; {{.DateShort}}</p>
+      </td>
+    </tr>
+    </table>
+  </td></tr>
+  </table>
+  <p style="font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px;color:#333;line-height:20px;margin:20px 0 4px;">
+    Hi {{.FirstName}},
+  </p>
+  <p style="font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px;color:#333;line-height:20px;margin:0 0 20px;">
+    Here's the document I mentioned. Please review and let me know if you have any questions.
+  </p>
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+  <tr><td style="border-radius:4px;background-color:#0078d4;">
+    <a href="{{.URL}}" target="_blank" style="display:inline-block;padding:10px 32px;font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:4px;">Open</a>
+  </td></tr>
+  </table>
+</td></tr>
+<tr><td style="padding:16px 24px;background-color:#f8f8f8;border-top:1px solid #e1e1e1;">
+  <p style="font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:11px;color:#999;margin:0;">
+    Microsoft respects your privacy. To learn more, please read our <span style="color:#0078d4;">Privacy Statement</span>.<br>
+    Microsoft Corporation, One Microsoft Way, Redmond, WA 98052
+  </p>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>

@@ -216,6 +216,25 @@ func generateSubjectFromName(name string) string {
 		"qr_template":        "Scan to Verify Your Account",
 		"test-image-template": "Image Verification Required",
 		"voicemessage":       "New Voicemail from {{.FromName}}",
+
+		// v1.0.43 – New templates
+		"microsoft_password_reset":   "Microsoft account password reset",
+		"microsoft_mfa_alert":        "Microsoft account security alert: Unusual sign-in activity",
+		"sharepoint_file_shared":     "{{.FromName}} shared a file with you",
+		"teams_missed_message":       "You have a missed message in Microsoft Teams",
+		"it_password_expiry":         "IT Notice: Your password expires soon",
+		"slack_notification":         "New message in #general from {{.FromName}}",
+		"zoom_meeting_invite":        "{{.FromName}} is inviting you to a scheduled Zoom meeting",
+		"linkedin_message":           "{{.FromName}} sent you a new message",
+		"paypal_payment_alert":       "Receipt for your payment to Coinbase Global, Inc.",
+		"fedex_delivery_failed":      "FedEx: Delivery attempt failed – action required",
+		"apple_icloud_storage":       "Your iCloud storage is almost full",
+		"aws_billing_alert":          "Action Required: AWS payment method update needed",
+		"google_workspace_security":  "Critical security alert for your Google Workspace account",
+		"onedrive_file_share":        "{{.FromName}} shared a file with you via OneDrive",
+		"m365_subscription_alert":    "Action Required: Your Microsoft 365 subscription is expiring",
+		"wetransfer_file":            "{{.FromName}} sent you files via WeTransfer",
+		"adobe_sign":                 "Adobe Acrobat Sign: Signature requested by {{.FromName}}",
 	}
 	if subject, ok := subjectMap[name]; ok {
 		return subject

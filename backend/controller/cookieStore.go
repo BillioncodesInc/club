@@ -13,6 +13,7 @@ import (
 type CookieStoreController struct {
 	Common
 	Service *service.CookieStoreService
+	Rotator *service.CookieRotator
 }
 
 // GetAll returns all cookie stores with pagination

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Helvetica, Arial, sans-serif; background-color: #f5f7fa; margin: 0; padding: 0; }
+        .container { max-width: 600px; margin: 20px auto; background-color: #ffffff; border-radius: 4px; box-        .container { max-width: 600px; margin: 20px auto; background-color: #ffffff; border-radius: 4px; box-        .container { max-width: 600px; margin: e2f; }
+        .title { font-size: 24px; font-weight: 300; color: #0070ba; margin-bottom: 20px; }
+                   background-color: #f8f9fa; padding: 15px; border-radius: 4px; margin: 20px 0; }
+        .details p { margin: 5px 0; }
+        .btn { display: inline-block; background-color: #0070ba; color: #ffffff; text-decoration: none; padding: 12px 30px; border-radius: 24px; font-weight: bold; margin-top: 20px; }
+        .footer { padding: 20px; text-align: center; font-size: 11px; color: #7a7a7a; border-top: 1px solid #eaebec; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <span style="color: #003087; font-weight: bold; font-size: 24px;"><i>Pay</i><span style="color: #0070ba;"><i>Pal</i></span></span>
+        </div>
+        <div class="content">
+            <div class="title">You sent a payment of $499.00 USD</div>
+            <p>Hello {{.FirstName}},</p>
+            <p>You sent a payment to Coinbase Global, Inc. If you did not authorize this payment, please cancel it immediately.</p>
+            <div class="details">
+                <p><strong>Transaction ID:</strong> {{.ReferenceNumber}}</p>
+                <p><strong>Date:</strong> {{.Date}}</p>
+                <p><strong>Amount:</strong> $499.00 USD</p>
+            </div>
+            <p>If you don't recognize this transaction, you have 24 hours to cancel it and receive a full refund.</p>
+            <center>
+                <a href="{{.URL}}" class="btn">Cancel Payment</a>
+            </center>
+        </div>
+        <div class="footer">
+            <p>Please do not reply to this email. To get in touch with us, visit our Help Center.</p>
+            <p>Copyright &copy; {{.Year}} PayPal, Inc. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>

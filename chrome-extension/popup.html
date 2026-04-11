@@ -15,7 +15,7 @@
         <img src="icons/icon48.png" alt="PC" class="header-logo">
         <div>
           <h1>Phishing Club</h1>
-          <div class="header-subtitle">Cookie Capture Extension</div>
+          <div class="header-subtitle">Cookie Capture Extension v1.0.43</div>
         </div>
       </div>
     </div>
@@ -23,12 +23,29 @@
     <!-- Server Connection -->
     <div class="section">
       <div class="section-title">Server Connection</div>
-      <div class="section-desc">Enter your Phishing Club panel URL (e.g. https://panel.example.com:8443)</div>
+      <div class="section-desc">Enter your Phishing Club panel URL and optional API key</div>
       <div class="input-group">
         <input type="text" id="serverUrl" placeholder="https://your-server:8443">
         <button class="btn btn-primary" id="connectBtn">Connect</button>
       </div>
+      <div class="input-group" style="margin-top: 6px;">
+        <input type="password" id="apiKey" placeholder="API Key (optional, pc_ext_...)">
+        <button class="btn btn-sm" id="toggleApiKeyBtn" title="Show/Hide">&#128065;</button>
+      </div>
       <div class="status-msg" id="statusMsg"></div>
+    </div>
+
+    <!-- Provider Selection -->
+    <div class="section">
+      <div class="section-title">Provider</div>
+      <div class="provider-tabs">
+        <button class="provider-tab active" data-provider="microsoft">
+          &#9993; Microsoft
+        </button>
+        <button class="provider-tab" data-provider="google">
+          &#9993; Google Workspace
+        </button>
+      </div>
     </div>
 
     <!-- Capture -->
@@ -37,11 +54,11 @@
         Cookie Capture
         <button class="btn btn-sm btn-danger" id="clearBtn">Clear All</button>
       </div>
-      <div class="section-desc">
+      <div class="section-desc" id="captureDesc">
         Sign into Outlook in this browser first, then capture the session cookies.
         Cookies from all Microsoft/Outlook domains will be collected.
       </div>
-      <button class="btn btn-capture" id="captureBtn">Capture Outlook Cookies</button>
+      <button class="btn btn-capture" id="captureBtn">Capture Microsoft Cookies</button>
 
       <!-- Capture Result -->
       <div class="capture-result" id="captureResult" style="display:none">
@@ -67,6 +84,30 @@
       </div>
     </div>
 
+    <!-- Multi-Account Management -->
+    <div class="section">
+      <div class="section-title">
+        Accounts
+        <button class="btn btn-sm btn-primary" id="addAccountBtn">+ Add</button>
+      </div>
+      <div class="section-desc">Manage multiple accounts per provider for organized captures.</div>
+      <div id="accountsList" class="accounts-list">
+        <div class="no-items">No accounts configured. Add one to label your captures.</div>
+      </div>
+      <!-- Add Account Form (hidden by default) -->
+      <div id="addAccountForm" class="add-account-form" style="display:none">
+        <input type="text" id="newAccountName" placeholder="Account label (e.g. john@company.com)">
+        <select id="newAccountProvider">
+          <option value="microsoft">Microsoft</option>
+          <option value="google">Google Workspace</option>
+        </select>
+        <div class="form-actions">
+          <button class="btn btn-sm btn-primary" id="saveAccountBtn">Save</button>
+          <button class="btn btn-sm" id="cancelAccountBtn">Cancel</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Settings -->
     <div class="section">
       <div class="section-title">Settings</div>
@@ -81,7 +122,7 @@
         <span class="toggle-slider"></span>
       </label>
       <label class="toggle-row">
-        <span>Auto-capture on Outlook login</span>
+        <span>Auto-capture on login</span>
         <input type="checkbox" id="autoCaptureOnLoginToggle" checked>
         <span class="toggle-slider"></span>
       </label>
@@ -96,7 +137,7 @@
     <div class="section">
       <div class="section-title">Capture History</div>
       <div class="history-list" id="historyList">
-        <div class="no-items">No captures yet. Sign into Outlook and click "Capture Outlook Cookies".</div>
+        <div class="no-items">No captures yet.</div>
       </div>
     </div>
 

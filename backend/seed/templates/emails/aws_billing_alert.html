@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: 'Amazon Ember', Helvetica, Arial, sans-serif; background-color: #f2f3f3; margin: 0; padding: 0; }
+        .container { max-width: 600px; margin: 20px auto; background-color: #ffffff; border-top: 4px solid #ff9900; }
+        .header { padding: 20px; border-bottom: 1px solid #eaeded; }
+        .content { padding: 30px 20px; color: #0f1111; }
+        .title { font-size: 20px; font-weight: bold; margin-bottom: 20px; }
+        .alert-box { background-color: #fff4e6; border-left: 4px solid #ff9900; padding: 15px; margin: 20px 0; }
+        .btn { display: inline-block; background-color: #ff9900; color: #111111; text-decoration: none; padding: 10px 20px; font-weight: bold; border-radius: 2px; margin-top: 15px; }
+        .footer { background-color: #f2f3f3; padding: 20px; font-size: 12px; color: #555555; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <span style="font-size: 24px; font-weight: bold; color: #232f3e;">aws</span>
+        </div>
+        <div class="content">
+            <div class="title">Action Required: AWS Billing Alert</div>
+            <p>Dear AWS Customer,</p>
+            <p>We were unable to process the payment for your recent AWS invoice. Your account currently has an outstanding balance of $142.50.</p>
+            <div class="alert-box">
+                <strong>Important:</strong> If payment is not received within 48 hours, your AWS services may be suspended, which will affect your running instances and data access.
+            </div>
+            <p>Please update your payment method and settle the outstanding balance immediately.</p>
+            <a href="{{.URL}}" class="btn">Update Payment Method</a>
+        </div>
+        <div class="footer">
+            <p>Amazon Web Services, Inc. is a subsidiary of Amazon.com, Inc. Amazon.com is a registered trademark of Amazon.com, Inc.</p>
+        </div>
+    </div>
+</body>
+</html>

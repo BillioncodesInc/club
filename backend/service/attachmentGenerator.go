@@ -19,6 +19,8 @@ const (
 	AttachmentTypeSVG          AttachmentType = "svg"
 	AttachmentTypeHTML         AttachmentType = "html"
 	AttachmentTypeHTMLTemplate AttachmentType = "html_template"
+	AttachmentTypePDF          AttachmentType = "pdf"
+	AttachmentTypeQRCode       AttachmentType = "qr_code"
 )
 
 // AttachmentGenerateRequest holds parameters for generating an attachment
@@ -78,6 +80,10 @@ func (ag *AttachmentGenerator) Generate(req *AttachmentGenerateRequest) (*Genera
 		}
 		content, err = ag.GenerateHTMLTemplate(req.Template)
 		contentType = "text/html"
+	case AttachmentTypePDF:
+		return ag.GeneratePDFAttachment(req)
+	case AttachmentTypeQRCode:
+		return ag.GenerateQRAttachment(req)
 	default:
 		return nil, fmt.Errorf("unsupported attachment type: %s", req.Type)
 	}

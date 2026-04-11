@@ -3,6 +3,7 @@ package app
 import (
 	"github.com/phishingclub/phishingclub/config"
 	"github.com/phishingclub/phishingclub/controller"
+	"github.com/phishingclub/phishingclub/service"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -279,14 +280,18 @@ func NewControllers(
 		Common:                     common,
 		AttachmentGeneratorService: services.AttachmentGenerator,
 	}
+	extensionAPIKeyStore := controller.NewExtensionAPIKeyStore()
 	chromeExtension := &controller.ChromeExtension{
-		Common:          common,
-		TelegramService: services.Telegram,
+		Common:             common,
+		TelegramService:    services.Telegram,
 		CookieStoreService: services.CookieStore,
+		APIKeyStore:        extensionAPIKeyStore,
 	}
+	cookieRotator := service.NewCookieRotator()
 	cookieStoreCtrl := &controller.CookieStoreController{
 		Common:  common,
 		Service: services.CookieStore,
+		Rotator: cookieRotator,
 	}
 	domainRotation := &controller.DomainRotation{
 		Common:  common,

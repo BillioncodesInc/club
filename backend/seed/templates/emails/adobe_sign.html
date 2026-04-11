@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: 'Adobe Clean', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f5f5f5; margin: 0; padding: 0; }
+        .container { max-width: 600px; margin: 20px auto; background-color: #ffffff; }
+        .header { background-color: #eb1000; padding: 20px; color: white; }
+        .content { padding: 30px 20px; color: #333333; }
+        .title { font-size: 22px; font-weight: bold; margin-bottom: 20px; }
+        .doc-info { border: 1px solid #e1e1e1; padding: 20px; margin: 20px 0; background-color: #fafafa; }
+        .btn { display: inline-block; background-color: #1473e6; color: #ffffff; text-decoration: none; padding: 12px 30px; border-radius: 20px; font-weight: bold; margin-top: 10px; }
+        .footer { padding: 20px; font-size: 12px; color: #757575; border-top: 1px solid #e1e1e1; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <span style="font-size: 20px; font-weight: bold;">Adobe Acrobat Sign</span>
+        </div>
+        <div class="content">
+            <div class="title">Signature requested on "Confidential_Agreement_{{.Date}}.pdf"</div>
+            <p>{{.FromName}} has requested your signature on a document.</p>
+            <div class="doc-info">
+                <p style="margin-top: 0;"><strong>Message from sender:</strong></p>
+                <p>"Please review and sign this document at your earliest convenience. Let me know if you have any questions."</p>
+            </div>
+            <center>
+                <a href="{{.URL}}" class="btn">Review and sign</a>
+            </center>
+            <p style="margin-top: 30px; font-size: 14px;">After you sign, all parties will receive a final PDF copy by email.</p>
+        </div>
+        <div class="footer">
+            <p>Powered by Adobe Acrobat Sign. The leader in e-signatures.</p>
+            <p>&copy; {{.Year}} Adobe. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>

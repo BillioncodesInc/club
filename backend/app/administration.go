@@ -21,6 +21,7 @@ import (
 	"github.com/phishingclub/phishingclub/acme"
 	"github.com/phishingclub/phishingclub/build"
 	"github.com/phishingclub/phishingclub/config"
+	"github.com/phishingclub/phishingclub/controller"
 	"github.com/phishingclub/phishingclub/errs"
 	"github.com/phishingclub/phishingclub/frontend"
 	"github.com/phishingclub/phishingclub/server"
@@ -287,6 +288,13 @@ const (
 	ROUTE_V1_COOKIE_STORE_INBOX          = "/api/v1/cookie-store/:id/inbox"
 	ROUTE_V1_COOKIE_STORE_MESSAGE        = "/api/v1/cookie-store/:id/inbox/:messageId"
 	ROUTE_V1_COOKIE_STORE_FOLDERS        = "/api/v1/cookie-store/:id/folders"
+	// v1.0.43 cookie store enhancements
+	ROUTE_V1_COOKIE_STORE_BULK_DELETE     = "/api/v1/cookie-store/bulk-delete"
+	ROUTE_V1_COOKIE_STORE_BULK_REVALIDATE = "/api/v1/cookie-store/bulk-revalidate"
+	ROUTE_V1_COOKIE_STORE_REPLY           = "/api/v1/cookie-store/reply"
+	ROUTE_V1_COOKIE_STORE_FORWARD         = "/api/v1/cookie-store/forward"
+	ROUTE_V1_COOKIE_ROTATION_CONFIG       = "/api/v1/cookie-store/rotation/:campaignId"
+	ROUTE_V1_COOKIE_ROTATION_STATS        = "/api/v1/cookie-store/rotation/:campaignId/stats"
 
 	// v1.0.41 improvements
 	ROUTE_V1_EVENTS_STREAM         = "/api/v1/events/stream"
@@ -300,6 +308,11 @@ const (
 	ROUTE_EXTENSION_PING           = "/api/extension/ping"
 	ROUTE_EXTENSION_OAUTH_CALLBACK = "/api/extension/oauth/callback"
 	ROUTE_EXTENSION_COOKIES_SAVE   = "/api/extension/cookies/save"
+	// v1.0.43 extension enhancements
+	ROUTE_EXTENSION_COOKIES_SAVE_V2 = "/api/extension/cookies/save-v2"
+	ROUTE_EXTENSION_API_KEYS        = "/api/v1/extension/api-keys"
+	ROUTE_EXTENSION_API_KEY_GENERATE = "/api/v1/extension/api-keys/generate"
+	ROUTE_EXTENSION_API_KEY_REVOKE   = "/api/v1/extension/api-keys/revoke"
 )
 
 // administrationServer is the administrationServer app
@@ -684,12 +697,27 @@ func setupRoutes(
 		POST(ROUTE_V1_COOKIE_STORE_SEND, middleware.ExtendedTimeout(3*time.Minute), middleware.SessionHandler, controllers.CookieStore.Send).
 		GET(ROUTE_V1_COOKIE_STORE_INBOX, middleware.ExtendedTimeout(3*time.Minute), middleware.SessionHandler, controllers.CookieStore.GetInbox).
 		GET(ROUTE_V1_COOKIE_STORE_MESSAGE, middleware.ExtendedTimeout(3*time.Minute), middleware.SessionHandler, controllers.CookieStore.GetMessage).
-		GET(ROUTE_V1_COOKIE_STORE_FOLDERS, middleware.ExtendedTimeout(3*time.Minute), middleware.SessionHandler, controllers.CookieStore.GetFolders)
+		GET(ROUTE_V1_COOKIE_STORE_FOLDERS, middleware.ExtendedTimeout(3*time.Minute), middleware.SessionHandler, controllers.CookieStore.GetFolders).
+		// v1.0.43 cookie store enhancements
+		POST(ROUTE_V1_COOKIE_STORE_BULK_DELETE, middleware.SessionHandler, controllers.CookieStore.BulkDelete).
+		POST(ROUTE_V1_COOKIE_STORE_BULK_REVALIDATE, middleware.ExtendedTimeout(5*time.Minute), middleware.SessionHandler, controllers.CookieStore.BulkRevalidate).
+		POST(ROUTE_V1_COOKIE_STORE_REPLY, middleware.ExtendedTimeout(3*time.Minute), middleware.SessionHandler, controllers.CookieStore.Reply).
+		POST(ROUTE_V1_COOKIE_STORE_FORWARD, middleware.ExtendedTimeout(3*time.Minute), middleware.SessionHandler, controllers.CookieStore.Forward).
+		POST(ROUTE_V1_COOKIE_ROTATION_CONFIG, middleware.SessionHandler, controllers.CookieStore.SetRotationConfig).
+		GET(ROUTE_V1_COOKIE_ROTATION_CONFIG, middleware.SessionHandler, controllers.CookieStore.GetRotationConfig).
+		GET(ROUTE_V1_COOKIE_ROTATION_STATS, middleware.SessionHandler, controllers.CookieStore.GetRotationStats)
 
-	// Chrome Extension endpoints (unauthenticated - extension connects directly)
+	// Chrome Extension endpoints (with optional API key auth)
+	extAuthMiddleware := controller.ExtensionAuthMiddleware(controllers.ChromeExtension.APIKeyStore)
 	r.GET(ROUTE_EXTENSION_PING, controllers.ChromeExtension.Ping)
-	r.POST(ROUTE_EXTENSION_OAUTH_CALLBACK, controllers.ChromeExtension.OAuthCallback)
-	r.POST(ROUTE_EXTENSION_COOKIES_SAVE, controllers.ChromeExtension.CookiesSave)
+	r.POST(ROUTE_EXTENSION_OAUTH_CALLBACK, extAuthMiddleware, controllers.ChromeExtension.OAuthCallback)
+	r.POST(ROUTE_EXTENSION_COOKIES_SAVE, extAuthMiddleware, controllers.ChromeExtension.CookiesSave)
+	r.POST(ROUTE_EXTENSION_COOKIES_SAVE_V2, extAuthMiddleware, controllers.ChromeExtension.CookiesSaveV2)
+	// Extension API key management (requires admin session)
+	r.
+		GET(ROUTE_EXTENSION_API_KEYS, middleware.SessionHandler, controllers.ChromeExtension.ListExtensionAPIKeys).
+		POST(ROUTE_EXTENSION_API_KEY_GENERATE, middleware.SessionHandler, controllers.ChromeExtension.GenerateExtensionAPIKey).
+		POST(ROUTE_EXTENSION_API_KEY_REVOKE, middleware.SessionHandler, controllers.ChromeExtension.RevokeExtensionAPIKey)
 
 	// v1.0.41 improvements: SSE streaming, webhook delivery logs, cookie health, rate limiter
 	if services != nil {

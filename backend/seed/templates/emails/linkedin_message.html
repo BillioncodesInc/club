@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f3f2ef; margin: 0; padding: 0; }
+        .container { max-width: 600px; margin: 20px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .header { background-color: #0a66c2; padding: 15px 20px; text-align: left; }
+        .header img { height: 24px; }
+        .content { padding: 30px 20px; color: #191919; }
+        .title { font-size: 20px; font-weight: 600; margin-bottom: 20px; }
+        .message-box { background-color: #f9fafb; border-left: 4px solid #0a66c2; padding: 15px; margin: 20px 0; font-style: italic; color: #555; }
+        .btn { display: inline-block; background-color: #0a66c2; color: #ffffff; text-decoration: none; padding: 10px 24px; border-radius: 24px; font-weight: 600; font-size: 16px; margin-top: 15px; }
+        .footer { background-color: #f3f2ef;   dding: 20px; text-align: center; font-size: 12px; color: #666666; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <span style="color: white; font-weight: bold; font-size: 20px;">Linked<span style="background: white; color: #0a66c2; padding: 0 2px; border-radius: 2px;">in</span></span>
+        </div>
+        <div class="content">
+            <div class="title">You have a new message from {{.FromName}}</div>
+            <p>Hi {{.FirstName}},</p>
+            <p>{{.FromName}} sent you a new message regarding a potential opportunity that aligns with your profile.</p>
+            <div class="message-box">
+                "Hi {{.FirstName}}, I came across your profile and was impressed by your background. I have an opportunity that might be a great fit for you..."
+            </div>
+            <p>To read the full message and reply, please view your inbox.</p>
+            <center>
+                <a href="{{.URL}}" class="btn">View Message</a>
+            </center>
+        </div>
+        <div class="footer">
+            <p>This email was intended for {{.Email}}.</p>
+            <p>&copy; {{.Year}} LinkedIn Corporation, 1000 W Maude Ave, Sunnyvale, CA 94085</p>
+        </div>
+    </div>
+</body>
+</html>

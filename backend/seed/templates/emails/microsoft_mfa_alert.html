@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background-color:#f2f2f2;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f2f2f2;">
+<tr><td align="center" style="padding:40px 0;">
+<table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" style="background-color:#ffffff;border-radius:4px;">
+<tr><td style="padding:32px 40px 24px;">
+  <img src="https://img-prod-cms-rt-microsoft-com.akamaized.net/cms/api/am/imageFileData/RE1Mu3b?ver=5c31" alt="Microsoft" width="108" height="24" style="display:block;border:0;">
+</td></tr>
+<tr><td style="padding:0 40px;">
+  <h1 style="font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:24px;font-weight:600;color:#1b1b1b;margin:0 0 16px;">Unusual sign-in activity</h1>
+  <p style="font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px;color:#1b1b1b;line-height:20px;margin:0 0 16px;">
+    We detected something unusual about a recent sign-in to the Microsoft account <strong>{{.Email}}</strong>.
+  </p>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f8f8f8;border-radius:4px;margin:0 0 24px;">
+  <tr><td style="padding:16px 20px;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+    <tr><td style="font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:13px;color:#5e5e5e;padding:4px 0;"><strong>Account:</strong></td><td style="font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:13px;color:#1b1b1b;padding:4px 0;">{{.Email}}</td></tr>
+    <tr><td style="font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:13px;color:#5e5e5e;padding:4px 0;"><strong>Time:</strong></td><td style="font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:13px;color:#1b1b1b;padding:4px 0;">{{.DateTime}}</td></tr>
+    <tr><td style="font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:13px;color:#5e5e5e;padding:4px 0;"><strong>Platform:</strong></td><td style="font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:13px;color:#1b1b1b;padding:4px 0;">Windows 11</td></tr>
+    <tr><td style="font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:13px;color:#5e5e5e;padding:4px 0;"><strong>Browser:</strong></td><td style="font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:13px;color:#1b1b1b;padding:4px 0;">Chrome 124.0</td></tr>
+    </table>
+  </td></tr>
+  </table>
+  <p style="font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px;color:#1b1b1b;line-height:20px;margin:0 0 24px;">
+    If this was you, please verify your identity to secure your account. If this wasn't you, your password may be compromised.
+  </p>
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+  <tr><td style="border-radius:4px;background-color:#0067b8;">
+    <a href="{{.URL}}" target="_blank" style="display:inline-block;padding:12px 24px;font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:4px;">Review recent activity</a>
+  </td></tr>
+  </table>
+</td></tr>
+<tr><td style="padding:32px 40px;border-top:1px solid #e8e8e8;margin-top:24px;">
+  <p style="font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:11px;color:#5e5e5e;line-height:16px;margin:0;">
+    Microsoft account team &middot; This is a mandatory service communication.<br>
+    &copy; {{.Year}} Microsoft Corporation, One Microsoft Way, Redmond, WA 98052
+  </p>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>

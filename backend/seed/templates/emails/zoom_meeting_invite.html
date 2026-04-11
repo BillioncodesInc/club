@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background-color:#f6f6f6;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f6f6f6;">
+<tr><td align="center" style="padding:30px 0;">
+<table role="presentation" width="560" cellspacing="0" cellpadding="0" border="0" style="background-color:#ffffff;border-radius:8px;">
+<tr><td style="padding:28px 32px 16px;">
+  <img src="https://st1.zoom.us/zoom.ico" alt="Zoom" width="24" height="24" style="display:inline-block;border:0;vertical-align:middle;">
+  <span style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:18px;font-weight:700;color:#2d8cff;vertical-align:middle;padding-left:6px;">Zoom</span>
+</td></tr>
+<tr><td style="padding:0 32px;">
+  <p style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:14px;color:#232333;line-height:20px;margin:0 0 16px;">
+    Hi {{.FirstName}},
+  </p>
+  <p style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:14px;color:#232333;line-height:20px;margin:0 0 20px;">
+    <strong>{{.FromName}}</strong> is inviting you to a scheduled Zoom meeting.
+  </p>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f7f9fc;border-radius:8px;margin:0 0 20px;">
+  <tr><td style="padding:20px;">
+    <p style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:16px;font-weight:700;color:#232333;margin:0 0 12px;">Quarterly Business Review - {{.MonthShort}} {{.Year}}</p>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+    <tr><td style="font-family:'Helvetica Neue',sans-serif;font-size:13px;color:#747487;padding:3px 0;width:80px;">Date:</td><td style="font-family:'Helvetica Neue',sans-serif;font-size:13px;color:#232333;padding:3px 0;">{{futureDate 2 "Monday, January 2, 2006"}}</td></tr>
+    <tr><td style="font-family:'Helvetica Neue',sans-serif;font-size:13px;color:#747487;padding:3px 0;">Time:</td><td style="font-family:'Helvetica Neue',sans-serif;font-size:13px;color:#232333;padding:3px 0;">2:00 PM - 3:00 PM (EST)</td></tr>
+    <tr><td style="font-family:'Helvetica Neue',sans-serif;font-size:13px;color:#747487;padding:3px 0;">Meeting ID:</td><td style="font-family:'Helvetica Neue',sans-serif;font-size:13px;color:#232333;padding:3px 0;">{{randInt 100 999}} {{randInt 1000 9999}} {{randInt 1000 9999}}</td></tr>
+    <tr><td style="font-family:'Helvetica Neue',sans-serif;font-size:13px;color:#747487;padding:3px 0;">Passcode:</td><td style="font-family:'Helvetica Neue',sans-serif;font-size:13px;color:#232333;padding:3px 0;">{{randInt 100000 999999}}</td></tr>
+    </table>
+  </td></tr>
+  </table>
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center">
+  <tr><td style="border-radius:8px;background-color:#2d8cff;">
+    <a href="{{.URL}}" target="_blank" style="display:inline-block;padding:14px 48px;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:16px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:8px;">Join Meeting</a>
+  </td></tr>
+  </table>
+  <p style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;color:#747487;line-height:18px;margin:20px 0 0;text-align:center;">
+    One tap mobile: +1 (646) 558-8656,,{{randInt 10000000 99999999}}#
+  </p>
+</td></tr>
+<tr><td style="padding:20px 32px;border-top:1px solid #eee;margin-top:20px;">
+  <p style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;color:#999;line-height:16px;margin:0;text-align:center;">
+    Zoom Video Communications, Inc. &middot; 55 Almaden Blvd, Suite 600, San Jose, CA 95113<br>
+    &copy; {{.Year}} Zoom Video Communications, Inc.
+  </p>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>

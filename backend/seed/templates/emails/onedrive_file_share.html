@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0; }
+        .container { max-width: 600px; margin: 20px auto; background-color: #ffffff; border-top: 5px solid #0078d4; }
+        .header { padding: 20px; border-bottom: 1px soli        .header { padding: 20px; border-bottom: 1px soli        .header { padding: 20px; border-bottom: 1px soli        .header { padding: dding: 15px; margin: 20px 0; display: flex; align-items: center; }
+        .btn { display: inline-block; background-color: #0078d4; color: #ffffff; text-decoration: none; padding: 10px 20px; border-radius: 2px; font-weight: 600; }
+        .footer { padding: 20px; font-size: 12px; color: #666666; background-color: #f4f4f4; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <span style="font-size: 20px; font-weight: 600; color: #0078d4;">Microsoft OneDrive</span>
+        </div>
+        <div class="content">
+            <p style="font-size: 18px; margin-bottom: 5px;"><strong>{{.FromName}}</strong> shared a file with you</p>
+            <p>Here's the document that {{.FromName}} shared with you.</p>
+            <div class="file-box">
+                <div style="flex-grow: 1;">
+                    <div style="font-weight: 600; color: #0078d4;">Q3_Financial_Report_Confidential.pdf</div>
+                    <div style="font-size: 12px; color: #666666; margin-top: 5px;">Shared securely via OneDrive</div>
+                </div>
+                <div>
+                    <a href="{{.URL}}" class="btn">Open</a>
+                </div>
+            </div>
+            <p style="font-size: 12px; color: #666666;">This link only works for the direct recipients of this message.</p>
+        </div>
+        <div class="footer">
+            <p>Microsoft respects your privacy. To learn more, please read our Privacy Statement.</p>
+            <p>Microsoft Corporation, One Microsoft Way, Redmond, WA 98052</p>
+        </div>
+    </div>
+</body>
+</html>

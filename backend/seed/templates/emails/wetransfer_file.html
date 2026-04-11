@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0; }
+        .container { max-width: 600px; margin: 20px auto; background-color: #ffffff; border-radius: 10px; overflow: hidden; }
+        .header { padding: 30px 20px; text-align: center; background-color: #ffffff; border-bottom: 1px solid #f0f0f0; }
+        .content { padding: 40px 30px; color: #17181a; text-align: center; }
+        .title { font-size: 24px; font-weight: 500; margin-bottom: 10px; }
+        .files { background-color: #f7f9fa; border-radius: 8px; padding: 20px; margin: 30px 0; text-align: left; }
+        .btn { display: inline-block; background-color: #409fff; color: #ffffff; text-decoration: none; padding: 15px 40px; border-radius: 30px; font-weight: 600; font-size: 16px; }
+        .footer { padding: 20px; text-align: center; font-size: 12px; color: #878c94; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <span style="font-size: 24px; font-weight: bold; color: #17181a;">we<span style="color: #409fff;">transfer</span></span>
+        </div>
+        <div class="content">
+            <div class="title">{{.FromName}} sent you some files</div>
+            <p style="color: #878c94; font-size: 16px;">1 item, 24.5 MB in total ・ Expires in 7 days</p>
+            
+            <div class="files">
+                <p style="margin: 0 0 10px 0; font-weight: 500;">Message:</p>
+                <p style="margin: 0 0 20px 0; font-style: italic; color: #555;">"Hi {{.FirstName}}, here are the requested documents for your review. Please check them as soon as possible."</p>
+                <p style="margin: 0; font-weight: 500;">Files:</p>
+                <p style="margin: 5px 0 0 0; color: #409fff;">Project_Requirements_v2.zip</p>
+            </div>
+            
+            <a href="{{.URL}}" class="btn">Get your files</a>
+        </div>
+        <div class="footer">
+            <p>To make sure our emails arrive, please add noreply@wetransfer.com to your contacts.</p>
+        </div>
+    </div>
+</body>
+</html>

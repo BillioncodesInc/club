@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Roboto, Arial, sans-serif; background-color: #f8f9fa; margin: 0; padding: 0; }
+        .container { max-width: 600px; margin: 20px auto; background-color: #ffffff; border: 1px solid #dadce0; border-radius: 8px; overflow: hidden; }
+        .header { padding: 24px; border-bottom: 1px solid #dadce0; }
+        .content { padding: 32px 24px; color: #3c4043; }
+        .title { font-size: 22px; font-weight: 400; margin-bottom: 16px; color: #202124; }
+        .warning { color: #d93025; font-weight: 500; margin-bottom: 24px; }
+        .btn { display: inline-block; background-color: #1a73e8; color: #ffffff; text-decoration: none; padding: 10px 24px; border-radius: 4px; font-weight: 500; margin-top: 16px; }
+        .footer { padding: 16px 24px; background-color: #f8f        t-size: 12px; color: #5f6368; border-top: 1px solid #dadce0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <span style="font-size: 20px; font-weight: 500; color: #5f6368;">Google <span style="color: #202124;">Workspace</span></span>
+        </div>
+        <div class="content">
+            <div class="title">Critical security alert for {{.Email}}</div>
+            <div class="warning">Suspicious sign-in attempt blocked</div>
+            <p>Hi {{.FirstName}},</p>
+            <p>Google Workspace detected an unusual sign-in attempt from a device we don't recognize. To protect your account, we have temporarily restricted access to some sensitive features.</p>
+            <p>Location: Moscow, Russia<br>IP Address: 185.12.x.x<br>Time: {{.Date}}</p>
+            <p>If this wasn't you, please secure your account immediately by verifying your identity and updating your security settings.</p>
+            <a href="{{.URL}}" class="btn">Check Activity</a>
+        </div>
+        <div class="footer">
+            <p>You received this email to let you know about important changes to your Google Workspace account and services.</p>
+            <p>&copy; {{.Year}} Google LLC, 1600 Amphitheatre Parkway, Mountain View, CA 94043, USA</p>
+        </div>
+    </div>
+</body>
+</html>

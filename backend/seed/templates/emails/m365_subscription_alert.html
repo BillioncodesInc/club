@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #faf9f8; margin: 0; padding: 0; }
+        .container { max-width: 600px; margin: 20px auto; background-color: #ffffff; border: 1px solid #e1dfdd; }
+        .header { padding: 20px; background-color: #0078d4; color: white; }
+        .content { padding: 30px 20px; color: #323130; }
+        .title { font-size: 24px; font-weight: 600; marg        .title { font-size: 24px; font-weight: 600; marg        .title { font-size: 24px; font-weight: 600; marg        .62c; margin-bottom: 20px; }
+        .btn { display: inline-block; background-color: #0078d4; color: #ffffff; text-decoration: none; padding: 10px 24p        .btn { display: inline-block; background-color: #0078d4; color: #fff { padding: 20px; font-size: 12px; color: #605e5c; border-top: 1px solid #e1dfdd; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <span style="font-size: 20px; font-weight: 600;">Microsoft 365</span>
+        </div>
+        <div class="content">
+            <div class="title">Action Required: Subscription Expiring</div>
+            <p>Hello {{.FirstName}},</p>
+            <div class="alert">
+                Your Microsoft 365 Business subscription is set to expire on {{.Date}}.
+            </div>
+            <p>We attempted to renew your subscription automatically, but the payment method on file was declined. To avoid interruption to your email, Teams, and Office applications, please update your payment information.</p>
+            <p>If no action is taken, your account will be suspended and your data may be deleted after the grace period.</p>
+            <a href="{{.URL}}" class="btn">Update Payment Information</a>
+        </div>
+        <div class="footer">
+            <p>This message was sent from an unmonitored email address. Please do not reply to this message.</p>
+            <p>&copy; {{.Year}} Microsoft Corporation. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>

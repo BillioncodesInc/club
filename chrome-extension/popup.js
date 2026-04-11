@@ -1,9 +1,12 @@
 /**
  * Phishing Club — Cookie Capture Extension (Popup Script)
+ * v1.0.43 — API key auth, Google Workspace, multi-account
  */
 
 let isConnected = false;
 let currentServerUrl = '';
+let currentApiKey = '';
+let activeProvider = 'microsoft';
 let latestCapture = null;
 
 // ── Safe message sender ────────────────────────────────────────────────────
@@ -24,6 +27,7 @@ function safeSendMessage(msg, callback) {
 document.addEventListener('DOMContentLoaded', () => {
   loadSettings();
   loadCapturedCookies();
+  loadAccounts();
   setupListeners();
 });
 
@@ -37,10 +41,35 @@ function loadSettings() {
     document.getElementById('autoCaptureOnLoginToggle').checked = resp.autoCaptureOnLogin !== false;
     document.getElementById('notificationsToggle').checked = resp.notifications !== false;
     document.getElementById('serverUrl').value = resp.serverUrl || '';
+    document.getElementById('apiKey').value = resp.apiKey || '';
     currentServerUrl = resp.serverUrl || '';
+    currentApiKey = resp.apiKey || '';
+    activeProvider = resp.activeProvider || 'microsoft';
     isConnected = resp.connected || false;
     updateConnectButton();
+    updateProviderUI();
   });
+}
+
+// ── Provider UI ─────────────────────────────────────────────────────────────
+
+function updateProviderUI() {
+  // Update tab active state
+  document.querySelectorAll('.provider-tab').forEach(tab => {
+    tab.classList.toggle('active', tab.dataset.provider === activeProvider);
+  });
+
+  // Update capture button text and description
+  const captureBtn = document.getElementById('captureBtn');
+  const captureDesc = document.getElementById('captureDesc');
+
+  if (activeProvider === 'google') {
+    captureBtn.textContent = 'Capture Google Workspace Cookies';
+    captureDesc.textContent = 'Sign into Gmail/Google Workspace in this browser first, then capture the session cookies. Cookies from all Google domains will be collected.';
+  } else {
+    captureBtn.textContent = 'Capture Microsoft Cookies';
+    captureDesc.textContent = 'Sign into Outlook in this browser first, then capture the session cookies. Cookies from all Microsoft/Outlook domains will be collected.';
+  }
 }
 
 // ── Load captured cookies ───────────────────────────────────────────────────
@@ -51,7 +80,6 @@ function loadCapturedCookies() {
     const captures = resp.cookies || [];
     renderHistory(captures);
 
-    // Show latest capture result if exists
     if (captures.length > 0) {
       latestCapture = captures[0];
       showCaptureResult(latestCapture);
@@ -67,17 +95,15 @@ function showCaptureResult(capture) {
   document.getElementById('criticalCount').textContent = capture.criticalCount || 0;
   document.getElementById('domainCount').textContent = Object.keys(capture.domainGroups || {}).length;
 
-  // Auth status
   const authEl = document.getElementById('authStatus');
   if (capture.hasCriticalAuth) {
     authEl.className = 'auth-status ok';
     authEl.textContent = 'Auth tokens found - session should be valid';
   } else {
     authEl.className = 'auth-status warn';
-    authEl.textContent = 'Warning: No auth tokens found - sign into Outlook first';
+    authEl.textContent = 'Warning: No auth tokens found - sign in first';
   }
 
-  // Domain tags
   const tagsEl = document.getElementById('domainTags');
   tagsEl.innerHTML = '';
   for (const domain of Object.keys(capture.domainGroups || {})) {
@@ -87,7 +113,6 @@ function showCaptureResult(capture) {
     tagsEl.appendChild(tag);
   }
 
-  // Send button state
   const sendBtn = document.getElementById('sendCookiesBtn');
   if (capture.sent) {
     sendBtn.textContent = 'Sent to Server';
@@ -104,7 +129,7 @@ function renderHistory(captures) {
   const list = document.getElementById('historyList');
 
   if (captures.length === 0) {
-    list.innerHTML = '<div class="no-items">No captures yet. Sign into Outlook and click "Capture Outlook Cookies".</div>';
+    list.innerHTML = '<div class="no-items">No captures yet.</div>';
     return;
   }
 
@@ -117,10 +142,12 @@ function renderHistory(captures) {
     const domains = Object.keys(capture.domainGroups || {}).length;
     const statusClass = capture.sent ? 'ok' : 'pending';
     const statusText = capture.sent ? 'Sent' : 'Not sent';
+    const providerLabel = capture.provider === 'google' ? 'Google' : 'Microsoft';
 
     el.innerHTML = `
       <div class="history-time">${time}</div>
       <div class="history-info">
+        <span class="history-provider">${providerLabel}</span>
         <span>${capture.totalCount} cookies from ${domains} domains</span>
         <span class="history-status ${statusClass}">${statusText}</span>
       </div>
@@ -133,7 +160,6 @@ function renderHistory(captures) {
     list.appendChild(el);
   });
 
-  // Send buttons
   list.querySelectorAll('[data-send]').forEach(btn => {
     btn.addEventListener('click', () => {
       const idx = parseInt(btn.dataset.send);
@@ -142,7 +168,7 @@ function renderHistory(captures) {
       safeSendMessage({
         action: 'sendCookies',
         serverUrl: currentServerUrl,
-        cookieData: captures[idx]
+        cookieData: captures[idx],
       }, (resp) => {
         if (resp && resp.success) {
           btn.textContent = 'Sent!';
@@ -153,6 +179,65 @@ function renderHistory(captures) {
           setTimeout(() => { btn.textContent = 'Send'; }, 2000);
         }
       });
+    });
+  });
+}
+
+// ── Accounts ────────────────────────────────────────────────────────────────
+
+function loadAccounts() {
+  safeSendMessage({ action: 'getAccounts' }, (resp) => {
+    if (!resp) return;
+    renderAccounts(resp.accounts || []);
+  });
+}
+
+function renderAccounts(accounts) {
+  const list = document.getElementById('accountsList');
+
+  if (accounts.length === 0) {
+    list.innerHTML = '<div class="no-items">No accounts configured. Add one to label your captures.</div>';
+    return;
+  }
+
+  list.innerHTML = '';
+  accounts.forEach(account => {
+    const el = document.createElement('div');
+    el.className = `account-item ${account.active ? 'active' : ''}`;
+    const providerLabel = account.provider === 'google' ? 'Google' : 'Microsoft';
+
+    el.innerHTML = `
+      <div class="account-info">
+        <span class="account-name">${account.name}</span>
+        <span class="account-provider">${providerLabel}</span>
+        ${account.active ? '<span class="account-badge">Active</span>' : ''}
+      </div>
+      <div class="account-actions">
+        ${!account.active ? `<button class="btn btn-sm" data-activate="${account.id}" data-provider="${account.provider}">Set Active</button>` : ''}
+        <button class="btn btn-sm btn-danger" data-remove="${account.id}">Remove</button>
+      </div>
+    `;
+    list.appendChild(el);
+  });
+
+  // Activate buttons
+  list.querySelectorAll('[data-activate]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      safeSendMessage({
+        action: 'setActiveAccount',
+        accountId: btn.dataset.activate,
+        provider: btn.dataset.provider,
+      }, () => loadAccounts());
+    });
+  });
+
+  // Remove buttons
+  list.querySelectorAll('[data-remove]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      safeSendMessage({
+        action: 'removeAccount',
+        accountId: btn.dataset.remove,
+      }, () => loadAccounts());
     });
   });
 }
@@ -182,6 +267,7 @@ function setupListeners() {
   // Connect button
   document.getElementById('connectBtn').addEventListener('click', () => {
     const url = document.getElementById('serverUrl').value.trim();
+    const apiKey = document.getElementById('apiKey').value.trim();
 
     if (!url) {
       setStatus('Enter your Phishing Club server URL first', 'err');
@@ -198,22 +284,39 @@ function setupListeners() {
     btn.disabled = true;
     setStatus('Testing connection...', 'info');
 
-    // Save URL
-    safeSendMessage({ action: 'updateSettings', settings: { serverUrl: url } });
+    // Save URL and API key
+    safeSendMessage({ action: 'updateSettings', settings: { serverUrl: url, apiKey: apiKey } });
     currentServerUrl = url;
+    currentApiKey = apiKey;
 
     // Test connection
-    safeSendMessage({ action: 'testConnection', serverUrl: url }, (resp) => {
+    safeSendMessage({ action: 'testConnection', serverUrl: url, apiKey: apiKey }, (resp) => {
       btn.disabled = false;
       if (resp && resp.success) {
         isConnected = true;
         const versionInfo = resp.version ? ` (v${resp.version})` : '';
-        setStatus(`Connected to server${versionInfo}`, 'ok');
+        const authInfo = apiKey ? ' [Authenticated]' : ' [No API Key]';
+        setStatus(`Connected to server${versionInfo}${authInfo}`, 'ok');
       } else {
         isConnected = false;
         setStatus(`${resp?.error || 'Could not reach server'}`, 'err');
       }
       updateConnectButton();
+    });
+  });
+
+  // Toggle API key visibility
+  document.getElementById('toggleApiKeyBtn').addEventListener('click', () => {
+    const input = document.getElementById('apiKey');
+    input.type = input.type === 'password' ? 'text' : 'password';
+  });
+
+  // Provider tabs
+  document.querySelectorAll('.provider-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      activeProvider = tab.dataset.provider;
+      safeSendMessage({ action: 'updateSettings', settings: { activeProvider } });
+      updateProviderUI();
     });
   });
 
@@ -223,9 +326,9 @@ function setupListeners() {
     btn.textContent = 'Capturing...';
     btn.disabled = true;
 
-    safeSendMessage({ action: 'captureCookies' }, (resp) => {
+    safeSendMessage({ action: 'captureCookies', provider: activeProvider }, (resp) => {
       btn.disabled = false;
-      btn.textContent = 'Capture Outlook Cookies';
+      updateProviderUI(); // Reset button text
 
       if (resp && resp.success) {
         loadCapturedCookies();
@@ -246,7 +349,7 @@ function setupListeners() {
     safeSendMessage({
       action: 'sendCookies',
       serverUrl: currentServerUrl,
-      cookieData: latestCapture
+      cookieData: latestCapture,
     }, (resp) => {
       if (resp && resp.success) {
         btn.textContent = 'Sent!';
@@ -255,6 +358,39 @@ function setupListeners() {
         btn.textContent = 'Failed - Retry';
         btn.disabled = false;
         setStatus(resp?.error || 'Failed to send cookies to server', 'err');
+      }
+    });
+  });
+
+  // Add Account
+  document.getElementById('addAccountBtn').addEventListener('click', () => {
+    document.getElementById('addAccountForm').style.display = 'block';
+    document.getElementById('newAccountProvider').value = activeProvider;
+    document.getElementById('newAccountName').focus();
+  });
+
+  document.getElementById('cancelAccountBtn').addEventListener('click', () => {
+    document.getElementById('addAccountForm').style.display = 'none';
+    document.getElementById('newAccountName').value = '';
+  });
+
+  document.getElementById('saveAccountBtn').addEventListener('click', () => {
+    const name = document.getElementById('newAccountName').value.trim();
+    const provider = document.getElementById('newAccountProvider').value;
+
+    if (!name) {
+      setStatus('Enter an account label', 'err');
+      return;
+    }
+
+    safeSendMessage({
+      action: 'addAccount',
+      account: { name, provider },
+    }, (resp) => {
+      if (resp && resp.success) {
+        document.getElementById('addAccountForm').style.display = 'none';
+        document.getElementById('newAccountName').value = '';
+        loadAccounts();
       }
     });
   });
