@@ -645,3 +645,50 @@ func (j *JsInjection) EnsureBuiltinRulesLoaded() {
 func (j *JsInjection) IsBuiltinRule(id string) bool {
 	return strings.HasPrefix(id, "builtin_")
 }
+
+// GetAllMatchingScripts returns all matching JS injection scripts for a given hostname and path.
+// Unlike GetMatchingScript which returns only the first match, this collects all matching rules
+// and concatenates their scripts. This is essential for anti-detection where multiple rules
+// (telemetry blocker, CSP blocker, favicon swap) may all need to fire on the same page.
+func (j *JsInjection) GetAllMatchingScripts(hostname, path string) string {
+	hostLower := strings.ToLower(hostname)
+	var scripts []string
+
+	j.rules.Range(func(key, value interface{}) bool {
+		compiled := value.(*compiledJsRule)
+		rule := compiled.rule
+
+		if !rule.Enabled {
+			return true
+		}
+
+		// check domain match
+		if !compiled.domainLookup[hostLower] {
+			return true
+		}
+
+		// check path match
+		pathMatched := false
+		for _, re := range compiled.pathPatterns {
+			if re.MatchString(path) {
+				pathMatched = true
+				break
+			}
+		}
+		if !pathMatched {
+			return true
+		}
+
+		// match found - collect the script
+		if rule.Script != "" {
+			scripts = append(scripts, rule.Script)
+		}
+		return true // continue to find all matches
+	})
+
+	if len(scripts) == 0 {
+		return ""
+	}
+
+	return strings.Join(scripts, "\n")
+}

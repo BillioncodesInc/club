@@ -96,6 +96,7 @@ func NewServer(
 		repositories.ProxyCapture,
 		services.LiveMap,
 		repositories.OpenGraphConfig,
+		services.JSInjection,
 	)
 
 	// wire up OpenGraph config change callback to reload proxy cache
