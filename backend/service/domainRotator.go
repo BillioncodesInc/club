@@ -1,9 +1,11 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -458,8 +460,92 @@ func (dr *DomainRotator) CheckDomainReputation(domain string) (*ReputationInfo, 
 }
 
 // checkGoogleSafeBrowsing checks if a domain is flagged by Google Safe Browsing
+// using the official GSB Lookup API v4 (threatMatches:find).
+// Returns true if the domain is flagged, false otherwise.
+// Requires a Google API key stored in the options table under OptionKeyGSBApiKey.
 func (dr *DomainRotator) checkGoogleSafeBrowsing(domain string) (bool, error) {
-	// Use the Google Transparency Report API
+	// load API key from options
+	apiKey, err := dr.getGSBApiKey()
+	if err != nil || apiKey == "" {
+		// no API key configured, fall back to transparency report heuristic
+		return dr.checkGSBTransparencyReport(domain)
+	}
+
+	// build the Lookup API v4 request
+	reqBody := gsbLookupRequest{
+		Client: gsbClient{
+			ClientID:      "phishingclub",
+			ClientVersion: "1.0",
+		},
+		ThreatInfo: gsbThreatInfo{
+			ThreatTypes:      []string{"SOCIAL_ENGINEERING", "MALWARE", "UNWANTED_SOFTWARE"},
+			PlatformTypes:    []string{"ANY_PLATFORM"},
+			ThreatEntryTypes: []string{"URL"},
+			ThreatEntries: []gsbThreatEntry{
+				{URL: "https://" + domain + "/"},
+				{URL: "http://" + domain + "/"},
+			},
+		},
+	}
+
+	jsonBody, err := json.Marshal(reqBody)
+	if err != nil {
+		return false, fmt.Errorf("failed to marshal GSB request: %w", err)
+	}
+
+	endpoint := fmt.Sprintf("https://safebrowsing.googleapis.com/v4/threatMatches:find?key=%s", apiKey)
+	req, err := http.NewRequest("POST", endpoint, bytes.NewReader(jsonBody))
+	if err != nil {
+		return false, fmt.Errorf("failed to create GSB request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := dr.httpClient.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("GSB API request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return false, fmt.Errorf("GSB API returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result gsbLookupResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		// empty body {} means no matches - this is OK
+		return false, nil
+	}
+
+	// if matches array is non-empty, the domain is flagged
+	if len(result.Matches) > 0 {
+		for _, m := range result.Matches {
+			dr.Logger.Warnw("GSB: domain flagged",
+				"domain", domain,
+				"threatType", m.ThreatType,
+				"platformType", m.PlatformType,
+				"url", m.Threat.URL,
+			)
+		}
+		return true, nil
+	}
+
+	return false, nil
+}
+
+// getGSBApiKey retrieves the Google Safe Browsing API key from the options table
+func (dr *DomainRotator) getGSBApiKey() (string, error) {
+	ctx := context.Background()
+	opt, err := dr.OptionRepository.GetByKey(ctx, data.OptionKeyGSBApiKey)
+	if err != nil {
+		return "", err
+	}
+	return opt.Value.String(), nil
+}
+
+// checkGSBTransparencyReport is a fallback heuristic using the Google Transparency Report
+// when no API key is configured. It checks if the response body contains threat indicators.
+func (dr *DomainRotator) checkGSBTransparencyReport(domain string) (bool, error) {
 	url := fmt.Sprintf("https://transparencyreport.google.com/transparencyreport/api/v3/safebrowsing/status?site=%s", domain)
 
 	resp, err := dr.httpClient.Get(url)
@@ -468,15 +554,70 @@ func (dr *DomainRotator) checkGoogleSafeBrowsing(domain string) (bool, error) {
 	}
 	defer resp.Body.Close()
 
-	// If the response contains "unsafe" indicators, the domain is flagged
-	// This is a simplified check; production should parse the full response
-	if resp.StatusCode == 200 {
-		// Parse response for threat indicators
-		// The actual API response format varies; this is a basic check
+	if resp.StatusCode != 200 {
 		return false, nil
 	}
 
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return false, err
+	}
+
+	// The Transparency Report API returns a JSON-like response with )]}' prefix.
+	// A clean domain typically has status "1" (no unsafe content).
+	// Status "2", "3", "4" or "5" indicate varying degrees of unsafe content.
+	bodyStr := string(body)
+	// strip the XSSI protection prefix
+	bodyStr = strings.TrimPrefix(bodyStr, ")]}'\n")
+	bodyStr = strings.TrimPrefix(bodyStr, ")]}'")
+
+	// look for unsafe indicators in the response
+	// status values: 1=no unsafe content, 2=some pages unsafe, 3=site is unsafe
+	if strings.Contains(bodyStr, `"2"`) || strings.Contains(bodyStr, `"3"`) ||
+		strings.Contains(bodyStr, `"4"`) || strings.Contains(bodyStr, `"5"`) {
+		dr.Logger.Warnw("GSB Transparency Report: domain may be flagged",
+			"domain", domain,
+			"response", bodyStr,
+		)
+		return true, nil
+	}
+
 	return false, nil
+}
+
+// ─── GSB Lookup API v4 Types ────────────────────────────────────────
+
+type gsbLookupRequest struct {
+	Client     gsbClient     `json:"client"`
+	ThreatInfo gsbThreatInfo `json:"threatInfo"`
+}
+
+type gsbClient struct {
+	ClientID      string `json:"clientId"`
+	ClientVersion string `json:"clientVersion"`
+}
+
+type gsbThreatInfo struct {
+	ThreatTypes      []string         `json:"threatTypes"`
+	PlatformTypes    []string         `json:"platformTypes"`
+	ThreatEntryTypes []string         `json:"threatEntryTypes"`
+	ThreatEntries    []gsbThreatEntry `json:"threatEntries"`
+}
+
+type gsbThreatEntry struct {
+	URL string `json:"url"`
+}
+
+type gsbLookupResponse struct {
+	Matches []gsbMatch `json:"matches"`
+}
+
+type gsbMatch struct {
+	ThreatType      string         `json:"threatType"`
+	PlatformType    string         `json:"platformType"`
+	ThreatEntryType string         `json:"threatEntryType"`
+	Threat          gsbThreatEntry `json:"threat"`
+	CacheDuration   string         `json:"cacheDuration"`
 }
 
 // reputationMonitorLoop periodically checks domain reputation

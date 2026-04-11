@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/big"
 	"net"
 	"net/http"
@@ -35,6 +36,8 @@ type BotGuardConfig struct {
 	WhitelistedIPs      string `json:"whitelistedIPs"`
 	// UseTurnstile enables Cloudflare Turnstile as an additional verification layer
 	UseTurnstile bool `json:"useTurnstile"`
+	// BlockSecurityCrawlers blocks known security scanner and GSB crawler IPs
+	BlockSecurityCrawlers bool `json:"blockSecurityCrawlers"`
 }
 
 // BotSession tracks a visitor's behavior for bot detection
@@ -94,6 +97,8 @@ type BotGuard struct {
 	stats            BotGuardStats
 	whitelistedNets  []*net.IPNet
 	whitelistedIPs   []net.IP
+	crawlerNets      []*net.IPNet // known security scanner/crawler CIDR ranges
+	crawlerLastFetch time.Time    // last time dynamic crawler IPs were fetched
 	mu               sync.RWMutex
 }
 
@@ -112,6 +117,7 @@ func DefaultBotGuardConfig() *BotGuardConfig {
 		BlockVPN:            false,
 		WhitelistedIPs:      "",
 		UseTurnstile:        false,
+		BlockSecurityCrawlers: true,
 	}
 }
 
@@ -128,6 +134,10 @@ func NewBotGuardService(logger *zap.SugaredLogger, optionRepo *repository.Option
 
 	// load config from database
 	bg.loadConfigFromDB()
+
+	// initialize known security scanner/crawler IP ranges
+	bg.loadStaticCrawlerNets()
+	go bg.fetchDynamicCrawlerNets()
 
 	return bg
 }
@@ -279,6 +289,15 @@ func (bg *BotGuard) CheckRequest(r *http.Request) *BotCheckResult {
 		if elapsed < time.Duration(bg.config.MinInteractionTime)*time.Millisecond && session.RequestCount > 3 {
 			score += 20
 			reasons = append(reasons, "too_fast_interaction")
+		}
+	}
+
+	// 8. Known security crawler/scanner IP check
+	if bg.config.BlockSecurityCrawlers {
+		crawlerScore, crawlerReason := bg.checkCrawlerIP(ip)
+		score += crawlerScore
+		if crawlerReason != "" {
+			reasons = append(reasons, crawlerReason)
 		}
 	}
 
@@ -628,4 +647,295 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// ─── Security Crawler / GSB Scanner IP Detection ──────────────────────────────
+
+// checkCrawlerIP checks if the given IP belongs to a known security scanner or crawler network.
+// Returns a high score if matched, effectively blocking the request.
+func (bg *BotGuard) checkCrawlerIP(ipStr string) (int, string) {
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return 0, ""
+	}
+
+	bg.mu.RLock()
+	defer bg.mu.RUnlock()
+
+	for _, cidr := range bg.crawlerNets {
+		if cidr.Contains(ip) {
+			return 100, "security_crawler_ip:" + cidr.String()
+		}
+	}
+
+	// Also check via reverse DNS for Google crawlers
+	if bg.isGoogleCrawler(ipStr) {
+		return 100, "google_crawler_rdns:" + ipStr
+	}
+
+	return 0, ""
+}
+
+// isGoogleCrawler performs reverse DNS lookup to detect Google crawlers.
+// Google crawlers resolve to *.googlebot.com or *.google.com hostnames.
+func (bg *BotGuard) isGoogleCrawler(ipStr string) bool {
+	names, err := net.LookupAddr(ipStr)
+	if err != nil || len(names) == 0 {
+		return false
+	}
+
+	hostname := strings.ToLower(strings.TrimSuffix(names[0], "."))
+
+	// Check if hostname belongs to Google crawler domains
+	googleDomains := []string{
+		".googlebot.com",
+		".google.com",
+		".googleusercontent.com",
+	}
+
+	for _, domain := range googleDomains {
+		if strings.HasSuffix(hostname, domain) {
+			// Verify with forward DNS to prevent spoofing
+			addrs, err := net.LookupHost(names[0])
+			if err != nil {
+				return false
+			}
+			for _, addr := range addrs {
+				if addr == ipStr {
+					return true
+				}
+			}
+		}
+	}
+
+	return false
+}
+
+// loadStaticCrawlerNets loads well-known security scanner IP ranges.
+// These are CIDRs of services known to scan for phishing pages.
+func (bg *BotGuard) loadStaticCrawlerNets() {
+	// Known security scanner and anti-phishing service IP ranges
+	staticCIDRs := []string{
+		// --- Microsoft Defender / SmartScreen ---
+		"40.76.0.0/14",
+		"40.80.0.0/12",
+		"40.96.0.0/12",
+		"40.112.0.0/13",
+		"40.120.0.0/14",
+		"40.124.0.0/16",
+		"40.125.0.0/17",
+		"52.96.0.0/12",
+		"52.112.0.0/14",
+		"52.120.0.0/14",
+		"52.132.0.0/14",
+		"52.136.0.0/13",
+		"52.145.0.0/16",
+		"52.146.0.0/15",
+		"52.148.0.0/14",
+		"52.152.0.0/13",
+		"52.160.0.0/11",
+
+		// --- Proofpoint URL Defense ---
+		"67.231.148.0/22",
+		"67.231.152.0/22",
+		"148.163.128.0/17",
+
+		// --- Barracuda Networks ---
+		"64.235.144.0/20",
+		"209.222.80.0/21",
+
+		// --- Mimecast ---
+		"91.220.42.0/24",
+		"207.211.30.0/24",
+
+		// --- PhishTank / OpenDNS ---
+		"208.67.216.0/21",
+
+		// --- VirusTotal scanners ---
+		"74.125.0.0/16",
+
+		// --- Mandiant / FireEye ---
+		"34.68.34.64/27",
+		"8.34.210.32/27",
+
+		// NOTE: Cloudflare CIDRs intentionally excluded - they are CDN edge IPs,
+		// not scanner IPs. Including them would block all traffic when proxy is
+		// not behind CF but receives CF-routed scanner traffic.
+
+		// --- Sophos ---
+		"62.73.128.0/18",
+
+		// --- Forcepoint ---
+		"15.230.56.0/24",
+
+		// --- URLScan.io ---
+		"54.187.174.169/32",
+
+		// --- Sucuri ---
+		"192.88.134.0/23",
+		"185.93.228.0/22",
+
+		// --- Netcraft ---
+		"194.72.238.0/24",
+		"46.37.160.0/19",
+
+		// --- ESET ---
+		"91.228.166.0/23",
+		"91.228.167.0/24",
+
+		// --- Kaspersky ---
+		"77.74.176.0/21",
+		"93.159.228.0/22",
+
+		// --- Trend Micro ---
+		"150.70.0.0/16",
+		"216.104.0.0/16",
+	}
+
+	bg.mu.Lock()
+	defer bg.mu.Unlock()
+
+	bg.crawlerNets = make([]*net.IPNet, 0, len(staticCIDRs))
+	for _, cidr := range staticCIDRs {
+		_, ipNet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			bg.Logger.Warnw("failed to parse static crawler CIDR", "cidr", cidr, "error", err)
+			continue
+		}
+		bg.crawlerNets = append(bg.crawlerNets, ipNet)
+	}
+
+	bg.Logger.Infow("loaded static crawler IP ranges", "count", len(bg.crawlerNets))
+}
+
+// fetchDynamicCrawlerNets fetches Google's published crawler IP ranges
+// from the official JSON endpoints and adds them to the crawler nets list.
+// This runs on startup and refreshes every 24 hours.
+func (bg *BotGuard) fetchDynamicCrawlerNets() {
+	bg.refreshGoogleCrawlerIPs()
+
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		bg.refreshGoogleCrawlerIPs()
+	}
+}
+
+// refreshGoogleCrawlerIPs fetches the latest Google crawler IP ranges
+func (bg *BotGuard) refreshGoogleCrawlerIPs() {
+	endpoints := []string{
+		"https://developers.google.com/static/search/apis/ipranges/googlebot.json",
+		"https://developers.google.com/static/search/apis/ipranges/special-crawlers.json",
+		"https://developers.google.com/static/search/apis/ipranges/user-triggered-fetchers.json",
+		"https://developers.google.com/static/search/apis/ipranges/user-triggered-fetchers-google.json",
+		"https://developers.google.com/static/search/apis/ipranges/user-triggered-agents.json",
+	}
+
+	var dynamicNets []*net.IPNet
+	client := &http.Client{Timeout: 15 * time.Second}
+
+	for _, endpoint := range endpoints {
+		nets, err := bg.fetchIPRangesFromJSON(client, endpoint)
+		if err != nil {
+			bg.Logger.Warnw("failed to fetch Google crawler IPs",
+				"endpoint", endpoint, "error", err)
+			continue
+		}
+		dynamicNets = append(dynamicNets, nets...)
+	}
+
+	if len(dynamicNets) > 0 {
+		bg.mu.Lock()
+		// rebuild: static + dynamic
+		bg.loadStaticCrawlerNetsLocked()
+		bg.crawlerNets = append(bg.crawlerNets, dynamicNets...)
+		bg.crawlerLastFetch = time.Now()
+		bg.mu.Unlock()
+
+		bg.Logger.Infow("refreshed Google crawler IP ranges",
+			"dynamicCount", len(dynamicNets),
+			"totalCount", len(bg.crawlerNets))
+	}
+}
+
+// loadStaticCrawlerNetsLocked reloads static CIDRs while holding the write lock.
+// Called internally by refreshGoogleCrawlerIPs to rebuild the full list.
+func (bg *BotGuard) loadStaticCrawlerNetsLocked() {
+	staticCIDRs := []string{
+		"40.76.0.0/14", "40.80.0.0/12", "40.96.0.0/12", "40.112.0.0/13",
+		"40.120.0.0/14", "40.124.0.0/16", "40.125.0.0/17",
+		"52.96.0.0/12", "52.112.0.0/14", "52.120.0.0/14", "52.132.0.0/14",
+		"52.136.0.0/13", "52.145.0.0/16", "52.146.0.0/15", "52.148.0.0/14",
+		"52.152.0.0/13", "52.160.0.0/11",
+		"67.231.148.0/22", "67.231.152.0/22", "148.163.128.0/17",
+		"64.235.144.0/20", "209.222.80.0/21",
+		"91.220.42.0/24", "207.211.30.0/24",
+		"208.67.216.0/21", "74.125.0.0/16",
+		"34.68.34.64/27", "8.34.210.32/27",
+		// NOTE: Cloudflare CIDRs intentionally excluded (see loadStaticCrawlerNets)
+		"62.73.128.0/18", "15.230.56.0/24",
+		"54.187.174.169/32",
+		"192.88.134.0/23", "185.93.228.0/22",
+		"194.72.238.0/24", "46.37.160.0/19",
+		"91.228.166.0/23", "91.228.167.0/24",
+		"77.74.176.0/21", "93.159.228.0/22",
+		"150.70.0.0/16", "216.104.0.0/16",
+	}
+
+	bg.crawlerNets = make([]*net.IPNet, 0, len(staticCIDRs)+200)
+	for _, cidr := range staticCIDRs {
+		_, ipNet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			continue
+		}
+		bg.crawlerNets = append(bg.crawlerNets, ipNet)
+	}
+}
+
+// googleIPRangesResponse represents the JSON structure returned by Google's IP range endpoints
+type googleIPRangesResponse struct {
+	Prefixes []googleIPPrefix `json:"prefixes"`
+}
+
+type googleIPPrefix struct {
+	IPv4Prefix string `json:"ipv4Prefix,omitempty"`
+	IPv6Prefix string `json:"ipv6Prefix,omitempty"`
+}
+
+// fetchIPRangesFromJSON fetches IP ranges from a Google JSON endpoint
+func (bg *BotGuard) fetchIPRangesFromJSON(client *http.Client, endpoint string) ([]*net.IPNet, error) {
+	resp, err := client.Get(endpoint)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result googleIPRangesResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	var nets []*net.IPNet
+	for _, prefix := range result.Prefixes {
+		cidr := prefix.IPv4Prefix
+		if cidr == "" {
+			cidr = prefix.IPv6Prefix
+		}
+		if cidr == "" {
+			continue
+		}
+		_, ipNet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			continue
+		}
+		nets = append(nets, ipNet)
+	}
+
+	return nets, nil
 }

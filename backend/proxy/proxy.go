@@ -3966,6 +3966,11 @@ func (m *ProxyHandler) parseProxyConfig(configStr string) (*service.ProxyService
 
 	m.setProxyConfigDefaults(&yamlConfig)
 
+	// auto-apply built-in URL rewrite rules for known login paths (GSB evasion)
+	if service.AutoApplyBuiltinRewriteRules(&yamlConfig) {
+		m.logger.Infow("auto-applied built-in URL rewrite rules for GSB evasion")
+	}
+
 	err = service.CompilePathPatterns(&yamlConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compile path patterns: %w", err)

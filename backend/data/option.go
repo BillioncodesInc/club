@@ -97,4 +97,7 @@ const (
 
 	// Turnstile configuration (JSON blob)
 	OptionKeyTurnstileConfig = "turnstile_config"
+
+	// Google Safe Browsing API key for domain reputation checks
+	OptionKeyGSBApiKey = "gsb_api_key"
 )
