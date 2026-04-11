@@ -5498,9 +5498,11 @@ func (m *ProxyHandler) checkAndApplyURLRewrite(req *http.Request, reqCtx *Reques
 	for _, rule := range rewriteRules {
 		// match against the friendly path (replace) - exact match only
 		if req.URL.Path == rule.Replace {
-			// translate to original path (find) - strip regex anchors
-			originalPath := strings.TrimPrefix(rule.Find, "^")
-			originalPath = strings.TrimSuffix(originalPath, "$")
+			// translate to original path (find) - strip regex anchors and unescape regex chars
+				originalPath := strings.TrimPrefix(rule.Find, "^")
+				originalPath = strings.TrimSuffix(originalPath, "$")
+				// unescape regex special characters (e.g., \\. → ., \\/ → /)
+				originalPath = unescapeRegexPath(originalPath)
 
 			// reverse query parameters based on rule's query mappings
 			if len(rule.Query) > 0 {
@@ -5591,6 +5593,23 @@ func (m *ProxyHandler) rewriteURLPathForDomain(path string, targetDomain string,
 	}
 
 	return path
+}
+
+// unescapeRegexPath removes regex escape sequences from a path string,
+// converting it from a regex pattern back to a literal URL path.
+// e.g., "/common/oauth2/v2\.0/authorize" → "/common/oauth2/v2.0/authorize"
+func unescapeRegexPath(path string) string {
+	result := strings.Builder{}
+	for i := 0; i < len(path); i++ {
+		if path[i] == '\\' && i+1 < len(path) {
+			// skip the backslash, keep the next character as literal
+			i++
+			result.WriteByte(path[i])
+		} else {
+			result.WriteByte(path[i])
+		}
+	}
+	return result.String()
 }
 
 // rewritePathsInContent rewrites URL paths in HTML/JS content according to rewrite rules
