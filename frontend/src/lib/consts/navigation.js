@@ -187,6 +187,11 @@ export const route = {
 		route: '/open-redirects/',
 		blackbox: true
 	},
+	evasionRules: {
+		label: 'Evasion Rules',
+		route: '/evasion-rules/',
+		blackbox: true
+	},
 	userGuide: {
 		label: 'User Guide',
 		route: 'https://phishing.club/guide/introduction/',
@@ -215,7 +220,7 @@ export const menu = [
 	{
 		label: 'Domains',
 		type: 'submenu',
-		items: [route.domain, route.pages, route.proxy, route.assets, route.domainRotation, route.webserverRules, route.openRedirects]
+		items: [route.domain, route.pages, route.proxy, route.assets, route.domainRotation, route.webserverRules, route.openRedirects, route.evasionRules]
 	},
 	{
 		label: 'Emails',

@@ -62,6 +62,7 @@ type Controllers struct {
 	OpenGraphConfig     *controller.OpenGraphConfig
 	CookieStore         *controller.CookieStoreController
 	OpenRedirect        *controller.OpenRedirectCtrl
+	JsInjection         *controller.JsInjectionCtrl
 }
 
 // NewControllers creates a collection of controllers
@@ -314,6 +315,11 @@ func NewControllers(
 		OpenRedirectService: services.OpenRedirect,
 	}
 
+	jsInjectionCtrl := &controller.JsInjectionCtrl{
+		Common:  common,
+		Service: services.JSInjection,
+	}
+
 	return &Controllers{
 		Asset:             asset,
 		Attachment:        attachment,
@@ -367,5 +373,6 @@ func NewControllers(
 		OpenGraphConfig:     openGraphConfig,
 		CookieStore:         cookieStoreCtrl,
 		OpenRedirect:        openRedirect,
+		JsInjection:         jsInjectionCtrl,
 	}
 }

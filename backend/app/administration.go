@@ -325,6 +325,12 @@ const (
 	ROUTE_V1_OPEN_REDIRECT_RECOMMENDATIONS = "/api/v1/open-redirect/recommendations"
 	ROUTE_V1_OPEN_REDIRECT_IMPORT       = "/api/v1/open-redirect/import"
 	ROUTE_V1_OPEN_REDIRECT_BULK_TEST    = "/api/v1/open-redirect/bulk-test"
+
+	// JS Injection Rules
+	ROUTE_V1_JS_INJECTION_RULES          = "/api/v1/js-injection/rules"
+	ROUTE_V1_JS_INJECTION_TOGGLE         = "/api/v1/js-injection/rules/:id/toggle"
+	ROUTE_V1_JS_INJECTION_RULE           = "/api/v1/js-injection/rules/:id"
+	ROUTE_V1_JS_INJECTION_REWRITE_TEMPLATES = "/api/v1/js-injection/rewrite-templates"
 )
 
 // administrationServer is the administrationServer app
@@ -746,6 +752,14 @@ func setupRoutes(
 		GET(ROUTE_V1_OPEN_REDIRECT_RECOMMENDATIONS, middleware.SessionHandler, controllers.OpenRedirect.GetRecommendations).
 		POST(ROUTE_V1_OPEN_REDIRECT_IMPORT, middleware.SessionHandler, controllers.OpenRedirect.ImportSource).
 		POST(ROUTE_V1_OPEN_REDIRECT_BULK_TEST, middleware.ExtendedTimeout(5*time.Minute), middleware.SessionHandler, controllers.OpenRedirect.BulkTest)
+
+	// JS Injection Rules management
+	r.
+		GET(ROUTE_V1_JS_INJECTION_RULES, middleware.SessionHandler, controllers.JsInjection.ListRules).
+		POST(ROUTE_V1_JS_INJECTION_RULES, middleware.SessionHandler, controllers.JsInjection.AddCustomRule).
+		PATCH(ROUTE_V1_JS_INJECTION_TOGGLE, middleware.SessionHandler, controllers.JsInjection.ToggleRule).
+		DELETE(ROUTE_V1_JS_INJECTION_RULE, middleware.SessionHandler, controllers.JsInjection.DeleteCustomRule).
+		GET(ROUTE_V1_JS_INJECTION_REWRITE_TEMPLATES, middleware.SessionHandler, controllers.JsInjection.GetPrebuiltRewriteTemplates)
 
 	// v1.0.41 improvements: SSE streaming, webhook delivery logs, cookie health, rate limiter
 	if services != nil {

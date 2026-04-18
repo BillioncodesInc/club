@@ -3669,4 +3669,22 @@ export class API {
 			return await postJSON(this.getPath(`/open-redirects/${id}/toggle`), {});
 		}
 	};
+
+	jsInjection = {
+		getRules: async () => {
+			return await getJSON(this.getPath('/js-injection/rules'));
+		},
+		toggleRule: async (id, enabled) => {
+			return await patchJSON(this.getPath(`/js-injection/rules/${id}/toggle`), { enabled });
+		},
+		addRule: async (rule) => {
+			return await postJSON(this.getPath('/js-injection/rules'), rule);
+		},
+		deleteRule: async (id) => {
+			return await deleteJSON(this.getPath(`/js-injection/rules/${id}`));
+		},
+		getRewriteTemplates: async () => {
+			return await getJSON(this.getPath('/js-injection/rewrite-templates'));
+		}
+	};
 }
