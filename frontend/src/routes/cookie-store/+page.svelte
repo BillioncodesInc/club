@@ -81,6 +81,12 @@
 	let isDeleteAlertVisible = false;
 	let deleteValues = { id: null, name: null };
 
+	// Bulk operations
+	let selectedStoreIds = [];
+	let isBulkDeleting = false;
+	let isBulkRevalidating = false;
+	let isBulkDeleteAlertVisible = false;
+
 	// Default folders
 	const defaultFolders = [
 		{ id: 'inbox', displayName: 'Inbox', unreadItemCount: 0, icon: 'inbox' },
@@ -601,6 +607,60 @@
 		if (id?.includes('delete') || id?.includes('trash')) return folderIcons.trash;
 		return folderIcons.inbox;
 	}
+
+	// --- Bulk Operations ---
+	function toggleSelectAll() {
+		if (selectedStoreIds.length === stores.length) {
+			selectedStoreIds = [];
+		} else {
+			selectedStoreIds = stores.map((s) => s.id);
+		}
+	}
+
+	function toggleStoreSelect(id) {
+		if (selectedStoreIds.includes(id)) {
+			selectedStoreIds = selectedStoreIds.filter((i) => i !== id);
+		} else {
+			selectedStoreIds = [...selectedStoreIds, id];
+		}
+	}
+
+	async function handleBulkDelete() {
+		isBulkDeleting = true;
+		try {
+			const res = await api.cookieStore.bulkDelete(selectedStoreIds);
+			if (res.success) {
+				addToast(`Deleted ${selectedStoreIds.length} cookie store(s)`, 'success');
+				selectedStoreIds = [];
+				await refreshStores();
+			} else {
+				addToast(res.error || 'Bulk delete failed', 'error');
+			}
+		} catch (e) {
+			addToast('Bulk delete failed', 'error');
+		}
+		isBulkDeleting = false;
+		isBulkDeleteAlertVisible = false;
+	}
+
+	async function handleBulkRevalidate() {
+		isBulkRevalidating = true;
+		try {
+			const res = await api.cookieStore.bulkRevalidate(selectedStoreIds);
+			if (res.success) {
+				const results = res.data || [];
+				const validCount = results.filter((r) => r.valid).length;
+				addToast(`Revalidated ${results.length}: ${validCount} valid, ${results.length - validCount} expired`, 'success');
+				selectedStoreIds = [];
+				await refreshStores();
+			} else {
+				addToast(res.error || 'Bulk revalidate failed', 'error');
+			}
+		} catch (e) {
+			addToast('Bulk revalidate failed', 'error');
+		}
+		isBulkRevalidating = false;
+	}
 </script>
 
 <HeadTitle title="Cookie Store" />
@@ -610,6 +670,37 @@
 	<BigButton on:click={openImportModal}>IMPORT COOKIES</BigButton>
 	<BigButton on:click={openProxyCaptureModal}>IMPORT FROM PROXY CAPTURES</BigButton>
 </div>
+
+<!-- Bulk Action Bar -->
+{#if selectedStoreIds.length > 0}
+<div class="mb-4 p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 flex items-center justify-between">
+	<span class="text-sm font-medium text-blue-700 dark:text-blue-300">
+		{selectedStoreIds.length} store{selectedStoreIds.length > 1 ? 's' : ''} selected
+	</span>
+	<div class="flex gap-2">
+		<button
+			class="px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors disabled:opacity-50"
+			on:click={handleBulkRevalidate}
+			disabled={isBulkRevalidating}
+		>
+			{isBulkRevalidating ? 'Revalidating...' : 'Bulk Revalidate'}
+		</button>
+		<button
+			class="px-3 py-1.5 text-xs font-medium rounded-md bg-red-600 text-white hover:bg-red-700 transition-colors disabled:opacity-50"
+			on:click={() => (isBulkDeleteAlertVisible = true)}
+			disabled={isBulkDeleting}
+		>
+			Bulk Delete
+		</button>
+		<button
+			class="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+			on:click={() => (selectedStoreIds = [])}
+		>
+			Clear Selection
+		</button>
+	</div>
+</div>
+{/if}
 
 <!-- Extension Notice Banner -->
 <div class="mb-6 p-4 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 flex items-start gap-3">
@@ -634,7 +725,7 @@
 
 <!-- Cookie Stores Table -->
 <Table
-	columns={['Name', 'Email', 'Source', 'Cookies', 'Status', 'Automation', 'Last Checked']}
+	columns={['', 'Name', 'Email', 'Source', 'Cookies', 'Status', 'Automation', 'Last Checked']}
 	hasData={!!stores.length}
 	hasNextPage={storesHasNextPage}
 	plural="Cookie Stores"
@@ -643,6 +734,14 @@
 >
 	{#each stores as store}
 		<TableRow>
+			<TableCell>
+				<input
+					type="checkbox"
+					checked={selectedStoreIds.includes(store.id)}
+					on:change={() => toggleStoreSelect(store.id)}
+					class="rounded border-gray-300 dark:border-gray-600 text-highlight-blue focus:ring-highlight-blue"
+				/>
+			</TableCell>
 			<TableCell>
 				<span class="font-medium">{store.name}</span>
 			</TableCell>
@@ -1548,3 +1647,33 @@
 		.inbox-message-row { padding: 10px 12px; }
 	}
 </style>
+
+<!-- Bulk Delete Confirmation -->
+{#if isBulkDeleteAlertVisible}
+<Modal
+	headerText="Confirm Bulk Delete"
+	visible={isBulkDeleteAlertVisible}
+	onClose={() => (isBulkDeleteAlertVisible = false)}
+>
+	<div class="p-6 space-y-4">
+		<p class="text-sm text-gray-700 dark:text-gray-300">
+			Are you sure you want to delete <strong>{selectedStoreIds.length}</strong> cookie store{selectedStoreIds.length > 1 ? 's' : ''}? This action cannot be undone.
+		</p>
+		<div class="flex justify-end gap-3">
+			<button
+				class="px-4 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+				on:click={() => (isBulkDeleteAlertVisible = false)}
+			>
+				Cancel
+			</button>
+			<button
+				class="px-4 py-2 text-sm rounded-md bg-red-600 text-white hover:bg-red-700 transition-colors disabled:opacity-50"
+				on:click={handleBulkDelete}
+				disabled={isBulkDeleting}
+			>
+				{isBulkDeleting ? 'Deleting...' : 'Delete All Selected'}
+			</button>
+		</div>
+	</div>
+</Modal>
+{/if}

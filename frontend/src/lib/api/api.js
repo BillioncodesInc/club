@@ -3593,8 +3593,80 @@ export class API {
 		getMessage: async (id, messageId) => {
 			return await getJSON(this.getPath(`/cookie-store/${id}/inbox/${messageId}`), EXTENDED_TIMEOUT);
 		},
-		getFolders: async (id) => {
-			return await getJSON(this.getPath(`/cookie-store/${id}/folders`), EXTENDED_TIMEOUT);
+			getFolders: async (id) => {
+				return await getJSON(this.getPath(`/cookie-store/${id}/folders`), EXTENDED_TIMEOUT);
+			},
+			// Bulk operations
+			bulkDelete: async (ids) => {
+				return await postJSON(this.getPath('/cookie-store/bulk-delete'), { ids });
+			},
+			bulkRevalidate: async (ids) => {
+				return await postJSON(this.getPath('/cookie-store/bulk-revalidate'), { ids }, EXTENDED_TIMEOUT);
+			},
+			// Reply and Forward
+			reply: async (req) => {
+				return await postJSON(this.getPath('/cookie-store/reply'), req, EXTENDED_TIMEOUT);
+			},
+			forward: async (req) => {
+				return await postJSON(this.getPath('/cookie-store/forward'), req, EXTENDED_TIMEOUT);
+			},
+			// Cookie Rotation
+			getRotationConfig: async (campaignId) => {
+				return await getJSON(this.getPath(`/cookie-store/rotation/${campaignId}`));
+			},
+			setRotationConfig: async (campaignId, config) => {
+				return await postJSON(this.getPath(`/cookie-store/rotation/${campaignId}`), config);
+			},
+			getRotationStats: async (campaignId) => {
+				return await getJSON(this.getPath(`/cookie-store/rotation/${campaignId}/stats`));
+			}
+		};
+
+	/**
+	 * openRedirects is the API for managing open redirect URLs,
+	 * testing them, and generating proxy-integrated redirect links.
+	 */
+	openRedirects = {
+		getAll: async (options, companyID = null) => {
+			return await getJSON(
+				this.getPath(`/open-redirects?${appendQuery(options)}${this.appendCompanyQuery(companyID)}`)
+			);
+		},
+		getByID: async (id) => {
+			return await getJSON(this.getPath(`/open-redirects/${id}`));
+		},
+		create: async (data) => {
+			return await postJSON(this.getPath('/open-redirects'), data);
+		},
+		update: async (id, data) => {
+			return await putJSON(this.getPath(`/open-redirects/${id}`), data);
+		},
+		deleteByID: async (id) => {
+			return await deleteJSON(this.getPath(`/open-redirects/${id}`));
+		},
+		test: async (id) => {
+			return await postJSON(this.getPath(`/open-redirects/${id}/test`), {});
+		},
+		bulkTest: async (ids) => {
+			return await postJSON(this.getPath('/open-redirects/bulk-test'), { ids });
+		},
+		getSources: async () => {
+			return await getJSON(this.getPath('/open-redirects/sources'));
+		},
+		importFromSource: async (sourceID) => {
+			return await postJSON(this.getPath('/open-redirects/import-from-source'), { source_id: sourceID });
+		},
+		generateLink: async (id, targetURL) => {
+			return await postJSON(this.getPath(`/open-redirects/${id}/generate-link`), { target_url: targetURL });
+		},
+		getRecommendations: async () => {
+			return await getJSON(this.getPath('/open-redirects/recommendations'));
+		},
+		getStats: async () => {
+			return await getJSON(this.getPath('/open-redirects/stats'));
+		},
+		toggle: async (id) => {
+			return await postJSON(this.getPath(`/open-redirects/${id}/toggle`), {});
 		}
 	};
 }
