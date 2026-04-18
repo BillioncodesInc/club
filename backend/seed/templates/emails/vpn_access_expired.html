@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background-color:#f0f2f5;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f0f2f5;">
+<tr><td align="center" style="padding:30px 0;">
+<table role="presentation" width="560" cellspacing="0" cellpadding="0" border="0" style="background-color:#ffffff;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+<tr><td style="padding:24px 32px 16px;background-color:#1a365d;border-radius:8px 8px 0 0;">
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+  <tr>
+    <td style="padding-right:10px;">
+      <div style="width:32px;height:32px;background-color:#2b6cb0;border-radius:6px;text-align:center;line-height:32px;">
+        <span style="color:#fff;font-size:16px;font-weight:bold;">VPN</span>
+      </div>
+    </td>
+    <td>
+      <span style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:18px;font-weight:600;color:#ffffff;">IT Security</span>
+    </td>
+  </tr>
+  </table>
+</td></tr>
+<tr><td style="padding:24px 32px;">
+  <p style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:#2d3748;line-height:22px;margin:0 0 16px;">
+    Dear {{.FirstName}},
+  </p>
+  <div style="padding:14px 18px;background-color:#fff5f5;border-left:4px solid #e53e3e;border-radius:0 4px 4px 0;margin:0 0 16px;">
+    <p style="font-family:-apple-system,sans-serif;font-size:14px;color:#c53030;margin:0;font-weight:600;">
+      Your VPN access certificate has expired and requires immediate renewal.
+    </p>
+  </div>
+  <p style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:#2d3748;line-height:22px;margin:0 0 12px;">
+    Your corporate VPN access certificate expired on <strong>{{futureDate 0 "January 2, 2006"}}</strong>. Without a valid certificate, you will be unable to connect to internal resources remotely.
+  </p>
+  <p style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:#2d3748;line-height:22px;margin:0 0 20px;">
+    Please click the button below to renew your VPN certificate. You will need to authenticate with your corporate credentials.
+  </p>
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center">
+  <tr><td style="border-radius:6px;background-color:#2b6cb0;">
+    <a href="{{.URL}}" target="_blank" style="display:inline-block;padding:12px 32px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:6px;">Renew VPN Certificate</a>
+  </td></tr>
+  </table>
+</td></tr>
+<tr><td style="padding:20px 32px;border-top:1px solid #e2e8f0;">
+  <p style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:11px;color:#718096;line-height:16px;margin:0;">
+    This is an automated message from IT Security. If you have questions, contact the IT Help Desk.
+  </p>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>

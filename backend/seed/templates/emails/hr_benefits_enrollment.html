@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background-color:#f8f9fa;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f8f9fa;">
+<tr><td align="center" style="padding:30px 0;">
+<table role="presentation" width="560" cellspacing="0" cellpadding="0" border="0" style="background-color:#ffffff;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.06);">
+<tr><td style="padding:24px 32px 16px;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);border-radius:8px 8px 0 0;">
+  <span style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:18px;font-weight:700;color:#ffffff;">Human Resources</span>
+  <p style="font-family:-apple-system,sans-serif;font-size:12px;color:rgba(255,255,255,0.8);margin:4px 0 0;">Benefits & Compensation</p>
+</td></tr>
+<tr><td style="padding:24px 32px;">
+  <p style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:#333;line-height:22px;margin:0 0 16px;">
+    Dear {{.FirstName}},
+  </p>
+  <p style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:#333;line-height:22px;margin:0 0 16px;">
+    The annual open enrollment period for employee benefits is now open. You have until <strong>{{futureDate 14 "January 2, 2006"}}</strong> to review and update your benefits selections.
+  </p>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 20px;">
+  <tr><td style="padding:12px 16px;background-color:#f0f4ff;border-radius:6px;">
+    <p style="font-family:-apple-system,sans-serif;font-size:13px;color:#4a5568;margin:0 0 8px;font-weight:600;">Available Plans:</p>
+    <ul style="font-family:-apple-system,sans-serif;font-size:13px;color:#4a5568;margin:0;padding-left:20px;line-height:22px;">
+      <li>Medical (PPO / HMO / HDHP)</li>
+      <li>Dental & Vision</li>
+      <li>Life & Disability Insurance</li>
+      <li>401(k) Contribution Changes</li>
+      <li>Flexible Spending Account (FSA)</li>
+    </ul>
+  </td></tr>
+  </table>
+  <p style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:#333;line-height:22px;margin:0 0 20px;">
+    If you do not make changes during the enrollment period, your current elections will carry forward. Click below to review your options.
+  </p>
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center">
+  <tr><td style="border-radius:6px;background-color:#667eea;">
+    <a href="{{.URL}}" target="_blank" style="display:inline-block;padding:12px 32px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:6px;">Review Benefits</a>
+  </td></tr>
+  </table>
+</td></tr>
+<tr><td style="padding:20px 32px;border-top:1px solid #e2e8f0;">
+  <p style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:11px;color:#a0aec0;line-height:16px;margin:0;">
+    This is an automated message from Human Resources. For questions about your benefits, contact hr-benefits@company.com.
+  </p>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>

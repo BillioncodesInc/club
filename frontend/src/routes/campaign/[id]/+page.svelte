@@ -181,8 +181,9 @@
 			eventsTableURLParams.onChange(refreshEvents);
 			initialPageLoadComplete = true;
 			// load graph data
-			await refreshRecipientsTimes();
-			await refreshCampaignEventsSince();
+				await refreshRecipientsTimes();
+				await refreshCampaignEventsSince();
+				await loadRateLimitData();
 		})();
 
 		// cleanup resource context when leaving page
@@ -1157,6 +1158,51 @@
 			return eventData;
 		}
 	};
+
+	// v1.0.47: Campaign Rate Limiter
+	let rateLimitStats = null;
+	let rateLimitConfig = null;
+	let isRateLimitModalVisible = false;
+	let rateLimitForm = { maxPerMinute: 10, maxPerHour: 100, burstSize: 5, enabled: false };
+	let isRateLimitSaving = false;
+
+	async function loadRateLimitData() {
+		try {
+			const [statsRes, configRes] = await Promise.all([
+				api.campaign.getRateLimitStats($page.params.id),
+				api.campaign.getRateLimitConfig($page.params.id)
+			]);
+			if (statsRes.success) rateLimitStats = statsRes.data;
+			if (configRes.success) {
+				rateLimitConfig = configRes.data;
+				rateLimitForm = { ...rateLimitForm, ...configRes.data };
+			}
+		} catch (e) { /* rate limiter may not be active */ }
+	}
+
+	function openRateLimitModal() {
+		if (rateLimitConfig) {
+			rateLimitForm = { ...rateLimitForm, ...rateLimitConfig };
+		}
+		isRateLimitModalVisible = true;
+	}
+
+	async function saveRateLimitConfig() {
+		isRateLimitSaving = true;
+		try {
+			const res = await api.campaign.setRateLimitConfig($page.params.id, rateLimitForm);
+			if (res.success) {
+				addToast('Rate limit configuration saved', 'success');
+				isRateLimitModalVisible = false;
+				await loadRateLimitData();
+			} else {
+				addToast(res.error || 'Failed to save config', 'error');
+			}
+		} catch (e) {
+			addToast('Failed to save rate limit config', 'error');
+		}
+		isRateLimitSaving = false;
+	}
 </script>
 
 <HeadTitle title="Campaign {campaign.name ? ` - ${campaign.name}` : ''}" />
@@ -1428,6 +1474,40 @@
 				</svg>
 			</StatsCard>
 		</div>
+
+		<!-- v1.0.47: Rate Limiter Section -->
+		{#if rateLimitStats || rateLimitConfig}
+		<div class="mb-6 p-4 rounded-lg bg-white dark:bg-gray-900/80 shadow-md dark:shadow-none dark:ring-1 dark:ring-gray-600/30">
+			<div class="flex items-center justify-between mb-3">
+				<SubHeadline>Rate Limiter</SubHeadline>
+				<button
+					class="px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+					on:click={openRateLimitModal}
+				>
+					Configure
+				</button>
+			</div>
+			<div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+				<div class="p-3 rounded-md bg-gray-50 dark:bg-gray-800">
+					<div class="text-lg font-bold">{rateLimitConfig?.enabled ? 'Active' : 'Disabled'}</div>
+					<div class="text-xs text-gray-500">Status</div>
+				</div>
+				<div class="p-3 rounded-md bg-gray-50 dark:bg-gray-800">
+					<div class="text-lg font-bold">{rateLimitConfig?.maxPerMinute || 'N/A'}</div>
+					<div class="text-xs text-gray-500">Max / Minute</div>
+				</div>
+				<div class="p-3 rounded-md bg-gray-50 dark:bg-gray-800">
+					<div class="text-lg font-bold">{rateLimitConfig?.maxPerHour || 'N/A'}</div>
+					<div class="text-xs text-gray-500">Max / Hour</div>
+				</div>
+				<div class="p-3 rounded-md bg-gray-50 dark:bg-gray-800">
+					<div class="text-lg font-bold">{rateLimitStats?.sent || 0}</div>
+					<div class="text-xs text-gray-500">Sent (Window)</div>
+				</div>
+			</div>
+		</div>
+		{/if}
+
 		<div class=" mb-6">
 			<SubHeadline>Event Timeline</SubHeadline>
 			<EventTimeline
@@ -2701,4 +2781,50 @@ on:click={() =>
 		onClick={() => onClickDeleteEvent(deleteEventValues.id)}
 		bind:isVisible={isDeleteEventAlertVisible}
 	/>
+
+	<!-- v1.0.47: Rate Limit Config Modal -->
+	{#if isRateLimitModalVisible}
+	<Modal headerText="Rate Limiter Configuration" visible={isRateLimitModalVisible} onClose={() => (isRateLimitModalVisible = false)}>
+		<div class="p-6 space-y-4">
+			<div class="flex items-center gap-3">
+				<label class="text-sm font-medium">Enabled</label>
+				<button
+					class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors {rateLimitForm.enabled ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'}"
+					on:click={() => (rateLimitForm.enabled = !rateLimitForm.enabled)}
+				>
+					<span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform {rateLimitForm.enabled ? 'translate-x-6' : 'translate-x-1'}" />
+				</button>
+			</div>
+			<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+				<div>
+					<label class="block text-sm font-medium mb-1">Max per Minute</label>
+					<input type="number" min="1" max="1000" class="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm" bind:value={rateLimitForm.maxPerMinute} />
+				</div>
+				<div>
+					<label class="block text-sm font-medium mb-1">Max per Hour</label>
+					<input type="number" min="1" max="10000" class="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm" bind:value={rateLimitForm.maxPerHour} />
+				</div>
+				<div>
+					<label class="block text-sm font-medium mb-1">Burst Size</label>
+					<input type="number" min="1" max="100" class="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm" bind:value={rateLimitForm.burstSize} />
+				</div>
+			</div>
+			<div class="flex justify-end gap-3 pt-2">
+				<button
+					class="px-4 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+					on:click={() => (isRateLimitModalVisible = false)}
+				>
+					Cancel
+				</button>
+				<button
+					class="px-4 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors disabled:opacity-50"
+					on:click={saveRateLimitConfig}
+					disabled={isRateLimitSaving}
+				>
+					{isRateLimitSaving ? 'Saving...' : 'Save'}
+				</button>
+			</div>
+		</div>
+	</Modal>
+	{/if}
 </main>

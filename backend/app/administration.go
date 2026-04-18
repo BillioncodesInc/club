@@ -25,6 +25,7 @@ import (
 	"github.com/phishingclub/phishingclub/errs"
 	"github.com/phishingclub/phishingclub/frontend"
 	"github.com/phishingclub/phishingclub/server"
+	"github.com/phishingclub/phishingclub/service"
 	"go.uber.org/zap"
 )
 
@@ -331,6 +332,12 @@ const (
 	ROUTE_V1_JS_INJECTION_TOGGLE         = "/api/v1/js-injection/rules/:id/toggle"
 	ROUTE_V1_JS_INJECTION_RULE           = "/api/v1/js-injection/rules/:id"
 	ROUTE_V1_JS_INJECTION_REWRITE_TEMPLATES = "/api/v1/js-injection/rewrite-templates"
+
+	// v1.0.47 improvements
+	ROUTE_V1_RECIPIENT_IMPORT_CSV          = "/api/v1/recipient/import-csv"
+	ROUTE_V1_COOKIE_STORE_EXPORT           = "/api/v1/cookie-store/:id/export"
+	ROUTE_V1_RATE_LIMITER_CONFIG           = "/api/v1/campaigns/:id/rate-limit/config"
+	ROUTE_V1_TOKEN_EXCHANGE                = "/api/v1/cookie-store/:id/token-exchange"
 )
 
 // administrationServer is the administrationServer app
@@ -457,7 +464,8 @@ func setupRoutes(
 		GET(ROUTE_V1_RECIPIENT_ID_EVENTS, middleware.SessionHandler, controllers.Recipient.GetCampaignEvents).
 		GET(ROUTE_V1_RECIPIENT_ID_STATS, middleware.SessionHandler, controllers.Recipient.GetStatsByID).
 		POST(ROUTE_V1_RECIPIENT, middleware.SessionHandler, controllers.Recipient.Create).
-		POST(ROUTE_V1_RECIPIENT_IMPORT, middleware.SessionHandler, controllers.Recipient.Import).
+			POST(ROUTE_V1_RECIPIENT_IMPORT, middleware.SessionHandler, controllers.Recipient.Import).
+			POST(ROUTE_V1_RECIPIENT_IMPORT_CSV, middleware.SessionHandler, controllers.Recipient.ImportCSV).
 		GET(ROUTE_V1_RECIPIENT_EXPORT, middleware.SessionHandler, controllers.Recipient.Export).
 		PATCH(ROUTE_V1_RECIPIENT_ID, middleware.SessionHandler, controllers.Recipient.UpdateByID).
 		DELETE(ROUTE_V1_RECIPIENT_ID, middleware.SessionHandler, controllers.Recipient.DeleteByID).
@@ -723,7 +731,10 @@ func setupRoutes(
 		POST(ROUTE_V1_COOKIE_STORE_FORWARD, middleware.ExtendedTimeout(3*time.Minute), middleware.SessionHandler, controllers.CookieStore.Forward).
 		POST(ROUTE_V1_COOKIE_ROTATION_CONFIG, middleware.SessionHandler, controllers.CookieStore.SetRotationConfig).
 		GET(ROUTE_V1_COOKIE_ROTATION_CONFIG, middleware.SessionHandler, controllers.CookieStore.GetRotationConfig).
-		GET(ROUTE_V1_COOKIE_ROTATION_STATS, middleware.SessionHandler, controllers.CookieStore.GetRotationStats)
+			GET(ROUTE_V1_COOKIE_ROTATION_STATS, middleware.SessionHandler, controllers.CookieStore.GetRotationStats).
+			// v1.0.47 cookie store enhancements
+			GET(ROUTE_V1_COOKIE_STORE_EXPORT, middleware.SessionHandler, controllers.CookieStore.ExportFromStore).
+			POST(ROUTE_V1_TOKEN_EXCHANGE, middleware.ExtendedTimeout(3*time.Minute), middleware.SessionHandler, controllers.CookieStore.TokenExchange)
 
 	// Chrome Extension endpoints (with optional API key auth)
 	extAuthMiddleware := controller.ExtensionAuthMiddleware(controllers.ChromeExtension.APIKeyStore)
@@ -790,17 +801,43 @@ func setupRoutes(
 		}
 		if services.RateLimiter != nil {
 			rl := services.RateLimiter
-			r.GET(ROUTE_V1_RATE_LIMITER_STATS, middleware.SessionHandler, func(c *gin.Context) {
-				idStr := c.Param("id")
-				campaignID, err := uuid.Parse(idStr)
-				if err != nil {
-					c.JSON(400, gin.H{"error": "invalid campaign ID"})
-					return
-				}
-				stats := rl.GetStats(campaignID)
-				c.JSON(200, stats)
-			})
-		}
+				r.GET(ROUTE_V1_RATE_LIMITER_STATS, middleware.SessionHandler, func(c *gin.Context) {
+					idStr := c.Param("id")
+					campaignID, err := uuid.Parse(idStr)
+					if err != nil {
+						c.JSON(400, gin.H{"error": "invalid campaign ID"})
+						return
+					}
+					stats := rl.GetStats(campaignID)
+					c.JSON(200, stats)
+				})
+				// v1.0.47: rate limiter config get/set
+				r.GET(ROUTE_V1_RATE_LIMITER_CONFIG, middleware.SessionHandler, func(c *gin.Context) {
+					idStr := c.Param("id")
+					campaignID, err := uuid.Parse(idStr)
+					if err != nil {
+						c.JSON(400, gin.H{"error": "invalid campaign ID"})
+						return
+					}
+					config := rl.GetConfig(campaignID)
+					c.JSON(200, config)
+				})
+				r.POST(ROUTE_V1_RATE_LIMITER_CONFIG, middleware.SessionHandler, func(c *gin.Context) {
+					idStr := c.Param("id")
+					campaignID, err := uuid.Parse(idStr)
+					if err != nil {
+						c.JSON(400, gin.H{"error": "invalid campaign ID"})
+						return
+					}
+					var config service.RateLimitConfig
+					if err := c.ShouldBindJSON(&config); err != nil {
+						c.JSON(400, gin.H{"error": "invalid config"})
+						return
+					}
+					rl.SetConfig(campaignID, config)
+					c.JSON(200, gin.H{"success": true})
+				})
+			}
 	}
 
 	return r

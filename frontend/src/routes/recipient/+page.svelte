@@ -69,6 +69,33 @@
 	const tableImportParams = newTableParams({ sortBy: 'email' });
 	let selectedRecipientsImportPaginatedChunk = [];
 	let isImportModalVisible = false;
+
+	// v1.0.47: Server-side CSV import
+	let isServerCSVImporting = false;
+	let serverCSVFile = null;
+
+	async function handleServerCSVImport() {
+		if (!serverCSVFile) {
+			addToast('Please select a CSV file', 'error');
+			return;
+		}
+		isServerCSVImporting = true;
+		try {
+			const res = await api.recipient.importCSV(serverCSVFile, contextCompanyID);
+			if (res.success) {
+				const data = res.data;
+				const msg = `Server CSV import: ${data.imported || 0} imported, ${data.updated || 0} updated, ${data.skipped || 0} skipped`;
+				addToast(msg, data.skipped > 0 ? 'Warning' : 'Success');
+				serverCSVFile = null;
+				await refreshRecipients();
+			} else {
+				addToast(res.error || 'Server CSV import failed', 'error');
+			}
+		} catch (e) {
+			addToast('Server CSV import failed: ' + (e.message || ''), 'error');
+		}
+		isServerCSVImporting = false;
+	}
 	// @ts-ignore
 	const tableURLParams = newTableURLParams({
 		sortBy: 'email'
@@ -424,6 +451,27 @@
 	<div class="flex gap-3">
 		<BigButton on:click={openCreateModal}>New recipient</BigButton>
 		<BigButton on:click={openImportModal}>Import from CSV</BigButton>
+	</div>
+
+	<!-- v1.0.47: Quick server-side CSV upload -->
+	<div class="mt-3 mb-4 p-4 rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
+		<div class="flex items-center gap-3 flex-wrap">
+			<span class="text-sm font-medium text-gray-600 dark:text-gray-400">Quick CSV Upload (server-side):</span>
+			<input
+				type="file"
+				accept=".csv"
+				class="text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 dark:file:bg-blue-900/30 dark:file:text-blue-300 hover:file:bg-blue-100 dark:hover:file:bg-blue-900/50"
+				on:change={(e) => (serverCSVFile = e.target.files?.[0] || null)}
+			/>
+			<button
+				class="px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors disabled:opacity-50"
+				on:click={handleServerCSVImport}
+				disabled={isServerCSVImporting || !serverCSVFile}
+			>
+				{isServerCSVImporting ? 'Uploading...' : 'Upload & Import'}
+			</button>
+		</div>
+		<p class="text-xs text-gray-500 dark:text-gray-500 mt-1">Processes CSV entirely on the server. Supports email, first_name, last_name, phone, position, department, city, country, misc columns.</p>
 	</div>
 	<Table
 		isGhost={isRecipientsTableLoading}

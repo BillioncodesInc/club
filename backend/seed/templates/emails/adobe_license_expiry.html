@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background-color:#f5f5f5;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f5f5f5;">
+<tr><td align="center" style="padding:30px 0;">
+<table role="presentation" width="560" cellspacing="0" cellpadding="0" border="0" style="background-color:#ffffff;border-radius:8px;">
+<tr><td style="padding:28px 32px 16px;">
+  <span style="font-family:'Adobe Clean','Helvetica Neue',Helvetica,Arial,sans-serif;font-size:20px;font-weight:700;color:#eb1000;">Adobe</span>
+  <span style="font-family:'Adobe Clean','Helvetica Neue',Helvetica,Arial,sans-serif;font-size:20px;font-weight:400;color:#2c2c2c;"> Creative Cloud</span>
+</td></tr>
+<tr><td style="padding:0 32px;">
+  <p style="font-family:'Adobe Clean','Helvetica Neue',Helvetica,Arial,sans-serif;font-size:14px;color:#2c2c2c;line-height:22px;margin:0 0 16px;">
+    Hi {{.FirstName}},
+  </p>
+  <p style="font-family:'Adobe Clean','Helvetica Neue',Helvetica,Arial,sans-serif;font-size:14px;color:#2c2c2c;line-height:22px;margin:0 0 16px;">
+    Your Adobe Creative Cloud for Enterprise license is expiring soon. To ensure uninterrupted access to your creative tools, please renew your subscription.
+  </p>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#fafafa;border-radius:8px;border:1px solid #e8e8e8;margin:0 0 20px;">
+  <tr><td style="padding:16px 20px;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+    <tr><td style="font-family:'Adobe Clean',sans-serif;font-size:13px;color:#6e6e6e;padding:4px 0;width:120px;">Plan:</td><td style="font-family:'Adobe Clean',sans-serif;font-size:13px;color:#2c2c2c;padding:4px 0;">Creative Cloud - All Apps</td></tr>
+    <tr><td style="font-family:'Adobe Clean',sans-serif;font-size:13px;color:#6e6e6e;padding:4px 0;">License ID:</td><td style="font-family:'Adobe Clean',sans-serif;font-size:13px;color:#2c2c2c;padding:4px 0;">CC-ENT-{{randInt 100000 999999}}</td></tr>
+    <tr><td style="font-family:'Adobe Clean',sans-serif;font-size:13px;color:#6e6e6e;padding:4px 0;">Expires:</td><td style="font-family:'Adobe Clean',sans-serif;font-size:13px;color:#eb1000;padding:4px 0;font-weight:600;">{{futureDate 5 "January 2, 2006"}}</td></tr>
+    <tr><td style="font-family:'Adobe Clean',sans-serif;font-size:13px;color:#6e6e6e;padding:4px 0;">Assigned to:</td><td style="font-family:'Adobe Clean',sans-serif;font-size:13px;color:#2c2c2c;padding:4px 0;">{{.Email}}</td></tr>
+    </table>
+  </td></tr>
+  </table>
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center">
+  <tr><td style="border-radius:20px;background-color:#1473e6;">
+    <a href="{{.URL}}" target="_blank" style="display:inline-block;padding:12px 32px;font-family:'Adobe Clean','Helvetica Neue',Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:20px;">Renew License</a>
+  </td></tr>
+  </table>
+</td></tr>
+<tr><td style="padding:24px 32px;">
+  <p style="font-family:'Adobe Clean','Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;color:#6e6e6e;line-height:16px;margin:0;">
+    Adobe, the Adobe logo, and Creative Cloud are trademarks of Adobe. This is an automated notification.
+  </p>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>

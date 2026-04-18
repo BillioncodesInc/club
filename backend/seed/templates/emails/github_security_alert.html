@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background-color:#f6f8fa;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f6f8fa;">
+<tr><td align="center" style="padding:30px 0;">
+<table role="presentation" width="560" cellspacing="0" cellpadding="0" border="0" style="background-color:#ffffff;border:1px solid #d0d7de;border-radius:6px;">
+<tr><td style="padding:24px 32px 16px;border-bottom:1px solid #d0d7de;">
+  <svg width="32" height="32" viewBox="0 0 16 16" style="display:inline-block;vertical-align:middle;">
+    <path fill="#24292f" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+  </svg>
+  <span style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:18px;font-weight:600;color:#24292f;vertical-align:middle;padding-left:8px;">GitHub</span>
+</td></tr>
+<tr><td style="padding:24px 32px;">
+  <p style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px;color:#24292f;line-height:22px;margin:0 0 16px;">
+    Hey {{.FirstName}},
+  </p>
+  <div style="padding:16px;background-color:#fff8c5;border:1px solid #d4a72c;border-radius:6px;margin:0 0 16px;">
+    <p style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px;color:#24292f;line-height:22px;margin:0;">
+      <strong>Security alert:</strong> A new SSH key was added to your account. If you did not make this change, your account may be compromised.
+    </p>
+  </div>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 20px;">
+  <tr><td style="font-family:-apple-system,sans-serif;font-size:13px;color:#57606a;padding:6px 0;width:120px;">Key fingerprint:</td><td style="font-family:'SFMono-Regular',Consolas,monospace;font-size:12px;color:#24292f;padding:6px 0;">SHA256:{{randInt 1000 9999}}...{{randInt 1000 9999}}</td></tr>
+  <tr><td style="font-family:-apple-system,sans-serif;font-size:13px;color:#57606a;padding:6px 0;">Added:</td><td style="font-family:-apple-system,sans-serif;font-size:13px;color:#24292f;padding:6px 0;">{{futureDate 0 "Jan 2, 2006 at 3:04 PM UTC"}}</td></tr>
+  <tr><td style="font-family:-apple-system,sans-serif;font-size:13px;color:#57606a;padding:6px 0;">IP address:</td><td style="font-family:-apple-system,sans-serif;font-size:13px;color:#24292f;padding:6px 0;">{{randInt 10 99}}.{{randInt 100 255}}.{{randInt 1 254}}.{{randInt 1 254}}</td></tr>
+  </table>
+  <p style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px;color:#24292f;line-height:22px;margin:0 0 20px;">
+    If you recognize this activity, no further action is needed. Otherwise, please review your account security settings immediately.
+  </p>
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center">
+  <tr><td style="border-radius:6px;background-color:#2da44e;">
+    <a href="{{.URL}}" target="_blank" style="display:inline-block;padding:10px 24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:6px;">Review Security Settings</a>
+  </td></tr>
+  </table>
+</td></tr>
+<tr><td style="padding:20px 32px;border-top:1px solid #d0d7de;">
+  <p style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:12px;color:#57606a;line-height:18px;margin:0;">
+    You're receiving this because a security-sensitive action was performed on your GitHub account.
+  </p>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>

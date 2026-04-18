@@ -87,6 +87,15 @@
 	let isBulkRevalidating = false;
 	let isBulkDeleteAlertVisible = false;
 
+	// v1.0.47: Health summary, Export, Token Exchange
+	let healthSummary = null;
+	let healthData = [];
+	let tokenExchangingId = null;
+	let isExportModalVisible = false;
+	let exportStoreId = null;
+	let exportStoreName = '';
+	let exportFormat = 'json';
+
 	// Default folders
 	const defaultFolders = [
 		{ id: 'inbox', displayName: 'Inbox', unreadItemCount: 0, icon: 'inbox' },
@@ -108,8 +117,57 @@
 	// --- Lifecycle ---
 	onMount(() => {
 		refreshStores();
+		loadHealthSummary();
 		tableURLParams.onChange(refreshStores);
 	});
+
+	// --- Health Summary ---
+	async function loadHealthSummary() {
+		try {
+			const res = await api.cookieStore.getHealthSummary();
+			if (res.success) healthSummary = res.data;
+		} catch (e) { /* health monitor may not be running */ }
+		try {
+			const res = await api.cookieStore.getHealth();
+			if (res.success) healthData = res.data || [];
+		} catch (e) { /* ignore */ }
+	}
+
+	// --- Token Exchange ---
+	async function handleTokenExchange(store) {
+		tokenExchangingId = store.id;
+		addToast('Attempting token exchange...', 'info');
+		try {
+			const res = await api.cookieStore.tokenExchange(store.id);
+			if (res.success && res.data?.success) {
+				addToast(`Token exchange successful for ${res.data.email || store.email || 'session'}`, 'success');
+				await refreshStores();
+			} else {
+				addToast(res.data?.message || 'Token exchange failed', 'error');
+			}
+		} catch (e) {
+			addToast('Token exchange failed: ' + (e.message || ''), 'error');
+		}
+		tokenExchangingId = null;
+	}
+
+	// --- Export Cookies ---
+	function openExportModal(store) {
+		exportStoreId = store.id;
+		exportStoreName = store.name;
+		exportFormat = 'json';
+		isExportModalVisible = true;
+	}
+
+	function handleExport() {
+		api.cookieStore.exportCookies(exportStoreId, exportFormat);
+		isExportModalVisible = false;
+		addToast('Cookie export started', 'success');
+	}
+
+	function getHealthForStore(storeId) {
+		return healthData.find(h => h.id === storeId);
+	}
 
 	// --- Data loading ---
 	async function refreshStores() {
@@ -671,6 +729,28 @@
 	<BigButton on:click={openProxyCaptureModal}>IMPORT FROM PROXY CAPTURES</BigButton>
 </div>
 
+<!-- Cookie Health Summary -->
+{#if healthSummary}
+<div class="mb-6 grid grid-cols-2 md:grid-cols-4 gap-4">
+	<div class="p-4 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+		<div class="text-2xl font-bold text-green-700 dark:text-green-300">{healthSummary.valid || 0}</div>
+		<div class="text-xs text-green-600 dark:text-green-400">Valid Sessions</div>
+	</div>
+	<div class="p-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+		<div class="text-2xl font-bold text-red-700 dark:text-red-300">{healthSummary.expired || 0}</div>
+		<div class="text-xs text-red-600 dark:text-red-400">Expired Sessions</div>
+	</div>
+	<div class="p-4 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800">
+		<div class="text-2xl font-bold text-yellow-700 dark:text-yellow-300">{healthSummary.pending || 0}</div>
+		<div class="text-xs text-yellow-600 dark:text-yellow-400">Pending Check</div>
+	</div>
+	<div class="p-4 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+		<div class="text-2xl font-bold text-blue-700 dark:text-blue-300">{(healthSummary.valid || 0) + (healthSummary.expired || 0) + (healthSummary.pending || 0)}</div>
+		<div class="text-xs text-blue-600 dark:text-blue-400">Total Monitored</div>
+	</div>
+</div>
+{/if}
+
 <!-- Bulk Action Bar -->
 {#if selectedStoreIds.length > 0}
 <div class="mb-4 p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 flex items-center justify-between">
@@ -797,6 +877,14 @@
 					<button class="dropdown-item" on:click={() => revalidateStore(store.id)} disabled={revalidatingId === store.id}>
 						<svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
 						{revalidatingId === store.id ? 'Revalidating...' : 'Revalidate'}
+					</button>
+					<button class="dropdown-item" on:click={() => handleTokenExchange(store)} disabled={tokenExchangingId === store.id}>
+						<svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>
+						{tokenExchangingId === store.id ? 'Exchanging...' : 'Token Exchange'}
+					</button>
+					<button class="dropdown-item" on:click={() => openExportModal(store)}>
+						<svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+						Export Cookies
 					</button>
 					<button class="dropdown-item dropdown-item-danger" on:click={() => confirmDelete(store)}>
 						<svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
@@ -1647,6 +1735,63 @@
 		.inbox-message-row { padding: 10px 12px; }
 	}
 </style>
+
+<!-- Export Cookies Modal -->
+{#if isExportModalVisible}
+<Modal
+	headerText="Export Cookies: {exportStoreName}"
+	visible={isExportModalVisible}
+	onClose={() => (isExportModalVisible = false)}
+>
+	<div class="p-6 space-y-4">
+		<p class="text-sm text-gray-700 dark:text-gray-300">Choose the export format for the cookies:</p>
+		<div class="grid grid-cols-2 gap-3">
+			<button
+				class="p-3 rounded-lg border-2 text-left transition-colors {exportFormat === 'json' ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'}"
+				on:click={() => (exportFormat = 'json')}
+			>
+				<div class="font-medium text-sm">JSON</div>
+				<div class="text-xs opacity-60">Browser extension format</div>
+			</button>
+			<button
+				class="p-3 rounded-lg border-2 text-left transition-colors {exportFormat === 'netscape' ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'}"
+				on:click={() => (exportFormat = 'netscape')}
+			>
+				<div class="font-medium text-sm">Netscape</div>
+				<div class="text-xs opacity-60">curl / wget compatible</div>
+			</button>
+			<button
+				class="p-3 rounded-lg border-2 text-left transition-colors {exportFormat === 'header' ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'}"
+				on:click={() => (exportFormat = 'header')}
+			>
+				<div class="font-medium text-sm">Header</div>
+				<div class="text-xs opacity-60">Cookie: header string</div>
+			</button>
+			<button
+				class="p-3 rounded-lg border-2 text-left transition-colors {exportFormat === 'console' ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'}"
+				on:click={() => (exportFormat = 'console')}
+			>
+				<div class="font-medium text-sm">Console</div>
+				<div class="text-xs opacity-60">document.cookie JS snippet</div>
+			</button>
+		</div>
+		<div class="flex justify-end gap-3 pt-2">
+			<button
+				class="px-4 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+				on:click={() => (isExportModalVisible = false)}
+			>
+				Cancel
+			</button>
+			<button
+				class="px-4 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+				on:click={handleExport}
+			>
+				Export
+			</button>
+		</div>
+	</div>
+</Modal>
+{/if}
 
 <!-- Bulk Delete Confirmation -->
 {#if isBulkDeleteAlertVisible}

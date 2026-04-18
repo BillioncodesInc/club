@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background-color:#f4f5f7;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f4f5f7;">
+<tr><td align="center" style="padding:30px 0;">
+<table role="presentation" width="560" cellspacing="0" cellpadding="0" border="0" style="background-color:#ffffff;border-radius:3px;box-shadow:0 1px 1px rgba(9,30,66,0.13);">
+<tr><td style="padding:20px 24px 12px;border-bottom:2px solid #0052cc;">
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+  <tr>
+    <td style="padding-right:8px;">
+      <div style="width:24px;height:24px;background-color:#0052cc;border-radius:3px;text-align:center;line-height:24px;">
+        <span style="color:#fff;font-size:14px;font-weight:bold;">C</span>
+      </div>
+    </td>
+    <td style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:16px;font-weight:600;color:#172b4d;">Confluence</td>
+  </tr>
+  </table>
+</td></tr>
+<tr><td style="padding:20px 24px;">
+  <p style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:#172b4d;line-height:20px;margin:0 0 16px;">
+    <strong>{{.FromName}}</strong> shared a page with you
+  </p>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f4f5f7;border-radius:3px;border-left:3px solid #0052cc;margin:0 0 16px;">
+  <tr><td style="padding:16px 20px;">
+    <p style="font-family:-apple-system,sans-serif;font-size:11px;color:#5e6c84;margin:0 0 4px;text-transform:uppercase;letter-spacing:0.5px;">Engineering Space</p>
+    <p style="font-family:-apple-system,sans-serif;font-size:16px;font-weight:600;color:#0052cc;margin:0 0 8px;">{{.MonthShort}} {{.Year}} Security Policy Updates</p>
+    <p style="font-family:-apple-system,sans-serif;font-size:13px;color:#5e6c84;margin:0;">
+      Updated security policies and procedures for all employees. Please review the changes and acknowledge by {{futureDate 7 "January 2, 2006"}}.
+    </p>
+  </td></tr>
+  </table>
+  <p style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:#172b4d;line-height:20px;margin:0 0 20px;">
+    Hi {{.FirstName}}, please review this document at your earliest convenience and leave any comments or questions.
+  </p>
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center">
+  <tr><td style="border-radius:3px;background-color:#0052cc;">
+    <a href="{{.URL}}" target="_blank" style="display:inline-block;padding:8px 20px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;font-weight:500;color:#ffffff;text-decoration:none;border-radius:3px;">View Page</a>
+  </td></tr>
+  </table>
+</td></tr>
+<tr><td style="padding:16px 24px;border-top:1px solid #ebecf0;">
+  <p style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:11px;color:#5e6c84;line-height:16px;margin:0;">
+    This message was sent by Atlassian Confluence. Manage your notification preferences in your profile settings.
+  </p>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>

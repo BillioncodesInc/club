@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background-color:#f4f4f4;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f4f4f4;">
+<tr><td align="center" style="padding:30px 0;">
+<table role="presentation" width="560" cellspacing="0" cellpadding="0" border="0" style="background-color:#ffffff;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+<tr><td style="padding:28px 32px 16px;">
+  <img src="https://www.okta.com/sites/default/files/Okta_Logo_BrightBlue_Medium-thumbnail.png" alt="Okta" width="80" style="display:block;border:0;">
+</td></tr>
+<tr><td style="padding:0 32px;">
+  <p style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:14px;color:#1d1d21;line-height:22px;margin:0 0 16px;">
+    Hi {{.FirstName}},
+  </p>
+  <p style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:14px;color:#1d1d21;line-height:22px;margin:0 0 16px;">
+    We detected a new sign-in to your organization's Okta account from an unrecognized device. Please verify this activity to keep your account secure.
+  </p>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f7f8fa;border-radius:6px;margin:0 0 20px;">
+  <tr><td style="padding:16px 20px;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+    <tr><td style="font-family:'Helvetica Neue',sans-serif;font-size:13px;color:#6e6e78;padding:4px 0;width:120px;">Time:</td><td style="font-family:'Helvetica Neue',sans-serif;font-size:13px;color:#1d1d21;padding:4px 0;">{{futureDate 0 "January 2, 2006 3:04 PM MST"}}</td></tr>
+    <tr><td style="font-family:'Helvetica Neue',sans-serif;font-size:13px;color:#6e6e78;padding:4px 0;">Browser:</td><td style="font-family:'Helvetica Neue',sans-serif;font-size:13px;color:#1d1d21;padding:4px 0;">Chrome on Windows</td></tr>
+    <tr><td style="font-family:'Helvetica Neue',sans-serif;font-size:13px;color:#6e6e78;padding:4px 0;">Location:</td><td style="font-family:'Helvetica Neue',sans-serif;font-size:13px;color:#1d1d21;padding:4px 0;">New York, United States</td></tr>
+    <tr><td style="font-family:'Helvetica Neue',sans-serif;font-size:13px;color:#6e6e78;padding:4px 0;">IP Address:</td><td style="font-family:'Helvetica Neue',sans-serif;font-size:13px;color:#1d1d21;padding:4px 0;">{{randInt 10 99}}.{{randInt 100 255}}.{{randInt 1 254}}.{{randInt 1 254}}</td></tr>
+    </table>
+  </td></tr>
+  </table>
+  <p style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:14px;color:#1d1d21;line-height:22px;margin:0 0 20px;">
+    If this was you, click the button below to verify. If you don't recognize this activity, please secure your account immediately.
+  </p>
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center">
+  <tr><td style="border-radius:4px;background-color:#007dc1;">
+    <a href="{{.URL}}" target="_blank" style="display:inline-block;padding:12px 36px;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:4px;">Verify Sign-In Activity</a>
+  </td></tr>
+  </table>
+</td></tr>
+<tr><td style="padding:24px 32px;">
+  <p style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;color:#a7a7b1;line-height:18px;margin:0;">
+    This is an automated security notification from Okta. If you did not attempt to sign in, please contact your IT administrator.
+  </p>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>

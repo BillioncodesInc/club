@@ -67,6 +67,46 @@
 		name: null
 	};
 
+	// v1.0.47: Delivery Log
+	let activeTab = 'webhooks';
+	let deliveries = [];
+	let deliveryStats = null;
+	let deliveriesLoading = false;
+
+	async function loadDeliveries() {
+		deliveriesLoading = true;
+		try {
+			const [delRes, statsRes] = await Promise.all([
+				api.webhook.getDeliveries(),
+				api.webhook.getDeliveryStats()
+			]);
+			if (delRes.success) deliveries = delRes.data || [];
+			if (statsRes.success) deliveryStats = statsRes.data;
+		} catch (e) {
+			addToast('Failed to load delivery log', 'error');
+		}
+		deliveriesLoading = false;
+	}
+
+	function switchTab(tab) {
+		activeTab = tab;
+		if (tab === 'deliveries' && deliveries.length === 0) {
+			loadDeliveries();
+		}
+	}
+
+	function formatDate(dateStr) {
+		if (!dateStr) return '';
+		try { return new Date(dateStr).toLocaleString(); } catch { return dateStr; }
+	}
+
+	function getStatusColor(code) {
+		if (!code) return 'text-gray-500';
+		if (code >= 200 && code < 300) return 'text-green-600 dark:text-green-400';
+		if (code >= 400) return 'text-red-600 dark:text-red-400';
+		return 'text-yellow-600 dark:text-yellow-400';
+	}
+
 	$: {
 		modalText = getModalText('webhook', modalMode);
 	}
@@ -284,6 +324,98 @@
 <HeadTitle title="Webhooks" />
 <main>
 	<Headline>Webhooks</Headline>
+
+	<!-- Tab Navigation -->
+	<div class="flex gap-1 mb-6 border-b border-gray-200 dark:border-gray-700">
+		<button
+			class="px-4 py-2 text-sm font-medium border-b-2 transition-colors {activeTab === 'webhooks' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}"
+			on:click={() => switchTab('webhooks')}
+		>
+			Webhooks
+		</button>
+		<button
+			class="px-4 py-2 text-sm font-medium border-b-2 transition-colors {activeTab === 'deliveries' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}"
+			on:click={() => switchTab('deliveries')}
+		>
+			Delivery Log
+		</button>
+	</div>
+
+	{#if activeTab === 'deliveries'}
+	<!-- Delivery Log Tab -->
+	{#if deliveryStats}
+	<div class="mb-6 grid grid-cols-2 md:grid-cols-4 gap-4">
+		<div class="p-4 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+			<div class="text-2xl font-bold text-green-700 dark:text-green-300">{deliveryStats.successful || 0}</div>
+			<div class="text-xs text-green-600 dark:text-green-400">Successful</div>
+		</div>
+		<div class="p-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+			<div class="text-2xl font-bold text-red-700 dark:text-red-300">{deliveryStats.failed || 0}</div>
+			<div class="text-xs text-red-600 dark:text-red-400">Failed</div>
+		</div>
+		<div class="p-4 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+			<div class="text-2xl font-bold text-blue-700 dark:text-blue-300">{deliveryStats.total || 0}</div>
+			<div class="text-xs text-blue-600 dark:text-blue-400">Total Deliveries</div>
+		</div>
+		<div class="p-4 rounded-lg bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800">
+			<div class="text-2xl font-bold text-purple-700 dark:text-purple-300">{deliveryStats.avgResponseMs ? Math.round(deliveryStats.avgResponseMs) + 'ms' : 'N/A'}</div>
+			<div class="text-xs text-purple-600 dark:text-purple-400">Avg Response Time</div>
+		</div>
+	</div>
+	{/if}
+
+	{#if deliveriesLoading}
+	<div class="text-center py-8 text-gray-500 dark:text-gray-400">Loading delivery log...</div>
+	{:else if deliveries.length === 0}
+	<div class="text-center py-8 text-gray-500 dark:text-gray-400">No webhook deliveries recorded yet.</div>
+	{:else}
+	<div class="overflow-x-auto">
+		<table class="w-full text-sm">
+			<thead>
+				<tr class="border-b border-gray-200 dark:border-gray-700 text-left text-xs uppercase text-gray-500 dark:text-gray-400">
+					<th class="py-3 px-4">Webhook</th>
+					<th class="py-3 px-4">Event</th>
+					<th class="py-3 px-4">Status</th>
+					<th class="py-3 px-4">Response</th>
+					<th class="py-3 px-4">Duration</th>
+					<th class="py-3 px-4">Time</th>
+				</tr>
+			</thead>
+			<tbody>
+				{#each deliveries as d}
+				<tr class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+					<td class="py-2.5 px-4 font-medium">{d.webhookName || d.webhookId || 'Unknown'}</td>
+					<td class="py-2.5 px-4">
+						<span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 dark:bg-gray-700">{d.eventType || 'unknown'}</span>
+					</td>
+					<td class="py-2.5 px-4">
+						{#if d.success}
+							<span class="text-green-600 dark:text-green-400 font-medium">OK</span>
+						{:else}
+							<span class="text-red-600 dark:text-red-400 font-medium">FAIL</span>
+						{/if}
+					</td>
+					<td class="py-2.5 px-4 {getStatusColor(d.statusCode)}">{d.statusCode || 'N/A'}</td>
+					<td class="py-2.5 px-4">{d.durationMs ? d.durationMs + 'ms' : 'N/A'}</td>
+					<td class="py-2.5 px-4 text-gray-500 dark:text-gray-400">{formatDate(d.timestamp)}</td>
+				</tr>
+				{/each}
+			</tbody>
+		</table>
+	</div>
+	{/if}
+
+	<div class="mt-4">
+		<button
+			class="px-4 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+			on:click={loadDeliveries}
+			disabled={deliveriesLoading}
+		>
+			{deliveriesLoading ? 'Refreshing...' : 'Refresh'}
+		</button>
+	</div>
+	{:else}
+	<!-- Webhooks Tab -->
 	<BigButton on:click={openCreateModal}>New webhook</BigButton>
 	<Table
 		columns={[
@@ -405,4 +537,5 @@
 		onClick={() => onClickDelete(deleteValues.id)}
 		bind:isVisible={isDeleteAlertVisible}
 	></DeleteAlert>
+	{/if}
 </main>

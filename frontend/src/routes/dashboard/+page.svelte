@@ -186,6 +186,20 @@
 			}
 		}
 	};
+
+	// v1.0.47: Enhanced Dashboard Analytics (derived metrics)
+	$: totalCampaigns = active + scheduled + finished;
+	$: avgClickRate = campaignStats.length > 0
+		? Math.round(campaignStats.reduce((sum, s) => sum + (s.websiteLoaded || 0), 0) / Math.max(campaignStats.reduce((sum, s) => sum + (s.emailsSent || 0), 0), 1) * 100)
+		: 0;
+	$: avgSubmitRate = campaignStats.length > 0
+		? Math.round(campaignStats.reduce((sum, s) => sum + (s.submittedData || 0), 0) / Math.max(campaignStats.reduce((sum, s) => sum + (s.websiteLoaded || 0), 0), 1) * 100)
+		: 0;
+	$: totalEmailsSent = campaignStats.reduce((sum, s) => sum + (s.emailsSent || 0), 0);
+	$: totalClicks = campaignStats.reduce((sum, s) => sum + (s.websiteLoaded || 0), 0);
+	$: totalSubmissions = campaignStats.reduce((sum, s) => sum + (s.submittedData || 0), 0);
+	$: totalReported = campaignStats.reduce((sum, s) => sum + (s.reported || 0), 0);
+	$: reportRate = totalEmailsSent > 0 ? Math.round(totalReported / totalEmailsSent * 100) : 0;
 </script>
 
 <HeadTitle title="Dashboard" />
@@ -353,6 +367,43 @@
 			</StatsCard>
 		</a>
 	</div>
+
+	<!-- v1.0.47: Enhanced Analytics Summary -->
+	{#if campaignStats.length > 0}
+	<div class="mb-8">
+		<SubHeadline>Aggregate Analytics</SubHeadline>
+		<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3 mt-3">
+			<div class="p-3 rounded-lg bg-white dark:bg-gray-900/80 shadow-sm dark:shadow-none dark:ring-1 dark:ring-gray-600/30 text-center">
+				<div class="text-2xl font-bold text-blue-600 dark:text-blue-400">{totalCampaigns}</div>
+				<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">Total Campaigns</div>
+			</div>
+			<div class="p-3 rounded-lg bg-white dark:bg-gray-900/80 shadow-sm dark:shadow-none dark:ring-1 dark:ring-gray-600/30 text-center">
+				<div class="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{totalEmailsSent.toLocaleString()}</div>
+				<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">Emails Sent</div>
+			</div>
+			<div class="p-3 rounded-lg bg-white dark:bg-gray-900/80 shadow-sm dark:shadow-none dark:ring-1 dark:ring-gray-600/30 text-center">
+				<div class="text-2xl font-bold text-amber-600 dark:text-amber-400">{totalClicks.toLocaleString()}</div>
+				<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">Total Clicks</div>
+			</div>
+			<div class="p-3 rounded-lg bg-white dark:bg-gray-900/80 shadow-sm dark:shadow-none dark:ring-1 dark:ring-gray-600/30 text-center">
+				<div class="text-2xl font-bold text-red-600 dark:text-red-400">{totalSubmissions.toLocaleString()}</div>
+				<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">Submissions</div>
+			</div>
+			<div class="p-3 rounded-lg bg-white dark:bg-gray-900/80 shadow-sm dark:shadow-none dark:ring-1 dark:ring-gray-600/30 text-center">
+				<div class="text-2xl font-bold text-green-600 dark:text-green-400">{avgClickRate}%</div>
+				<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">Avg Click Rate</div>
+			</div>
+			<div class="p-3 rounded-lg bg-white dark:bg-gray-900/80 shadow-sm dark:shadow-none dark:ring-1 dark:ring-gray-600/30 text-center">
+				<div class="text-2xl font-bold text-purple-600 dark:text-purple-400">{avgSubmitRate}%</div>
+				<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">Avg Submit Rate</div>
+			</div>
+			<div class="p-3 rounded-lg bg-white dark:bg-gray-900/80 shadow-sm dark:shadow-none dark:ring-1 dark:ring-gray-600/30 text-center">
+				<div class="text-2xl font-bold text-teal-600 dark:text-teal-400">{reportRate}%</div>
+				<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">Report Rate</div>
+			</div>
+		</div>
+	</div>
+	{/if}
 
 	<SubHeadline>{contextCompanyName ? 'Campaign Trends' : 'Shared Campaign Trends'}</SubHeadline>
 	<div class="mb-8 w-full min-h-[300px]">

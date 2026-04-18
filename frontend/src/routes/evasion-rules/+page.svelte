@@ -1,15 +1,15 @@
 <script>
 	import { onMount, onDestroy } from 'svelte';
-	import { api } from '$lib/api/api.js';
+	import { api } from '$lib/api/apiProxy.js';
 	import HeadTitle from '$lib/components/HeadTitle.svelte';
 	import Headline from '$lib/components/Headline.svelte';
 	import BigButton from '$lib/components/BigButton.svelte';
-	import Modal from '$lib/components/modal/Modal.svelte';
+	import Modal from '$lib/components/Modal.svelte';
 	import FormGrid from '$lib/components/form/FormGrid.svelte';
 	import FormRow from '$lib/components/form/FormRow.svelte';
 	import FormInput from '$lib/components/form/FormInput.svelte';
 	import FormTextarea from '$lib/components/form/FormTextarea.svelte';
-	import { addToast } from '$lib/service/toast.js';
+	import { addToast } from '$lib/store/toast';
 
 	let rules = [];
 	let rewriteTemplates = [];
@@ -286,7 +286,7 @@
 				<FormTextarea bind:value={newRule.triggerPaths} placeholder=".*&#10;/login.*" rows={2} />
 			</FormRow>
 			<FormRow label="JavaScript" required description="The JS code to inject into matching pages.">
-				<FormTextarea bind:value={newRule.script} placeholder="(function(){ /* your code */ })();" rows={10} />
+				<FormTextarea bind:value={newRule.script} placeholder={'(function(){ /* your code */ })();'} rows={10} />
 			</FormRow>
 		</FormGrid>
 		<div class="flex justify-end gap-3 mt-4">
