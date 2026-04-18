@@ -34,6 +34,7 @@ type Repositories struct {
 	OpenGraphConfig   *repository.OpenGraphConfig
 	CookieStore        *repository.CookieStore
 	CookieStoreMessage *repository.CookieStoreMessage
+	OpenRedirect       *repository.OpenRedirect
 }
 
 // NewRepositories creates a collection of repositories
@@ -69,5 +70,6 @@ func NewRepositories(
 		OpenGraphConfig:   &repository.OpenGraphConfig{DB: db},
 		CookieStore:        &repository.CookieStore{DB: db},
 		CookieStoreMessage: &repository.CookieStoreMessage{DB: db},
+		OpenRedirect:       &repository.OpenRedirect{DB: db},
 	}
 }

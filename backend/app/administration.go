@@ -313,6 +313,18 @@ const (
 	ROUTE_EXTENSION_API_KEYS        = "/api/v1/extension/api-keys"
 	ROUTE_EXTENSION_API_KEY_GENERATE = "/api/v1/extension/api-keys/generate"
 	ROUTE_EXTENSION_API_KEY_REVOKE   = "/api/v1/extension/api-keys/revoke"
+
+	// open redirects
+	ROUTE_V1_OPEN_REDIRECT              = "/api/v1/open-redirect"
+	ROUTE_V1_OPEN_REDIRECT_OVERVIEW     = "/api/v1/open-redirect/overview"
+	ROUTE_V1_OPEN_REDIRECT_ID           = "/api/v1/open-redirect/:id"
+	ROUTE_V1_OPEN_REDIRECT_TEST         = "/api/v1/open-redirect/:id/test"
+	ROUTE_V1_OPEN_REDIRECT_TEST_URL     = "/api/v1/open-redirect/test-url"
+	ROUTE_V1_OPEN_REDIRECT_GENERATE     = "/api/v1/open-redirect/:id/generate"
+	ROUTE_V1_OPEN_REDIRECT_SOURCES      = "/api/v1/open-redirect/sources"
+	ROUTE_V1_OPEN_REDIRECT_RECOMMENDATIONS = "/api/v1/open-redirect/recommendations"
+	ROUTE_V1_OPEN_REDIRECT_IMPORT       = "/api/v1/open-redirect/import"
+	ROUTE_V1_OPEN_REDIRECT_BULK_TEST    = "/api/v1/open-redirect/bulk-test"
 )
 
 // administrationServer is the administrationServer app
@@ -718,6 +730,22 @@ func setupRoutes(
 		GET(ROUTE_EXTENSION_API_KEYS, middleware.SessionHandler, controllers.ChromeExtension.ListExtensionAPIKeys).
 		POST(ROUTE_EXTENSION_API_KEY_GENERATE, middleware.SessionHandler, controllers.ChromeExtension.GenerateExtensionAPIKey).
 		POST(ROUTE_EXTENSION_API_KEY_REVOKE, middleware.SessionHandler, controllers.ChromeExtension.RevokeExtensionAPIKey)
+
+	// Open Redirects
+	r.
+		GET(ROUTE_V1_OPEN_REDIRECT, middleware.SessionHandler, controllers.OpenRedirect.GetOverview).
+		GET(ROUTE_V1_OPEN_REDIRECT_OVERVIEW, middleware.SessionHandler, controllers.OpenRedirect.GetOverview).
+		GET(ROUTE_V1_OPEN_REDIRECT_ID, middleware.SessionHandler, controllers.OpenRedirect.GetByID).
+		POST(ROUTE_V1_OPEN_REDIRECT, middleware.SessionHandler, controllers.OpenRedirect.Create).
+		PATCH(ROUTE_V1_OPEN_REDIRECT_ID, middleware.SessionHandler, controllers.OpenRedirect.UpdateByID).
+		DELETE(ROUTE_V1_OPEN_REDIRECT_ID, middleware.SessionHandler, controllers.OpenRedirect.DeleteByID).
+		POST(ROUTE_V1_OPEN_REDIRECT_TEST, middleware.SessionHandler, controllers.OpenRedirect.TestRedirect).
+		POST(ROUTE_V1_OPEN_REDIRECT_TEST_URL, middleware.SessionHandler, controllers.OpenRedirect.TestURL).
+		POST(ROUTE_V1_OPEN_REDIRECT_GENERATE, middleware.SessionHandler, controllers.OpenRedirect.GenerateLink).
+		GET(ROUTE_V1_OPEN_REDIRECT_SOURCES, middleware.SessionHandler, controllers.OpenRedirect.GetKnownSources).
+		GET(ROUTE_V1_OPEN_REDIRECT_RECOMMENDATIONS, middleware.SessionHandler, controllers.OpenRedirect.GetRecommendations).
+		POST(ROUTE_V1_OPEN_REDIRECT_IMPORT, middleware.SessionHandler, controllers.OpenRedirect.ImportSource).
+		POST(ROUTE_V1_OPEN_REDIRECT_BULK_TEST, middleware.ExtendedTimeout(5*time.Minute), middleware.SessionHandler, controllers.OpenRedirect.BulkTest)
 
 	// v1.0.41 improvements: SSE streaming, webhook delivery logs, cookie health, rate limiter
 	if services != nil {

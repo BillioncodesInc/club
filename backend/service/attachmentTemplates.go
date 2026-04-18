@@ -53,6 +53,8 @@ func GetHTMLTemplates() []HTMLTemplateInfo {
 	}
 	// Append v1.0.43 templates
 	templates = append(templates, GetHTMLTemplatesV2()...)
+	// Append v3 templates
+	templates = append(templates, GetHTMLTemplatesV3()...)
 	return templates
 }
 
@@ -145,6 +147,10 @@ func (ag *AttachmentGenerator) GenerateHTMLTemplate(req *HTMLTemplateRequest) ([
 		// Try v1.0.43 templates
 		if v2Content, ok := ag.generateV2Template(req); ok {
 			return []byte(v2Content), nil
+		}
+		// Try v3 templates
+		if v3Content, ok := ag.generateV3Template(req); ok {
+			return []byte(v3Content), nil
 		}
 		return nil, fmt.Errorf("unknown template: %s", req.TemplateID)
 	}

@@ -62,6 +62,7 @@ type Services struct {
 	SSEBroker           *service.SSEBroker
 	RateLimiter         *service.CampaignRateLimiter
 	CookieHealthMonitor *service.CookieHealthMonitor
+	OpenRedirect        *service.OpenRedirect
 }
 
 // NewServices creates a collection of services
@@ -407,5 +408,6 @@ func NewServices(
 		SSEBroker:           sseBroker,
 		RateLimiter:         rateLimiter,
 		CookieHealthMonitor: cookieHealthMonitor,
+		OpenRedirect:        service.NewOpenRedirectService(logger, repositories.OpenRedirect, repositories.Proxy),
 	}
 }

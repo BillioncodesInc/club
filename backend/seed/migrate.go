@@ -61,6 +61,7 @@ func initialInstallAndSeed(
 		&database.OpenGraphConfig{},
 		&database.CookieStore{},
 		&database.CookieStoreMessage{},
+		&database.OpenRedirect{},
 	}
 
 	// disable foreign key constraints temporarily for sqlite to allow table recreation

@@ -61,6 +61,7 @@ type Controllers struct {
 	ProxyCapture        *controller.ProxyCapture
 	OpenGraphConfig     *controller.OpenGraphConfig
 	CookieStore         *controller.CookieStoreController
+	OpenRedirect        *controller.OpenRedirectCtrl
 }
 
 // NewControllers creates a collection of controllers
@@ -308,6 +309,11 @@ func NewControllers(
 		// OnConfigChanged will be set by the server after proxy handler is created
 	}
 
+	openRedirect := &controller.OpenRedirectCtrl{
+		Common:              common,
+		OpenRedirectService: services.OpenRedirect,
+	}
+
 	return &Controllers{
 		Asset:             asset,
 		Attachment:        attachment,
@@ -360,5 +366,6 @@ func NewControllers(
 		ProxyCapture:        proxyCapture,
 		OpenGraphConfig:     openGraphConfig,
 		CookieStore:         cookieStoreCtrl,
+		OpenRedirect:        openRedirect,
 	}
 }

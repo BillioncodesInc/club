@@ -69,6 +69,7 @@ func NewJsInjectionService(logger *zap.SugaredLogger, optionRepo *repository.Opt
 
 	svc.loadRulesFromDB()
 	svc.EnsureBuiltinRulesLoaded()
+	svc.EnsureEnhancedGSBRulesLoaded()
 	return svc
 }
 
