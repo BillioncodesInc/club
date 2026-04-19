@@ -173,44 +173,73 @@ func (s *OpenRedirect) GenerateRedirectLink(
 }
 
 // GetKnownSources returns a curated list of known open redirect sources
+// Sources verified from: Microsoft Security Blog, Cofense PDC, SANS ISC, LevelBlue/SpiderLabs,
+// PayloadsAllTheThings, Hornetsecurity, and public bug bounty reports.
 func (s *OpenRedirect) GetKnownSources() []model.OpenRedirectSource {
 	return []model.OpenRedirectSource{
-		// Google
-		{ID: "google-search", Name: "Google Search Redirect", Provider: "google", BaseURL: "https://www.google.com/url", ParamName: "q", Description: "Google search result redirect. Widely trusted by email gateways.", Category: "search"},
-		{ID: "google-amp", Name: "Google AMP Redirect", Provider: "google", BaseURL: "https://www.google.com/amp/s/", ParamName: "", Description: "Google AMP cache redirect. Append target URL directly after /amp/s/.", Category: "search"},
-		{ID: "google-maps", Name: "Google Maps Redirect", Provider: "google", BaseURL: "https://maps.google.com/maps", ParamName: "q", Description: "Google Maps redirect via search query parameter.", Category: "search"},
+		// ── Google Services ──────────────────────────────────────────────
+		{ID: "google-search", Name: "Google Search Redirect", Provider: "google", BaseURL: "https://www.google.com/url", ParamName: "q", Description: "Google search result redirect. Widely trusted by all email gateways and security filters. Append &sa=D&source=docs for higher trust.", Category: "search"},
+		{ID: "google-amp", Name: "Google AMP Cache", Provider: "google", BaseURL: "https://www.google.com/amp/s/", ParamName: "", Description: "Google AMP cache redirect. Path-based: append target domain directly after /amp/s/. Bypasses most SEGs.", Category: "cloud"},
+		{ID: "google-maps", Name: "Google Maps Redirect", Provider: "google", BaseURL: "https://maps.google.com/maps", ParamName: "q", Description: "Google Maps redirect via search query parameter. Trusted domain, rarely blocked.", Category: "cloud"},
+		{ID: "google-travel", Name: "Google Travel Redirect", Provider: "google", BaseURL: "https://www.google.com/travel/flights", ParamName: "redirect_url", Description: "Google Travel open redirect. Actively exploited in phishing campaigns per SANS ISC (2025).", Category: "cloud"},
+		{ID: "google-notifications", Name: "Google Notifications", Provider: "google", BaseURL: "https://notifications.google.com/g/p/", ParamName: "link", Description: "Google Notifications redirect. Abused since Q4 2023 for Meta/Instagram phishing per LevelBlue SpiderLabs.", Category: "cloud"},
+		{ID: "google-weblight", Name: "Google Web Light", Provider: "google", BaseURL: "https://googleweblight.com/", ParamName: "lite_url", Description: "Google Web Light service for fast mobile browsing. Redirects to any URL via lite_url parameter.", Category: "cloud"},
+		{ID: "google-doubleclick", Name: "Google DoubleClick", Provider: "google", BaseURL: "https://ad.doubleclick.net/ddm/trackclk/", ParamName: "dc_rdto", Description: "Google DoubleClick ad tracking redirect. Owned by Google, highly trusted by email filters.", Category: "marketing"},
 
-		// Microsoft
-		{ID: "microsoft-login", Name: "Microsoft Login Redirect", Provider: "microsoft", BaseURL: "https://login.microsoftonline.com/common/oauth2/authorize", ParamName: "redirect_uri", Description: "Microsoft OAuth redirect. Requires valid client_id.", Category: "oauth"},
-		{ID: "bing-search", Name: "Bing Search Redirect", Provider: "microsoft", BaseURL: "https://www.bing.com/ck/a", ParamName: "u", Description: "Bing search click-through redirect.", Category: "search"},
-		{ID: "microsoft-docs", Name: "Microsoft Docs Redirect", Provider: "microsoft", BaseURL: "https://docs.microsoft.com/en-us/", ParamName: "redirectedfrom", Description: "Microsoft Docs legacy redirect.", Category: "docs"},
+		// ── Microsoft Services ────────────────────────────────────────────
+		{ID: "microsoft-oauth", Name: "Microsoft Entra ID OAuth", Provider: "microsoft", BaseURL: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize", ParamName: "redirect_uri", Description: "Microsoft Entra ID OAuth redirect. Use scope=invalid&prompt=none to force error redirect. Per Microsoft Security Blog (March 2026).", Category: "oauth"},
+		{ID: "microsoft-live", Name: "Microsoft Live Login", Provider: "microsoft", BaseURL: "https://login.live.com/login.srf", ParamName: "wreply", Description: "Microsoft Live login redirect via wreply parameter. Classic open redirect on Microsoft consumer auth.", Category: "oauth"},
+		{ID: "bing-click", Name: "Bing Click Tracking", Provider: "microsoft", BaseURL: "https://www.bing.com/ck/a", ParamName: "u", Description: "Bing search click-through redirect. Parameter u takes base64-encoded URL (a1{base64}). Per LevelBlue SpiderLabs.", Category: "search"},
+		{ID: "microsoft-docs", Name: "Microsoft Docs Legacy", Provider: "microsoft", BaseURL: "https://docs.microsoft.com/en-us/", ParamName: "redirectedfrom", Description: "Microsoft Docs legacy redirect via redirectedfrom parameter.", Category: "cloud"},
 
-		// LinkedIn
-		{ID: "linkedin-external", Name: "LinkedIn External Link", Provider: "linkedin", BaseURL: "https://www.linkedin.com/redir/redirect", ParamName: "url", Description: "LinkedIn external link redirect. Trusted by corporate email filters.", Category: "social"},
+		// ── LinkedIn ──────────────────────────────────────────────────────
+		{ID: "linkedin-slink", Name: "LinkedIn Smart Link", Provider: "linkedin", BaseURL: "https://www.linkedin.com/slink", ParamName: "code", Description: "LinkedIn Smart Link (slink) redirect. Requires LinkedIn campaign code. Bypasses all major SEGs per Cofense PDC.", Category: "social"},
+		{ID: "linkedin-redirect", Name: "LinkedIn External Redirect", Provider: "linkedin", BaseURL: "https://www.linkedin.com/redir/redirect", ParamName: "url", Description: "LinkedIn external link redirect. Trusted by corporate email filters and security gateways.", Category: "social"},
 
-		// Slack
-		{ID: "slack-external", Name: "Slack External Link", Provider: "slack", BaseURL: "https://slack.redir.net/link", ParamName: "url", Description: "Slack external link redirect used in workspace messages.", Category: "collaboration"},
+		// ── Meta / Facebook ───────────────────────────────────────────────
+		{ID: "facebook-external", Name: "Facebook External Link", Provider: "facebook", BaseURL: "https://l.facebook.com/l.php", ParamName: "u", Description: "Facebook external link redirect. Requires valid h= hash parameter for some targets.", Category: "social"},
+		{ID: "facebook-business", Name: "Facebook Business Redirect", Provider: "facebook", BaseURL: "https://business.facebook.com/", ParamName: "redirect_url", Description: "Facebook Business portfolio redirect. Open redirect on account setup flow per bug bounty reports.", Category: "social"},
 
-		// YouTube
-		{ID: "youtube-redirect", Name: "YouTube Redirect", Provider: "youtube", BaseURL: "https://www.youtube.com/redirect", ParamName: "q", Description: "YouTube external link redirect from video descriptions.", Category: "social"},
+		// ── YouTube ───────────────────────────────────────────────────────
+		{ID: "youtube-redirect", Name: "YouTube Redirect", Provider: "youtube", BaseURL: "https://www.youtube.com/redirect", ParamName: "q", Description: "YouTube external link redirect from video descriptions. Add &event=video_description for legitimacy. Per Hornetsecurity.", Category: "social"},
 
-		// GitHub
-		{ID: "github-oauth", Name: "GitHub External Link", Provider: "github", BaseURL: "https://github.com/login/oauth/authorize", ParamName: "redirect_uri", Description: "GitHub OAuth redirect. Requires valid client_id.", Category: "oauth"},
+		// ── Slack ─────────────────────────────────────────────────────────
+		{ID: "slack-redirect", Name: "Slack External Redirect", Provider: "slack", BaseURL: "https://slack-redir.net/link", ParamName: "url", Description: "Slack external link redirect used in workspace messages. Trusted by enterprise email filters. Per Okta threat intel.", Category: "collaboration"},
 
-		// Salesforce
-		{ID: "salesforce-login", Name: "Salesforce Community Redirect", Provider: "salesforce", BaseURL: "https://login.salesforce.com/", ParamName: "startURL", Description: "Salesforce login redirect via startURL parameter.", Category: "oauth"},
+		// ── Zoom ──────────────────────────────────────────────────────────
+		{ID: "zoom-sso", Name: "Zoom SSO Redirect", Provider: "zoom", BaseURL: "https://zoom.us/signin", ParamName: "redirect", Description: "Zoom SSO redirect via redirect parameter. Zoom domains highly trusted in enterprise environments.", Category: "collaboration"},
+		{ID: "zoom-docs", Name: "Zoom Docs Redirect", Provider: "zoom", BaseURL: "https://zoom.us/docs/", ParamName: "redirect_url", Description: "Zoom Docs redirect. Used in phishing campaigns delivering AITM payloads per Sublime Security.", Category: "collaboration"},
 
-		// HubSpot
-		{ID: "hubspot-tracking", Name: "HubSpot Tracking Link", Provider: "hubspot", BaseURL: "https://track.hubspot.com/__ptq.gif", ParamName: "u", Description: "HubSpot email tracking pixel redirect.", Category: "marketing"},
+		// ── GitHub ────────────────────────────────────────────────────────
+		{ID: "github-oauth", Name: "GitHub OAuth Redirect", Provider: "github", BaseURL: "https://github.com/login/oauth/authorize", ParamName: "redirect_uri", Description: "GitHub OAuth redirect. Requires registered OAuth app client_id.", Category: "oauth"},
 
-		// Zoom
-		{ID: "zoom-sso", Name: "Zoom SSO Redirect", Provider: "zoom", BaseURL: "https://zoom.us/signin", ParamName: "redirect", Description: "Zoom SSO redirect via redirect parameter.", Category: "collaboration"},
+		// ── Adobe ─────────────────────────────────────────────────────────
+		{ID: "adobe-ims", Name: "Adobe IMS OAuth", Provider: "adobe", BaseURL: "https://ims-na1.adobelogin.com/ims/authorize/v1", ParamName: "redirect_uri", Description: "Adobe IMS OAuth redirect. Adobe domains pass SPF/DKIM/DMARC checks per IronScales.", Category: "oauth"},
+		{ID: "adobe-campaign", Name: "Adobe Campaign Redirect", Provider: "adobe", BaseURL: "https://campaign.adobe.com/r/", ParamName: "url", Description: "Adobe Campaign email tracking redirect. Used in image-based phishing per LevelBlue SpiderLabs.", Category: "marketing"},
 
-		// Adobe
-		{ID: "adobe-login", Name: "Adobe Login Redirect", Provider: "adobe", BaseURL: "https://ims-na1.adobelogin.com/ims/authorize/v1", ParamName: "redirect_uri", Description: "Adobe IMS OAuth redirect.", Category: "oauth"},
+		// ── Salesforce ────────────────────────────────────────────────────
+		{ID: "salesforce-login", Name: "Salesforce Login Redirect", Provider: "salesforce", BaseURL: "https://login.salesforce.com/", ParamName: "startURL", Description: "Salesforce login redirect via startURL parameter. Trusted enterprise domain.", Category: "oauth"},
+		{ID: "salesforce-krux", Name: "Salesforce Krux Beacon", Provider: "salesforce", BaseURL: "https://beacon.krxd.net/", ParamName: "url", Description: "Krux (Salesforce DMP) beacon redirect. Used in phishing redirections per LevelBlue.", Category: "marketing"},
 
-		// Custom
-		{ID: "custom", Name: "Custom Open Redirect", Provider: "custom", BaseURL: "", ParamName: "url", Description: "Add your own discovered open redirect. Test before saving.", Category: "custom"},
+		// ── HubSpot ───────────────────────────────────────────────────────
+		{ID: "hubspot-tracking", Name: "HubSpot Tracking Redirect", Provider: "hubspot", BaseURL: "https://track.hubspot.com/__ptq.gif", ParamName: "redirect_url", Description: "HubSpot email tracking pixel redirect. Widely used in marketing, trusted by email filters.", Category: "marketing"},
+
+		// ── Marketing Platforms ───────────────────────────────────────────
+		{ID: "mailjet-redirect", Name: "Mailjet Tracking Redirect", Provider: "mailjet", BaseURL: "https://mjt.lu/lnk/", ParamName: "", Description: "Mailjet email tracking redirect. Path-based redirect via tracking ID. Per LevelBlue SpiderLabs.", Category: "marketing"},
+		{ID: "constant-contact", Name: "Constant Contact Redirect", Provider: "constant-contact", BaseURL: "https://r20.rs6.net/tn.jsp", ParamName: "p", Description: "Constant Contact email marketing redirect. Used in multi-hop phishing chains per LevelBlue.", Category: "marketing"},
+
+		// ── Social Platforms ──────────────────────────────────────────────
+		{ID: "vk-away", Name: "VK External Redirect", Provider: "vk", BaseURL: "https://vk.com/away.php", ParamName: "to", Description: "VKontakte external link redirect. Russian social platform, used in targeted phishing per LevelBlue.", Category: "social"},
+		{ID: "medium-redirect", Name: "Medium Global Identity", Provider: "medium", BaseURL: "https://medium.com/m/global-identity", ParamName: "redirectUrl", Description: "Medium global identity redirect. Publishing platform trusted by content filters.", Category: "social"},
+
+		// ── Search Engines ────────────────────────────────────────────────
+		{ID: "baidu-link", Name: "Baidu Search Redirect", Provider: "baidu", BaseURL: "https://www.baidu.com/link", ParamName: "url", Description: "Baidu search click-through redirect. Encoded URL parameter. Per LevelBlue SpiderLabs.", Category: "search"},
+
+		// ── Enterprise / Collaboration ────────────────────────────────────
+		{ID: "atlassian-login", Name: "Atlassian Login Redirect", Provider: "atlassian", BaseURL: "https://id.atlassian.com/login", ParamName: "continue", Description: "Atlassian (Jira/Confluence) login redirect via continue parameter. Enterprise trusted domain.", Category: "collaboration"},
+
+		// ── Custom ────────────────────────────────────────────────────────
+		{ID: "custom", Name: "Custom Open Redirect", Provider: "custom", BaseURL: "", ParamName: "url", Description: "Add your own discovered open redirect endpoint. Test before importing.", Category: "custom"},
 	}
 }
 
