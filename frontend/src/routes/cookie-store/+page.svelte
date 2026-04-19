@@ -96,6 +96,128 @@
 	let exportStoreName = '';
 	let exportFormat = 'json';
 
+	// --- OWA Theme System ---
+	let owaTheme = 'blue'; // blue, dark, teal, purple, orange, light
+	let owaBgImage = 'none'; // none, mountains, ocean, flowers, abstract, sunset, forest, city, northern-lights, desert, aurora
+	let owaShowSettings = false;
+	let owaFocusedTab = 'focused'; // focused, other
+	let owaDraftSubject = '';
+	let owaDraftBody = '';
+	let owaDraftTo = '';
+	let owaShowCompose = false;
+	let owaCachedInbox = {}; // { [storeId]: { messages, folders, timestamp } }
+
+	const owaThemes = {
+		blue: { name: 'Blue', headerBg: 'linear-gradient(135deg, #0078d4 0%, #106ebe 100%)', accent: '#0078d4', sidebarActive: '#e6f2ff', sidebarActiveText: '#0078d4', sidebarActiveBorder: '#0078d4' },
+		dark: { name: 'Dark', headerBg: 'linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%)', accent: '#0078d4', sidebarActive: 'rgba(0,120,212,0.15)', sidebarActiveText: '#60a5fa', sidebarActiveBorder: '#60a5fa' },
+		teal: { name: 'Teal', headerBg: 'linear-gradient(135deg, #008272 0%, #00a38d 100%)', accent: '#008272', sidebarActive: '#e6f7f5', sidebarActiveText: '#008272', sidebarActiveBorder: '#008272' },
+		purple: { name: 'Purple', headerBg: 'linear-gradient(135deg, #5c2d91 0%, #7b3fb5 100%)', accent: '#5c2d91', sidebarActive: '#f3eaff', sidebarActiveText: '#5c2d91', sidebarActiveBorder: '#5c2d91' },
+		orange: { name: 'Orange', headerBg: 'linear-gradient(135deg, #ca5010 0%, #e06a2e 100%)', accent: '#ca5010', sidebarActive: '#fff4eb', sidebarActiveText: '#ca5010', sidebarActiveBorder: '#ca5010' },
+		light: { name: 'Light', headerBg: 'linear-gradient(135deg, #f0f0f0 0%, #e0e0e0 100%)', accent: '#0078d4', sidebarActive: '#e6f2ff', sidebarActiveText: '#0078d4', sidebarActiveBorder: '#0078d4' }
+	};
+
+	const owaBgImages = [
+		{ id: 'none', name: 'None', css: 'none' },
+		{ id: 'mountains', name: 'Mountains', css: 'linear-gradient(135deg, rgba(30,64,175,0.85), rgba(59,130,246,0.85)), url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 1200 200\'%3E%3Cpath d=\'M0 200L200 60L400 140L600 20L800 120L1000 40L1200 160L1200 200Z\' fill=\'%23ffffff20\'/%3E%3Cpath d=\'M0 200L150 100L350 160L550 60L750 140L950 80L1200 180L1200 200Z\' fill=\'%23ffffff10\'/%3E%3C/svg%3E")' },
+		{ id: 'ocean', name: 'Ocean', css: 'linear-gradient(135deg, rgba(0,100,180,0.9), rgba(0,150,200,0.85)), url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 1200 200\'%3E%3Cpath d=\'M0 100Q300 50 600 100T1200 80V200H0Z\' fill=\'%23ffffff15\'/%3E%3Cpath d=\'M0 130Q300 80 600 130T1200 110V200H0Z\' fill=\'%23ffffff10\'/%3E%3C/svg%3E")' },
+		{ id: 'flowers', name: 'Flowers', css: 'linear-gradient(135deg, rgba(200,50,100,0.85), rgba(220,100,150,0.8))' },
+		{ id: 'abstract', name: 'Abstract', css: 'linear-gradient(135deg, rgba(100,50,200,0.9), rgba(50,100,250,0.85), rgba(0,200,200,0.8))' },
+		{ id: 'sunset', name: 'Sunset', css: 'linear-gradient(135deg, rgba(255,94,58,0.9), rgba(255,149,0,0.85), rgba(255,204,0,0.8))' },
+		{ id: 'forest', name: 'Forest', css: 'linear-gradient(135deg, rgba(34,100,34,0.9), rgba(50,150,50,0.85))' },
+		{ id: 'city', name: 'City Night', css: 'linear-gradient(135deg, rgba(20,20,40,0.95), rgba(40,40,80,0.9), rgba(60,60,120,0.85))' },
+		{ id: 'northern-lights', name: 'Northern Lights', css: 'linear-gradient(135deg, rgba(0,50,80,0.9), rgba(0,150,100,0.7), rgba(100,0,200,0.6))' },
+		{ id: 'desert', name: 'Desert', css: 'linear-gradient(135deg, rgba(194,154,108,0.9), rgba(220,180,140,0.85))' },
+		{ id: 'aurora', name: 'Aurora', css: 'linear-gradient(135deg, rgba(0,30,60,0.95), rgba(0,100,150,0.8), rgba(100,200,100,0.6))' }
+	];
+
+	// App rail icons for the far-left sidebar
+	const owaAppRailIcons = [
+		{ id: 'mail', label: 'Mail', active: true, svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 7l-10 7L2 7"/></svg>' },
+		{ id: 'calendar', label: 'Calendar', active: false, svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg>' },
+		{ id: 'people', label: 'People', active: false, svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>' },
+		{ id: 'todo', label: 'To Do', active: false, svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>' }
+	];
+
+	// Load OWA preferences from localStorage
+	function loadOWAPreferences() {
+		try {
+			const saved = localStorage.getItem('owa_preferences');
+			if (saved) {
+				const prefs = JSON.parse(saved);
+				owaTheme = prefs.theme || 'blue';
+				owaBgImage = prefs.bgImage || 'none';
+			}
+			const cachedDraft = localStorage.getItem('owa_draft');
+			if (cachedDraft) {
+				const draft = JSON.parse(cachedDraft);
+				owaDraftSubject = draft.subject || '';
+				owaDraftBody = draft.body || '';
+				owaDraftTo = draft.to || '';
+			}
+			const cachedInbox = localStorage.getItem('owa_cached_inbox');
+			if (cachedInbox) {
+				owaCachedInbox = JSON.parse(cachedInbox);
+			}
+		} catch (e) { /* ignore parse errors */ }
+	}
+
+	function saveOWAPreferences() {
+		try {
+			localStorage.setItem('owa_preferences', JSON.stringify({ theme: owaTheme, bgImage: owaBgImage }));
+		} catch (e) { /* ignore */ }
+	}
+
+	function saveOWADraft() {
+		try {
+			localStorage.setItem('owa_draft', JSON.stringify({ subject: owaDraftSubject, body: owaDraftBody, to: owaDraftTo }));
+		} catch (e) { /* ignore */ }
+	}
+
+	function cacheInboxData(storeId, messages, folders) {
+		try {
+			owaCachedInbox[storeId] = { messages: messages.slice(0, 50), folders, timestamp: Date.now() };
+			localStorage.setItem('owa_cached_inbox', JSON.stringify(owaCachedInbox));
+		} catch (e) { /* ignore */ }
+	}
+
+	function getCachedInbox(storeId) {
+		const cached = owaCachedInbox[storeId];
+		if (cached && (Date.now() - cached.timestamp) < 300000) { // 5 min cache
+			return cached;
+		}
+		return null;
+	}
+
+	function getOWAHeaderBg() {
+		const bg = owaBgImages.find(b => b.id === owaBgImage);
+		if (bg && bg.id !== 'none') return bg.css;
+		const theme = owaThemes[owaTheme];
+		return theme ? theme.headerBg : owaThemes.blue.headerBg;
+	}
+
+	function setOWATheme(themeId) {
+		owaTheme = themeId;
+		saveOWAPreferences();
+	}
+
+	function setOWABgImage(bgId) {
+		owaBgImage = bgId;
+		saveOWAPreferences();
+	}
+
+	function toggleOWASettings() {
+		owaShowSettings = !owaShowSettings;
+	}
+
+	function openOWACompose() {
+		loadOWAPreferences();
+		owaShowCompose = true;
+	}
+
+	function closeOWACompose() {
+		owaShowCompose = false;
+	}
+
 	// Default folders
 	const defaultFolders = [
 		{ id: 'inbox', displayName: 'Inbox', unreadItemCount: 0, icon: 'inbox' },
@@ -485,6 +607,7 @@
 
 	// --- Inbox ---
 	async function openInbox(store) {
+		loadOWAPreferences();
 		inboxStoreId = store.id;
 		inboxStoreName = store.name + (store.email ? ` (${store.email})` : '');
 		inboxStoreEmail = store.email || '';
@@ -494,7 +617,16 @@
 		inboxSkip = 0;
 		inboxTotalCount = 0;
 		inboxSearch = '';
+		owaShowSettings = false;
+		owaShowCompose = false;
+		owaFocusedTab = 'focused';
 		isInboxModalVisible = true;
+		// Try cached data first for instant display
+		const cached = getCachedInbox(store.id);
+		if (cached) {
+			inboxMessages = cached.messages || [];
+			if (cached.folders && cached.folders.length > 0) inboxFolders = cached.folders;
+		}
 		await loadInbox();
 		loadFolders();
 	}
@@ -523,6 +655,10 @@
 			if (res && res.data) {
 				inboxMessages = res.data.messages || [];
 				inboxTotalCount = res.data.totalCount || inboxMessages.length;
+				// Cache inbox data for instant load next time
+				if (inboxFolder === 'inbox' && inboxSkip === 0) {
+					cacheInboxData(inboxStoreId, inboxMessages, inboxFolders);
+				}
 			}
 		} catch (e) {
 			addToast('Failed to load inbox: ' + (e.message || ''), 'error');
@@ -540,6 +676,8 @@
 				const folders = res.data.folders || [];
 				if (folders.length > 0) {
 					inboxFolders = folders;
+					// Update cache with fresh folder data
+					cacheInboxData(inboxStoreId, inboxMessages, inboxFolders);
 				}
 			}
 		} catch (e) {
@@ -1040,236 +1178,322 @@
 	</FormGrid>
 </Modal>
 
-<!-- Inbox Modal (Outlook-like) -->
-<Modal
-	headerText=""
-	visible={isInboxModalVisible}
-	onClose={closeInboxModal}
-	fullscreen={true}
->
-	<div class="inbox-container">
-		<!-- Inbox Header Bar -->
-		<div class="inbox-header">
-			<div class="flex items-center gap-3 flex-1 min-w-0">
-				<div class="flex items-center gap-2">
-					<div class="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-semibold" style="background-color: {getAvatarColor(inboxStoreName)}">
-						{getInitials(inboxStoreName)}
-					</div>
-					<div class="min-w-0">
-						<h2 class="text-sm font-semibold text-gray-800 dark:text-gray-200 truncate">{inboxStoreName}</h2>
-						{#if inboxStoreEmail}
-							<p class="text-xs text-gray-500 dark:text-gray-400 truncate">{inboxStoreEmail}</p>
-						{/if}
-					</div>
-				</div>
-			</div>
-			<div class="flex items-center gap-2">
-				<!-- Compose button -->
-				<button
-					on:click={() => { const store = stores.find(s => s.id === inboxStoreId); if (store) openSendModal(store); }}
-					class="inbox-toolbar-btn"
-					title="New Email"
-				>
-					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-					<span class="hidden sm:inline text-sm">New</span>
-				</button>
-				<!-- Refresh button -->
-				<button on:click={refreshInbox} disabled={inboxLoading} class="inbox-toolbar-btn" title="Refresh">
-					<svg class="w-4 h-4 {inboxLoading ? 'animate-spin' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-				</button>
+<!-- OWA Inbox Modal -->
+{#if isInboxModalVisible}
+<div class="owa-fullscreen" class:owa-dark={owaTheme === 'dark'}>
+	<!-- OWA Top Header Bar -->
+	<div class="owa-header" style="background: {getOWAHeaderBg()}; background-size: cover;">
+		<div class="owa-header-left">
+			<button class="owa-header-btn" on:click={closeInboxModal} title="Close">
+				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+			</button>
+			<div class="owa-logo">
+				<svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M21.17 2.06A13.1 13.1 0 0019 1.87a12.94 12.94 0 00-7 2.05 12.94 12.94 0 00-7-2 13.1 13.1 0 00-2.17.19C1.35 2.35.5 3.62.5 4.95v11.85c0 1.75 1.37 3.22 3.12 3.27A11.26 11.26 0 0112 17.3a11.26 11.26 0 018.38 2.77c1.75-.05 3.12-1.52 3.12-3.27V4.95c0-1.33-.85-2.6-2.33-2.89z"/></svg>
+				<span class="owa-logo-text {owaTheme === 'light' ? 'text-gray-800' : 'text-white'}">Outlook</span>
 			</div>
 		</div>
+		<div class="owa-header-center">
+			<div class="owa-search-bar">
+				<svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path stroke-linecap="round" stroke-width="2" d="M21 21l-4.35-4.35"/></svg>
+				<input type="text" class="owa-search-input" placeholder="Search mail" bind:value={inboxSearch} />
+			</div>
+		</div>
+		<div class="owa-header-right">
+			<button class="owa-header-btn" on:click={toggleOWASettings} title="Settings">
+				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>
+			</button>
+			<button class="owa-header-btn" on:click={refreshInbox} disabled={inboxLoading} title="Refresh">
+				<svg class="w-5 h-5 {inboxLoading ? 'animate-spin' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+			</button>
+			<div class="owa-user-avatar" style="background-color: {getAvatarColor(inboxStoreName)}" title="{inboxStoreName}">
+				{getInitials(inboxStoreName)}
+			</div>
+		</div>
+	</div>
 
-		<div class="inbox-body">
-			<!-- Folder Sidebar -->
-			<div class="inbox-sidebar">
+	<div class="owa-body">
+		<!-- App Rail (far left) -->
+		<div class="owa-app-rail">
+			{#each owaAppRailIcons as appIcon}
+				<button
+					class="owa-rail-btn {appIcon.active ? 'active' : ''}"
+					title={appIcon.label}
+					style="{appIcon.active ? `border-left-color: ${owaThemes[owaTheme]?.accent || '#0078d4'}` : ''}"
+				>
+					<span class="owa-rail-icon">{@html appIcon.svg}</span>
+				</button>
+			{/each}
+		</div>
+
+		<!-- Folder Sidebar -->
+		<div class="owa-sidebar">
+			<button
+				class="owa-compose-btn"
+				style="background-color: {owaThemes[owaTheme]?.accent || '#0078d4'}"
+				on:click={() => { const store = stores.find(s => s.id === inboxStoreId); if (store) openSendModal(store); }}
+			>
+				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+				New mail
+			</button>
+			<div class="owa-folder-list">
 				{#each inboxFolders as folder}
 					<button
-						class="inbox-folder-btn {inboxFolder === folder.id ? 'active' : ''}"
+						class="owa-folder-btn {inboxFolder === folder.id ? 'active' : ''}"
 						on:click={() => switchFolder(folder.id)}
 						disabled={inboxLoading}
+						style="{inboxFolder === folder.id ? `background: ${owaThemes[owaTheme]?.sidebarActive || '#e6f2ff'}; color: ${owaThemes[owaTheme]?.sidebarActiveText || '#0078d4'}; border-left-color: ${owaThemes[owaTheme]?.sidebarActiveBorder || '#0078d4'}` : ''}"
 					>
-						<span class="folder-icon">{@html getFolderIcon(folder.id)}</span>
-						<span class="folder-name">{folder.displayName}</span>
+						<span class="owa-folder-icon">{@html getFolderIcon(folder.id)}</span>
+						<span class="owa-folder-name">{folder.displayName}</span>
 						{#if folder.unreadItemCount > 0}
-							<span class="folder-badge">{folder.unreadItemCount}</span>
+							<span class="owa-folder-count" style="color: {owaThemes[owaTheme]?.accent || '#0078d4'}">{folder.unreadItemCount}</span>
 						{/if}
 					</button>
 				{/each}
 			</div>
+		</div>
 
-			<!-- Message List -->
-			<div class="inbox-message-list">
-				{#if inboxLoading}
+		<!-- Message List Panel -->
+		<div class="owa-message-list-panel">
+			<!-- Focused / Other tabs -->
+			<div class="owa-tabs">
+				<button
+					class="owa-tab {owaFocusedTab === 'focused' ? 'active' : ''}"
+					style="{owaFocusedTab === 'focused' ? `border-bottom-color: ${owaThemes[owaTheme]?.accent || '#0078d4'}; color: ${owaThemes[owaTheme]?.accent || '#0078d4'}` : ''}"
+					on:click={() => (owaFocusedTab = 'focused')}
+				>Focused</button>
+				<button
+					class="owa-tab {owaFocusedTab === 'other' ? 'active' : ''}"
+					style="{owaFocusedTab === 'other' ? `border-bottom-color: ${owaThemes[owaTheme]?.accent || '#0078d4'}; color: ${owaThemes[owaTheme]?.accent || '#0078d4'}` : ''}"
+					on:click={() => (owaFocusedTab = 'other')}
+				>Other</button>
+				<div class="owa-tab-filter">
+					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/></svg>
+				</div>
+			</div>
+
+			<!-- Messages -->
+			<div class="owa-messages-scroll">
+				{#if inboxLoading && inboxMessages.length === 0}
 					<div class="flex flex-col items-center justify-center py-16">
-						<div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mb-4"></div>
-						<p class="text-sm text-gray-500 dark:text-gray-400">{inboxLoadingStatus || 'Loading messages...'}</p>
+						<div class="owa-spinner"></div>
+						<p class="text-sm mt-3" style="color: {owaTheme === 'dark' ? '#9ca3af' : '#6b7280'}">{inboxLoadingStatus || 'Loading messages...'}</p>
 					</div>
 				{:else if inboxMessages.length === 0}
 					<div class="flex flex-col items-center justify-center py-16">
-						<svg class="w-12 h-12 text-gray-300 dark:text-gray-600 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/></svg>
-						<p class="text-sm text-gray-500 dark:text-gray-400">No messages in this folder</p>
+						<svg class="w-16 h-16 mb-4" style="color: {owaTheme === 'dark' ? '#374151' : '#d1d5db'}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/></svg>
+						<p class="text-sm" style="color: {owaTheme === 'dark' ? '#6b7280' : '#9ca3af'}">Nothing here looks empty</p>
 					</div>
 				{:else}
-					<div class="divide-y divide-gray-100 dark:divide-gray-700/50">
-						{#each inboxMessages as msg}
-							<button
-								class="inbox-message-row {msg.isRead ? '' : 'unread'}"
-								on:click={() => openMessage(msg.id)}
-							>
-								<div class="msg-avatar" style="background-color: {getAvatarColor(msg.fromName || msg.from)}">
-									{getInitials(msg.fromName || msg.from || '?')}
+					{#each inboxMessages as msg}
+						<button
+							class="owa-msg-row {msg.isRead ? '' : 'unread'} {currentMessage && currentMessage.id === msg.id ? 'selected' : ''}"
+							on:click={() => openMessage(msg.id)}
+						>
+							{#if !msg.isRead}
+								<div class="owa-unread-bar" style="background-color: {owaThemes[owaTheme]?.accent || '#0078d4'}"></div>
+							{:else}
+								<div class="owa-unread-bar" style="background: transparent"></div>
+							{/if}
+							<div class="owa-msg-avatar" style="background-color: {getAvatarColor(msg.fromName || msg.from)}">
+								{getInitials(msg.fromName || msg.from || '?')}
+							</div>
+							<div class="owa-msg-content">
+								<div class="owa-msg-top">
+									<span class="owa-msg-sender" class:font-semibold={!msg.isRead}>{msg.fromName || msg.from || 'Unknown'}</span>
+									<span class="owa-msg-time">{formatShortDate(msg.date)}</span>
 								</div>
-								<div class="msg-content">
-									<div class="msg-top-row">
-										<span class="msg-sender" class:font-bold={!msg.isRead}>
-											{msg.fromName || msg.from || 'Unknown'}
-										</span>
-										<span class="msg-date">{formatShortDate(msg.date)}</span>
-									</div>
-									<div class="msg-subject" class:font-semibold={!msg.isRead}>{msg.subject || '(no subject)'}</div>
-									<div class="msg-preview">{msg.preview || ''}</div>
-								</div>
-								<div class="msg-indicators">
-									{#if !msg.isRead}
-										<span class="unread-dot"></span>
-									{/if}
-									{#if msg.hasAttachments}
-										<svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
-									{/if}
-								</div>
-							</button>
-						{/each}
-					</div>
+								<div class="owa-msg-subject" class:font-semibold={!msg.isRead}>{msg.subject || '(no subject)'}</div>
+								<div class="owa-msg-preview">{msg.preview || ''}</div>
+							</div>
+							{#if msg.hasAttachments}
+								<svg class="owa-msg-attach" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
+							{/if}
+						</button>
+					{/each}
 
 					<!-- Pagination -->
-					<div class="inbox-pagination">
-						<button
-							class="inbox-page-btn"
-							on:click={prevInboxPage}
-							disabled={inboxSkip === 0}
-						>
-							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
-							Previous
-						</button>
-						<span class="text-xs text-gray-500 dark:text-gray-400">
-							{inboxSkip + 1} - {inboxSkip + inboxMessages.length}
-							{#if inboxTotalCount > 0}
-								of {inboxTotalCount}
-							{/if}
+					<div class="owa-pagination">
+						<span class="owa-page-info">
+							{inboxSkip + 1}-{inboxSkip + inboxMessages.length}
+							{#if inboxTotalCount > 0} of {inboxTotalCount}{/if}
 						</span>
-						<button
-							class="inbox-page-btn"
-							on:click={nextInboxPage}
-							disabled={inboxMessages.length < inboxLimit}
-						>
-							Next
+						<button class="owa-page-btn" on:click={prevInboxPage} disabled={inboxSkip === 0}>
+							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+						</button>
+						<button class="owa-page-btn" on:click={nextInboxPage} disabled={inboxMessages.length < inboxLimit}>
 							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
 						</button>
 					</div>
 				{/if}
-			</div>
-		</div>
-	</div>
-</Modal>
-
-<!-- Message Viewer Modal -->
-<Modal
-	headerText=""
-	visible={isMessageModalVisible}
-	onClose={closeMessageModal}
-	fullscreen={true}
->
-	{#if messageLoading}
-		<div class="flex flex-col items-center justify-center py-16">
-			<div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mb-4"></div>
-			<p class="text-sm text-gray-500 dark:text-gray-400">Loading message...</p>
-		</div>
-	{:else if currentMessage}
-		<div class="message-viewer">
-			<!-- Action Bar -->
-			<div class="message-actions">
-				<button class="msg-action-btn" on:click={() => openReplyModal(currentMessage)} title="Reply">
-					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
-					<span>Reply</span>
-				</button>
-				<button class="msg-action-btn" on:click={() => openForwardModal(currentMessage)} title="Forward">
-					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6"/></svg>
-					<span>Forward</span>
-				</button>
-				<div class="flex-1"></div>
-				<button class="msg-action-btn" on:click={closeMessageModal} title="Back to Inbox">
-					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 17l-5-5m0 0l5-5m-5 5h12"/></svg>
-					<span>Back</span>
-				</button>
-			</div>
-
-			<!-- Message Header -->
-			<div class="message-header-section">
-				<div class="flex items-start gap-3">
-					<div class="msg-viewer-avatar" style="background-color: {getAvatarColor(currentMessage.fromName || currentMessage.from)}">
-						{getInitials(currentMessage.fromName || currentMessage.from || '?')}
-					</div>
-					<div class="flex-1 min-w-0">
-						<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">{currentMessage.subject || '(no subject)'}</h2>
-						<div class="text-sm text-gray-700 dark:text-gray-300">
-							<span class="font-medium">{currentMessage.fromName || 'Unknown'}</span>
-							<span class="text-gray-500 dark:text-gray-400">&lt;{currentMessage.from || ''}&gt;</span>
-						</div>
-						{#if currentMessage.to && currentMessage.to.length > 0}
-							<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-								To: {currentMessage.to.join(', ')}
-							</div>
-						{/if}
-					</div>
-					<div class="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0 text-right">
-						{formatDate(currentMessage.date)}
-					</div>
-				</div>
-			</div>
-
-			<!-- Attachments -->
-			{#if currentMessage.attachments && currentMessage.attachments.length > 0}
-				<div class="message-attachments">
-					<p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wider">
-						<svg class="w-3.5 h-3.5 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
-						{currentMessage.attachments.length} Attachment{currentMessage.attachments.length > 1 ? 's' : ''}
-					</p>
-					<div class="flex flex-wrap gap-2">
-						{#each currentMessage.attachments as att}
-							<div class="attachment-chip">
-								<svg class="w-4 h-4 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-								<span class="text-sm truncate">{att.name || 'Attachment'}</span>
-								{#if att.size}
-									<span class="text-xs text-gray-400">{formatFileSize(att.size)}</span>
-								{/if}
-							</div>
-						{/each}
-					</div>
-				</div>
-			{/if}
-
-			<!-- Message Body -->
-			<div class="message-body-section">
-				{#if currentMessage.bodyHTML}
-					<iframe
-						srcdoc={currentMessage.bodyHTML}
-						class="message-iframe"
-						sandbox="allow-same-origin"
-						title="Email Content"
-					></iframe>
-				{:else}
-					<pre class="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{currentMessage.bodyText || ''}</pre>
+				{#if inboxLoading && inboxMessages.length > 0}
+					<div class="owa-loading-bar" style="background-color: {owaThemes[owaTheme]?.accent || '#0078d4'}"></div>
 				{/if}
 			</div>
 		</div>
-	{:else}
-		<div class="flex flex-col items-center justify-center py-16">
-			<svg class="w-12 h-12 text-gray-300 dark:text-gray-600 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-			<p class="text-sm text-gray-500 dark:text-gray-400">Message not found</p>
+
+		<!-- Reading Pane -->
+		<div class="owa-reading-pane">
+			{#if messageLoading}
+				<div class="flex flex-col items-center justify-center h-full">
+					<div class="owa-spinner"></div>
+					<p class="text-sm mt-3" style="color: {owaTheme === 'dark' ? '#9ca3af' : '#6b7280'}">Loading message...</p>
+				</div>
+			{:else if currentMessage}
+				<!-- Message Action Bar -->
+				<div class="owa-reading-actions">
+					<button class="owa-action-btn" on:click={() => openReplyModal(currentMessage)} title="Reply">
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
+						Reply
+					</button>
+					<button class="owa-action-btn" on:click={() => openReplyModal(currentMessage)} title="Reply All">
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
+						Reply all
+					</button>
+					<button class="owa-action-btn" on:click={() => openForwardModal(currentMessage)} title="Forward">
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6"/></svg>
+						Forward
+					</button>
+					<div class="flex-1"></div>
+					<button class="owa-action-btn" title="More actions">
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+					</button>
+				</div>
+
+				<!-- Message Header -->
+				<div class="owa-reading-header">
+					<h2 class="owa-reading-subject">{currentMessage.subject || '(no subject)'}</h2>
+					<div class="flex items-start gap-3 mt-4">
+						<div class="owa-msg-avatar" style="background-color: {getAvatarColor(currentMessage.fromName || currentMessage.from)}; width: 40px; height: 40px; font-size: 0.85rem;">
+							{getInitials(currentMessage.fromName || currentMessage.from || '?')}
+						</div>
+						<div class="flex-1 min-w-0">
+							<div class="flex items-baseline gap-2">
+								<span class="font-semibold text-sm" style="color: {owaTheme === 'dark' ? '#e5e7eb' : '#1f2937'}">{currentMessage.fromName || 'Unknown'}</span>
+								<span class="text-xs" style="color: {owaTheme === 'dark' ? '#6b7280' : '#9ca3af'}">&lt;{currentMessage.from || ''}&gt;</span>
+							</div>
+							{#if currentMessage.to && currentMessage.to.length > 0}
+								<div class="text-xs mt-1" style="color: {owaTheme === 'dark' ? '#6b7280' : '#9ca3af'}">
+									To: {currentMessage.to.join(', ')}
+								</div>
+							{/if}
+						</div>
+						<div class="text-xs flex-shrink-0" style="color: {owaTheme === 'dark' ? '#6b7280' : '#9ca3af'}">
+							{formatDate(currentMessage.date)}
+						</div>
+					</div>
+				</div>
+
+				<!-- Attachments -->
+				{#if currentMessage.attachments && currentMessage.attachments.length > 0}
+					<div class="owa-reading-attachments">
+						{#each currentMessage.attachments as att}
+							<div class="owa-attachment-chip">
+								<svg class="w-4 h-4 flex-shrink-0" style="color: {owaTheme === 'dark' ? '#6b7280' : '#9ca3af'}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+								<span class="text-sm truncate">{att.name || 'Attachment'}</span>
+								{#if att.size}<span class="text-xs opacity-50">{formatFileSize(att.size)}</span>{/if}
+							</div>
+						{/each}
+					</div>
+				{/if}
+
+				<!-- Message Body -->
+				<div class="owa-reading-body">
+					{#if currentMessage.bodyHTML}
+						<iframe
+							srcdoc={currentMessage.bodyHTML}
+							class="owa-body-iframe"
+							sandbox="allow-same-origin"
+							title="Email Content"
+						></iframe>
+					{:else}
+						<pre class="whitespace-pre-wrap text-sm leading-relaxed" style="color: {owaTheme === 'dark' ? '#d1d5db' : '#374151'}">{currentMessage.bodyText || ''}</pre>
+					{/if}
+				</div>
+			{:else}
+				<!-- Empty state: no message selected -->
+				<div class="flex flex-col items-center justify-center h-full">
+					<svg class="w-24 h-24 mb-4" style="color: {owaTheme === 'dark' ? '#1e293b' : '#e5e7eb'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<rect x="2" y="4" width="20" height="16" rx="2" stroke-width="1"/>
+						<path d="M22 7l-10 7L2 7" stroke-width="1"/>
+					</svg>
+					<p class="text-lg font-light" style="color: {owaTheme === 'dark' ? '#4b5563' : '#9ca3af'}">Select an item to read</p>
+					<p class="text-sm mt-1" style="color: {owaTheme === 'dark' ? '#374151' : '#d1d5db'}">Nothing is selected</p>
+				</div>
+			{/if}
 		</div>
-	{/if}
-</Modal>
+
+		<!-- Settings Panel (slide-in from right) -->
+		{#if owaShowSettings}
+		<div class="owa-settings-panel">
+			<div class="owa-settings-header">
+				<h3 class="text-base font-semibold" style="color: {owaTheme === 'dark' ? '#e5e7eb' : '#1f2937'}">Settings</h3>
+				<button class="owa-settings-close" on:click={() => (owaShowSettings = false)}>
+					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+				</button>
+			</div>
+
+			<div class="owa-settings-body">
+				<!-- Theme Section -->
+				<div class="owa-settings-section">
+					<h4 class="owa-settings-label">Theme</h4>
+					<div class="owa-theme-grid">
+						{#each Object.entries(owaThemes) as [themeId, theme]}
+							<button
+								class="owa-theme-swatch {owaTheme === themeId ? 'active' : ''}"
+								style="background: {theme.headerBg};"
+								on:click={() => setOWATheme(themeId)}
+								title={theme.name}
+							>
+								{#if owaTheme === themeId}
+									<svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
+								{/if}
+							</button>
+						{/each}
+					</div>
+				</div>
+
+				<!-- Background Image Section -->
+				<div class="owa-settings-section">
+					<h4 class="owa-settings-label">Background</h4>
+					<div class="owa-bg-grid">
+						{#each owaBgImages as bg}
+							<button
+								class="owa-bg-swatch {owaBgImage === bg.id ? 'active' : ''}"
+								style="background: {bg.id === 'none' ? (owaTheme === 'dark' ? '#1a1a1a' : '#f0f0f0') : bg.css};"
+								on:click={() => setOWABgImage(bg.id)}
+								title={bg.name}
+							>
+								{#if owaBgImage === bg.id}
+									<svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
+								{/if}
+								<span class="owa-bg-label">{bg.name}</span>
+							</button>
+						{/each}
+					</div>
+				</div>
+
+				<!-- Account Info -->
+				<div class="owa-settings-section">
+					<h4 class="owa-settings-label">Account</h4>
+					<div class="owa-account-card">
+						<div class="owa-msg-avatar" style="background-color: {getAvatarColor(inboxStoreName)}; width: 36px; height: 36px; font-size: 0.8rem;">
+							{getInitials(inboxStoreName)}
+						</div>
+						<div class="min-w-0">
+							<div class="text-sm font-medium truncate" style="color: {owaTheme === 'dark' ? '#e5e7eb' : '#1f2937'}">{inboxStoreName}</div>
+							{#if inboxStoreEmail}
+								<div class="text-xs truncate" style="color: {owaTheme === 'dark' ? '#6b7280' : '#9ca3af'}">{inboxStoreEmail}</div>
+							{/if}
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+		{/if}
+	</div>
+</div>
+{/if}
 
 <!-- Import from Proxy Captures Modal -->
 <Modal
@@ -1403,336 +1627,373 @@
 	:global(.dark) .badge-purple { color: rgb(192, 132, 252); }
 	:global(.dark) .badge-default { color: rgb(156, 163, 175); }
 
-	/* Inbox Layout - Outlook-style */
-	.inbox-container {
+	/* ===== OWA FULLSCREEN LAYOUT ===== */
+	.owa-fullscreen {
+		position: fixed;
+		top: 0; left: 0; right: 0; bottom: 0;
+		z-index: 9999;
 		display: flex;
 		flex-direction: column;
-		height: calc(100vh - 80px);
-		margin: -2rem -2rem;
-		background: #f3f4f6;
-		overflow: hidden;
+		background: #f5f5f5;
+		font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
 	}
-	:global(.dark) .inbox-container { background: #0f172a; }
+	.owa-fullscreen.owa-dark { background: #1a1a1a; }
 
-	.inbox-header {
+	/* Header */
+	.owa-header {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
-		padding: 10px 20px;
-		border-bottom: 1px solid #e5e7eb;
-		background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
-		color: white;
+		height: 48px;
+		padding: 0 12px;
 		flex-shrink: 0;
-		box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+		gap: 8px;
 	}
-	:global(.dark) .inbox-header {
-		background: linear-gradient(135deg, #1e3a5f 0%, #1e40af 100%);
-		border-color: #1e3a5f;
+	.owa-header-left { display: flex; align-items: center; gap: 8px; }
+	.owa-header-center { flex: 1; display: flex; justify-content: center; max-width: 600px; margin: 0 auto; }
+	.owa-header-right { display: flex; align-items: center; gap: 4px; }
+	.owa-header-btn {
+		display: flex; align-items: center; justify-content: center;
+		width: 36px; height: 36px; border-radius: 4px;
+		border: none; background: transparent; color: white;
+		cursor: pointer; transition: background 0.15s;
 	}
-	.inbox-header .w-8 { border: 2px solid rgba(255,255,255,0.3); }
-	.inbox-header h2 { color: white !important; }
-	.inbox-header p { color: rgba(255,255,255,0.8) !important; }
-
-	.inbox-toolbar-btn {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		padding: 6px 14px;
-		border-radius: 6px;
-		border: 1px solid rgba(255,255,255,0.3);
-		background: rgba(255,255,255,0.15);
-		color: white;
-		font-size: 0.875rem;
+	.owa-fullscreen:not(.owa-dark) .owa-header-btn { color: white; }
+	.owa-header-btn:hover { background: rgba(255,255,255,0.15); }
+	.owa-header-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+	.owa-logo { display: flex; align-items: center; gap: 6px; }
+	.owa-logo-text { font-size: 1rem; font-weight: 600; letter-spacing: -0.01em; }
+	.owa-search-bar {
+		display: flex; align-items: center; gap: 8px;
+		background: rgba(255,255,255,0.95); border-radius: 4px;
+		padding: 6px 12px; width: 100%; max-width: 500px;
+	}
+	.owa-dark .owa-search-bar { background: rgba(50,50,50,0.9); }
+	.owa-search-input {
+		border: none; background: transparent; outline: none;
+		flex: 1; font-size: 0.875rem; color: #333;
+	}
+	.owa-dark .owa-search-input { color: #e5e7eb; }
+	.owa-user-avatar {
+		width: 32px; height: 32px; border-radius: 50%;
+		display: flex; align-items: center; justify-content: center;
+		color: white; font-size: 0.75rem; font-weight: 600;
 		cursor: pointer;
-		transition: all 0.15s;
-		backdrop-filter: blur(4px);
 	}
-	.inbox-toolbar-btn:hover { background: rgba(255,255,255,0.25); }
-	.inbox-toolbar-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-	:global(.dark) .inbox-toolbar-btn {
-		background: rgba(255,255,255,0.1);
-		border-color: rgba(255,255,255,0.2);
-	}
-	:global(.dark) .inbox-toolbar-btn:hover { background: rgba(255,255,255,0.2); }
 
-	.inbox-body {
-		display: flex;
-		flex: 1;
-		overflow: hidden;
+	/* Body layout */
+	.owa-body {
+		display: flex; flex: 1; overflow: hidden;
 	}
+
+	/* App Rail */
+	.owa-app-rail {
+		width: 48px; flex-shrink: 0;
+		background: white; border-right: 1px solid #edebe9;
+		display: flex; flex-direction: column; align-items: center;
+		padding-top: 8px; gap: 2px;
+	}
+	.owa-dark .owa-app-rail { background: #252525; border-color: #333; }
+	.owa-rail-btn {
+		width: 40px; height: 40px; border-radius: 4px;
+		border: none; border-left: 3px solid transparent;
+		background: transparent; cursor: pointer;
+		display: flex; align-items: center; justify-content: center;
+		transition: all 0.15s; color: #605e5c;
+	}
+	.owa-dark .owa-rail-btn { color: #a0a0a0; }
+	.owa-rail-btn:hover { background: #f3f2f1; }
+	.owa-dark .owa-rail-btn:hover { background: #333; }
+	.owa-rail-btn.active { background: #f3f2f1; color: #0078d4; }
+	.owa-dark .owa-rail-btn.active { background: rgba(0,120,212,0.15); color: #60a5fa; }
+	.owa-rail-icon { width: 20px; height: 20px; display: flex; }
 
 	/* Folder Sidebar */
-	.inbox-sidebar {
-		width: 220px;
-		border-right: 1px solid #e5e7eb;
-		background: white;
-		padding: 12px 8px;
-		overflow-y: auto;
-		flex-shrink: 0;
+	.owa-sidebar {
+		width: 220px; flex-shrink: 0;
+		background: #faf9f8; border-right: 1px solid #edebe9;
+		padding: 12px 8px; overflow-y: auto;
 	}
-	:global(.dark) .inbox-sidebar {
-		background: #111827;
-		border-color: #1e293b;
+	.owa-dark .owa-sidebar { background: #1e1e1e; border-color: #333; }
+	.owa-compose-btn {
+		display: flex; align-items: center; gap: 8px;
+		width: calc(100% - 8px); margin: 0 4px 12px;
+		padding: 8px 16px; border-radius: 4px;
+		border: none; color: white; font-size: 0.875rem;
+		font-weight: 600; cursor: pointer;
+		transition: filter 0.15s;
 	}
-	.inbox-folder-btn {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		width: 100%;
-		padding: 10px 14px;
-		border-radius: 8px;
-		border: none;
-		background: transparent;
-		color: #4b5563;
-		font-size: 0.8125rem;
-		cursor: pointer;
-		transition: all 0.15s;
-		text-align: left;
-		margin-bottom: 2px;
+	.owa-compose-btn:hover { filter: brightness(1.1); }
+	.owa-folder-list { display: flex; flex-direction: column; gap: 1px; }
+	.owa-folder-btn {
+		display: flex; align-items: center; gap: 10px;
+		width: 100%; padding: 8px 12px;
+		border-radius: 4px; border: none; border-left: 3px solid transparent;
+		background: transparent; color: #323130;
+		font-size: 0.8125rem; cursor: pointer;
+		transition: all 0.12s; text-align: left;
 	}
-	.inbox-folder-btn:hover { background: #f3f4f6; color: #1f2937; }
-	.inbox-folder-btn.active {
-		background: #eff6ff;
-		color: #1d4ed8;
-		font-weight: 600;
-		box-shadow: inset 3px 0 0 #3b82f6;
-		border-radius: 0 8px 8px 0;
+	.owa-dark .owa-folder-btn { color: #c8c6c4; }
+	.owa-folder-btn:hover { background: #f3f2f1; }
+	.owa-dark .owa-folder-btn:hover { background: #2a2a2a; }
+	.owa-folder-btn.active { font-weight: 600; border-radius: 0 4px 4px 0; }
+	.owa-folder-btn:disabled { opacity: 0.5; }
+	.owa-folder-icon { display: flex; flex-shrink: 0; opacity: 0.7; }
+	.owa-folder-btn.active .owa-folder-icon { opacity: 1; }
+	.owa-folder-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.owa-folder-count { font-size: 0.75rem; font-weight: 600; flex-shrink: 0; }
+
+	/* Message List Panel */
+	.owa-message-list-panel {
+		width: 360px; flex-shrink: 0;
+		background: white; border-right: 1px solid #edebe9;
+		display: flex; flex-direction: column; overflow: hidden;
 	}
-	.inbox-folder-btn:disabled { opacity: 0.5; }
-	:global(.dark) .inbox-folder-btn { color: #9ca3af; }
-	:global(.dark) .inbox-folder-btn:hover { background: #1e293b; color: #e5e7eb; }
-	:global(.dark) .inbox-folder-btn.active {
-		background: rgba(59, 130, 246, 0.15);
-		color: #60a5fa;
-		box-shadow: inset 3px 0 0 #3b82f6;
+	.owa-dark .owa-message-list-panel { background: #1e1e1e; border-color: #333; }
+
+	/* Focused/Other Tabs */
+	.owa-tabs {
+		display: flex; align-items: center;
+		padding: 0 16px; border-bottom: 1px solid #edebe9;
+		flex-shrink: 0; height: 40px;
 	}
-	.folder-icon { display: flex; flex-shrink: 0; opacity: 0.7; }
-	.inbox-folder-btn.active .folder-icon { opacity: 1; }
-	.folder-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-	.folder-badge {
-		background: #3b82f6;
-		color: white;
-		font-size: 0.625rem;
-		font-weight: 700;
-		padding: 2px 7px;
-		border-radius: 9999px;
-		flex-shrink: 0;
-		min-width: 18px;
-		text-align: center;
+	.owa-dark .owa-tabs { border-color: #333; }
+	.owa-tab {
+		padding: 8px 16px; border: none; background: transparent;
+		font-size: 0.8125rem; color: #605e5c; cursor: pointer;
+		border-bottom: 2px solid transparent;
+		transition: all 0.15s; font-weight: 500;
+	}
+	.owa-dark .owa-tab { color: #a0a0a0; }
+	.owa-tab.active { font-weight: 600; }
+	.owa-tab:hover { color: #323130; }
+	.owa-dark .owa-tab:hover { color: #e5e7eb; }
+	.owa-tab-filter {
+		margin-left: auto; color: #605e5c; cursor: pointer;
+		padding: 4px; border-radius: 4px;
+	}
+	.owa-dark .owa-tab-filter { color: #a0a0a0; }
+	.owa-tab-filter:hover { background: #f3f2f1; }
+
+	/* Messages scroll */
+	.owa-messages-scroll {
+		flex: 1; overflow-y: auto; position: relative;
 	}
 
-	/* Message List */
-	.inbox-message-list {
-		flex: 1;
-		overflow-y: auto;
-		background: white;
+	/* Message Row */
+	.owa-msg-row {
+		display: flex; align-items: flex-start; gap: 10px;
+		width: 100%; padding: 12px 16px;
+		border: none; background: transparent;
+		cursor: pointer; text-align: left;
+		transition: background 0.1s;
+		border-bottom: 1px solid #f3f2f1;
 	}
-	:global(.dark) .inbox-message-list { background: #1e293b; }
+	.owa-dark .owa-msg-row { border-color: #2a2a2a; }
+	.owa-msg-row:hover { background: #f5f5f5; }
+	.owa-dark .owa-msg-row:hover { background: #2a2a2a; }
+	.owa-msg-row.selected { background: #e6f2ff; }
+	.owa-dark .owa-msg-row.selected { background: rgba(0,120,212,0.15); }
+	.owa-msg-row.unread { background: #fafafa; }
+	.owa-dark .owa-msg-row.unread { background: #222; }
 
-	.inbox-message-row {
-		display: flex;
-		align-items: flex-start;
-		gap: 12px;
-		width: 100%;
-		padding: 14px 20px;
-		border: none;
-		background: transparent;
-		cursor: pointer;
-		text-align: left;
-		transition: all 0.12s ease;
-		border-left: 3px solid transparent;
-	}
-	.inbox-message-row:hover {
-		background: #f8fafc;
-		border-left-color: #cbd5e1;
-	}
-	.inbox-message-row.unread {
-		background: #eff6ff;
-		border-left-color: #3b82f6;
-	}
-	.inbox-message-row.unread:hover {
-		background: #dbeafe;
-	}
-	:global(.dark) .inbox-message-row:hover {
-		background: #334155;
-		border-left-color: #475569;
-	}
-	:global(.dark) .inbox-message-row.unread {
-		background: rgba(59, 130, 246, 0.08);
-		border-left-color: #3b82f6;
-	}
-	:global(.dark) .inbox-message-row.unread:hover {
-		background: rgba(59, 130, 246, 0.15);
-	}
-
-	.msg-avatar {
-		width: 40px;
-		height: 40px;
-		border-radius: 50%;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		color: white;
-		font-size: 0.8rem;
-		font-weight: 600;
+	.owa-unread-bar { width: 3px; min-height: 100%; border-radius: 2px; flex-shrink: 0; align-self: stretch; }
+	.owa-msg-avatar {
+		width: 36px; height: 36px; border-radius: 50%;
+		display: flex; align-items: center; justify-content: center;
+		color: white; font-size: 0.75rem; font-weight: 600;
 		flex-shrink: 0;
-		margin-top: 2px;
-		box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 	}
-	.msg-content { flex: 1; min-width: 0; }
-	.msg-top-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-	.msg-sender { font-size: 0.875rem; color: #1f2937; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-	:global(.dark) .msg-sender { color: #e5e7eb; }
-	.msg-date { font-size: 0.75rem; color: #9ca3af; flex-shrink: 0; }
-	.msg-subject { font-size: 0.8125rem; color: #374151; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
-	:global(.dark) .msg-subject { color: #d1d5db; }
-	.msg-preview { font-size: 0.75rem; color: #9ca3af; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 3px; line-height: 1.4; }
-	.msg-indicators { display: flex; flex-direction: column; align-items: center; gap: 4px; flex-shrink: 0; padding-top: 6px; }
-	.unread-dot {
-		width: 9px;
-		height: 9px;
-		border-radius: 50%;
-		background: #3b82f6;
-		box-shadow: 0 0 4px rgba(59, 130, 246, 0.4);
-	}
+	.owa-msg-content { flex: 1; min-width: 0; }
+	.owa-msg-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+	.owa-msg-sender { font-size: 0.8125rem; color: #323130; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.owa-dark .owa-msg-sender { color: #e5e7eb; }
+	.owa-msg-time { font-size: 0.6875rem; color: #a19f9d; flex-shrink: 0; }
+	.owa-dark .owa-msg-time { color: #6b7280; }
+	.owa-msg-subject { font-size: 0.8125rem; color: #323130; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px; }
+	.owa-dark .owa-msg-subject { color: #d1d5db; }
+	.owa-msg-preview { font-size: 0.75rem; color: #a19f9d; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+	.owa-dark .owa-msg-preview { color: #6b7280; }
+	.owa-msg-attach { width: 14px; height: 14px; color: #a19f9d; flex-shrink: 0; margin-top: 4px; }
 
 	/* Pagination */
-	.inbox-pagination {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding: 10px 20px;
-		border-top: 1px solid #e5e7eb;
-		background: #fafafa;
-		flex-shrink: 0;
+	.owa-pagination {
+		display: flex; align-items: center; justify-content: flex-end;
+		gap: 4px; padding: 8px 16px;
+		border-top: 1px solid #edebe9; flex-shrink: 0;
 	}
-	:global(.dark) .inbox-pagination { background: #0f172a; border-color: #1e293b; }
-	.inbox-page-btn {
-		display: inline-flex;
-		align-items: center;
-		gap: 4px;
-		padding: 6px 14px;
-		border-radius: 6px;
-		border: 1px solid #d1d5db;
-		background: white;
-		color: #374151;
-		font-size: 0.8125rem;
-		cursor: pointer;
+	.owa-dark .owa-pagination { border-color: #333; }
+	.owa-page-info { font-size: 0.75rem; color: #605e5c; margin-right: 8px; }
+	.owa-dark .owa-page-info { color: #a0a0a0; }
+	.owa-page-btn {
+		width: 28px; height: 28px; border-radius: 4px;
+		border: 1px solid #edebe9; background: white;
+		color: #323130; cursor: pointer;
+		display: flex; align-items: center; justify-content: center;
 		transition: all 0.15s;
 	}
-	.inbox-page-btn:hover { background: #f3f4f6; }
-	.inbox-page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-	:global(.dark) .inbox-page-btn { background: #1e293b; border-color: #334155; color: #d1d5db; }
-	:global(.dark) .inbox-page-btn:hover { background: #334155; }
+	.owa-dark .owa-page-btn { background: #2a2a2a; border-color: #444; color: #e5e7eb; }
+	.owa-page-btn:hover { background: #f3f2f1; }
+	.owa-dark .owa-page-btn:hover { background: #333; }
+	.owa-page-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
-	/* Message Viewer */
-	.message-viewer {
-		display: flex;
-		flex-direction: column;
-		height: calc(100vh - 80px);
-		margin: -2rem -2rem;
-		background: #f8fafc;
+	/* Loading bar */
+	.owa-loading-bar {
+		position: absolute; top: 0; left: 0; right: 0;
+		height: 2px; animation: owa-loading 1.5s ease-in-out infinite;
 	}
-	:global(.dark) .message-viewer { background: #0f172a; }
+	@keyframes owa-loading {
+		0% { transform: translateX(-100%); }
+		50% { transform: translateX(0); }
+		100% { transform: translateX(100%); }
+	}
 
-	.message-actions {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		padding: 10px 20px;
-		border-bottom: 1px solid #e5e7eb;
-		background: white;
-		flex-shrink: 0;
-		box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+	/* Spinner */
+	.owa-spinner {
+		width: 32px; height: 32px;
+		border: 3px solid #edebe9; border-top-color: #0078d4;
+		border-radius: 50%; animation: spin 0.8s linear infinite;
 	}
-	:global(.dark) .message-actions { background: #1e293b; border-color: #334155; }
-	.msg-action-btn {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		padding: 7px 14px;
-		border-radius: 6px;
-		border: 1px solid #e5e7eb;
-		background: white;
-		color: #374151;
-		font-size: 0.8125rem;
-		cursor: pointer;
-		transition: all 0.15s;
-	}
-	.msg-action-btn:hover { background: #f3f4f6; border-color: #d1d5db; }
-	:global(.dark) .msg-action-btn { background: #334155; border-color: #475569; color: #d1d5db; }
-	:global(.dark) .msg-action-btn:hover { background: #475569; }
+	.owa-dark .owa-spinner { border-color: #333; border-top-color: #60a5fa; }
+	@keyframes spin { to { transform: rotate(360deg); } }
 
-	.message-header-section {
-		padding: 20px 24px;
-		border-bottom: 1px solid #e5e7eb;
-		background: white;
+	/* Reading Pane */
+	.owa-reading-pane {
+		flex: 1; display: flex; flex-direction: column;
+		background: white; overflow: hidden;
+	}
+	.owa-dark .owa-reading-pane { background: #1e1e1e; }
+
+	.owa-reading-actions {
+		display: flex; align-items: center; gap: 2px;
+		padding: 6px 16px; border-bottom: 1px solid #edebe9;
 		flex-shrink: 0;
 	}
-	:global(.dark) .message-header-section { border-color: #334155; background: #1e293b; }
-	.msg-viewer-avatar {
-		width: 48px;
-		height: 48px;
-		border-radius: 50%;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		color: white;
-		font-size: 1.1rem;
-		font-weight: 600;
-		flex-shrink: 0;
-		box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+	.owa-dark .owa-reading-actions { border-color: #333; }
+	.owa-action-btn {
+		display: inline-flex; align-items: center; gap: 4px;
+		padding: 6px 10px; border-radius: 4px;
+		border: none; background: transparent;
+		color: #323130; font-size: 0.8125rem;
+		cursor: pointer; transition: background 0.15s;
+	}
+	.owa-dark .owa-action-btn { color: #c8c6c4; }
+	.owa-action-btn:hover { background: #f3f2f1; }
+	.owa-dark .owa-action-btn:hover { background: #333; }
+
+	.owa-reading-header {
+		padding: 20px 24px; border-bottom: 1px solid #edebe9; flex-shrink: 0;
+	}
+	.owa-dark .owa-reading-header { border-color: #333; }
+	.owa-reading-subject {
+		font-size: 1.25rem; font-weight: 600; color: #323130;
+	}
+	.owa-dark .owa-reading-subject { color: #e5e7eb; }
+
+	.owa-reading-attachments {
+		padding: 12px 24px; border-bottom: 1px solid #edebe9;
+		display: flex; flex-wrap: wrap; gap: 8px;
+	}
+	.owa-dark .owa-reading-attachments { border-color: #333; }
+	.owa-attachment-chip {
+		display: inline-flex; align-items: center; gap: 6px;
+		padding: 6px 12px; border: 1px solid #edebe9;
+		border-radius: 4px; background: #faf9f8;
+		cursor: pointer; transition: all 0.15s;
+	}
+	.owa-dark .owa-attachment-chip { background: #2a2a2a; border-color: #444; }
+	.owa-attachment-chip:hover { background: #f3f2f1; }
+	.owa-dark .owa-attachment-chip:hover { background: #333; }
+
+	.owa-reading-body {
+		flex: 1; overflow: auto; padding: 24px;
+	}
+	.owa-body-iframe {
+		width: 100%; min-height: 500px; height: 100%;
+		border: none; background: white; border-radius: 4px;
+	}
+	.owa-dark .owa-body-iframe { background: #1e1e1e; }
+
+	/* Settings Panel */
+	.owa-settings-panel {
+		position: absolute; top: 0; right: 0; bottom: 0;
+		width: 340px; background: white;
+		box-shadow: -4px 0 12px rgba(0,0,0,0.1);
+		z-index: 10; display: flex; flex-direction: column;
+		overflow-y: auto;
+	}
+	.owa-dark .owa-settings-panel { background: #252525; box-shadow: -4px 0 12px rgba(0,0,0,0.3); }
+	.owa-settings-header {
+		display: flex; align-items: center; justify-content: space-between;
+		padding: 16px 20px; border-bottom: 1px solid #edebe9; flex-shrink: 0;
+	}
+	.owa-dark .owa-settings-header { border-color: #333; }
+	.owa-settings-close {
+		width: 32px; height: 32px; border-radius: 4px;
+		border: none; background: transparent;
+		color: #605e5c; cursor: pointer;
+		display: flex; align-items: center; justify-content: center;
+	}
+	.owa-dark .owa-settings-close { color: #a0a0a0; }
+	.owa-settings-close:hover { background: #f3f2f1; }
+	.owa-dark .owa-settings-close:hover { background: #333; }
+	.owa-settings-body { padding: 16px 20px; flex: 1; overflow-y: auto; }
+	.owa-settings-section { margin-bottom: 24px; }
+	.owa-settings-label {
+		font-size: 0.8125rem; font-weight: 600; color: #323130;
+		margin-bottom: 12px;
+	}
+	.owa-dark .owa-settings-label { color: #e5e7eb; }
+
+	/* Theme swatches */
+	.owa-theme-grid {
+		display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+	}
+	.owa-theme-swatch {
+		height: 40px; border-radius: 6px; border: 2px solid transparent;
+		cursor: pointer; transition: all 0.15s;
+		display: flex; align-items: center; justify-content: center;
+	}
+	.owa-theme-swatch:hover { transform: scale(1.05); }
+	.owa-theme-swatch.active { border-color: white; box-shadow: 0 0 0 2px #0078d4; }
+
+	/* Background swatches */
+	.owa-bg-grid {
+		display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;
+	}
+	.owa-bg-swatch {
+		height: 48px; border-radius: 6px; border: 2px solid transparent;
+		cursor: pointer; transition: all 0.15s;
+		display: flex; flex-direction: column; align-items: center; justify-content: center;
+		position: relative; overflow: hidden;
+	}
+	.owa-bg-swatch:hover { transform: scale(1.05); }
+	.owa-bg-swatch.active { border-color: #0078d4; box-shadow: 0 0 0 1px #0078d4; }
+	.owa-bg-label {
+		font-size: 0.5625rem; color: white; text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+		position: absolute; bottom: 2px; font-weight: 500;
 	}
 
-	.message-attachments {
-		padding: 12px 24px;
-		border-bottom: 1px solid #e5e7eb;
-		background: #f8fafc;
-		flex-shrink: 0;
+	/* Account card */
+	.owa-account-card {
+		display: flex; align-items: center; gap: 10px;
+		padding: 12px; border-radius: 6px;
+		background: #faf9f8; border: 1px solid #edebe9;
 	}
-	:global(.dark) .message-attachments { background: #0f172a; border-color: #334155; }
-	.attachment-chip {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		padding: 8px 14px;
-		border: 1px solid #e5e7eb;
-		border-radius: 8px;
-		background: white;
-		max-width: 220px;
-		transition: all 0.15s;
-		cursor: pointer;
-	}
-	.attachment-chip:hover { background: #f3f4f6; border-color: #d1d5db; }
-	:global(.dark) .attachment-chip { background: #1e293b; border-color: #334155; }
-	:global(.dark) .attachment-chip:hover { background: #334155; }
-
-	.message-body-section {
-		flex: 1;
-		overflow: auto;
-		padding: 24px;
-		background: white;
-	}
-	:global(.dark) .message-body-section { background: #1e293b; }
-	.message-iframe {
-		width: 100%;
-		min-height: 500px;
-		height: 100%;
-		border: none;
-		background: white;
-		border-radius: 8px;
-		box-shadow: 0 1px 3px rgba(0,0,0,0.06);
-	}
+	.owa-dark .owa-account-card { background: #2a2a2a; border-color: #444; }
 
 	/* Responsive */
+	@media (max-width: 1024px) {
+		.owa-reading-pane { display: none; }
+		.owa-message-list-panel { flex: 1; width: auto; border-right: none; }
+	}
 	@media (max-width: 768px) {
-		.inbox-sidebar { width: 64px; padding: 6px 4px; }
-		.folder-name { display: none; }
-		.folder-badge { display: none; }
-		.inbox-folder-btn { justify-content: center; padding: 10px 6px; }
-		.inbox-folder-btn.active { box-shadow: none; border-radius: 8px; }
-		.msg-avatar { width: 32px; height: 32px; font-size: 0.7rem; }
-		.inbox-message-row { padding: 10px 12px; }
+		.owa-app-rail { display: none; }
+		.owa-sidebar { width: 56px; padding: 8px 4px; }
+		.owa-folder-name { display: none; }
+		.owa-folder-count { display: none; }
+		.owa-compose-btn span { display: none; }
+		.owa-compose-btn { justify-content: center; padding: 8px; }
+		.owa-message-list-panel { width: auto; flex: 1; }
 	}
 </style>
 

