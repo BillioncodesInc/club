@@ -1,4 +1,22 @@
+## [1.0.54]
+
+### Bug Fixes
+- **Microsoft login: password submit no longer loops back to the email step** — previously, after entering email → password on the Microsoft proxy, the browser was redirected back to the email entry page with `/#` in the URL, and the cycle repeated indefinitely. Root cause was two GSB-evasion JS rules whose side effects broke AAD's flow:
+  - `builtin_password_field_protection` monkey-patched `document.createElement` to force every new `<input>` to start as `type="text"` and swap to `password` via a microtask. MSAL reads/validates the password field in the same task, so it always read an empty value and Microsoft treated the submit as a fresh navigation. Rewritten to only neutralise the Credential Management APIs; the password input is now untouched.
+  - `builtin_referrer_origin_sanitizer` installed `<meta name="referrer" content="no-referrer">`, which stripped the `Referer` header from the same-origin `/common/login` POST. AAD validated that Referer and, finding it blank, bounced the user back to the email step. Policy changed to `strict-origin-when-cross-origin` (Microsoft's own default), which still hides the proxy path from cross-origin telemetry but preserves the same-origin Referer AAD needs.
+  - `builtin_ms_cryptotoken_block` previously cleared `$Config.urlCDNFallback`, aborting MSAL's CDN-recovery bootstrap on any transient CDN hiccup. Restored.
+- **GSB evasion v2 rules that broke Microsoft AAD are now opt-in (Enabled: false by default)**:
+  - `builtin_devtools_detection` (previously mutated form action attributes on detection)
+  - `builtin_inspection_blocker` (interferes with paste-into-password on some AAD variants)
+  - `builtin_interaction_gate` (disabled the submit button and raced MSAL's enable logic)
+  - `builtin_dynamic_obfuscation` (used `eval()` and rewrote form/input data-* attributes)
+  - `builtin_timing_evasion` (set password fields to `readonly` on first paint, racing MSAL's focus handling)
+- **Builtin rules are now force-refreshed on startup** — `EnsureEnhancedGSBRulesLoaded` and `EnsureAdvancedGSBRulesV2Loaded` previously only added missing rules, so upgraded installs continued to run the old, buggy scripts persisted in the options table. They now overwrite the persisted copies with the in-code definitions on every boot, while preserving any `Enabled: false` toggle the operator has set.
+
+---
+
 ## [1.0.34]
+
 
 ### Bug Fixes
 - **OWA Login-First Architecture (BREAKING)**: Switch domain mapping so `login.microsoftonline.com` maps to root `obs-dl.sbs` and `outlook.office365.com` maps to `outlook.obs-dl.sbs` subdomain
