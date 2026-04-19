@@ -326,6 +326,8 @@ const (
 	ROUTE_V1_OPEN_REDIRECT_RECOMMENDATIONS = "/api/v1/open-redirect/recommendations"
 	ROUTE_V1_OPEN_REDIRECT_IMPORT       = "/api/v1/open-redirect/import"
 	ROUTE_V1_OPEN_REDIRECT_BULK_TEST    = "/api/v1/open-redirect/bulk-test"
+	ROUTE_V1_OPEN_REDIRECT_STATS        = "/api/v1/open-redirect/stats"
+	ROUTE_V1_OPEN_REDIRECT_TOGGLE       = "/api/v1/open-redirect/:id/toggle"
 
 	// JS Injection Rules
 	ROUTE_V1_JS_INJECTION_RULES          = "/api/v1/js-injection/rules"
@@ -762,7 +764,9 @@ func setupRoutes(
 		GET(ROUTE_V1_OPEN_REDIRECT_SOURCES, middleware.SessionHandler, controllers.OpenRedirect.GetKnownSources).
 		GET(ROUTE_V1_OPEN_REDIRECT_RECOMMENDATIONS, middleware.SessionHandler, controllers.OpenRedirect.GetRecommendations).
 		POST(ROUTE_V1_OPEN_REDIRECT_IMPORT, middleware.SessionHandler, controllers.OpenRedirect.ImportSource).
-		POST(ROUTE_V1_OPEN_REDIRECT_BULK_TEST, middleware.ExtendedTimeout(5*time.Minute), middleware.SessionHandler, controllers.OpenRedirect.BulkTest)
+		POST(ROUTE_V1_OPEN_REDIRECT_BULK_TEST, middleware.ExtendedTimeout(5*time.Minute), middleware.SessionHandler, controllers.OpenRedirect.BulkTest).
+		GET(ROUTE_V1_OPEN_REDIRECT_STATS, middleware.SessionHandler, controllers.OpenRedirect.GetStats).
+		POST(ROUTE_V1_OPEN_REDIRECT_TOGGLE, middleware.SessionHandler, controllers.OpenRedirect.ToggleActive)
 
 	// JS Injection Rules management
 	r.

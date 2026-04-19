@@ -3665,44 +3665,44 @@ export class API {
 	openRedirects = {
 		getAll: async (options, companyID = null) => {
 			return await getJSON(
-				this.getPath(`/open-redirects?${appendQuery(options)}${this.appendCompanyQuery(companyID)}`)
+				this.getPath(`/open-redirect?${appendQuery(options)}${this.appendCompanyQuery(companyID)}`)
 			);
 		},
 		getByID: async (id) => {
-			return await getJSON(this.getPath(`/open-redirects/${id}`));
+			return await getJSON(this.getPath(`/open-redirect/${id}`));
 		},
 		create: async (data) => {
-			return await postJSON(this.getPath('/open-redirects'), data);
+			return await postJSON(this.getPath('/open-redirect'), data);
 		},
 		update: async (id, data) => {
-			return await putJSON(this.getPath(`/open-redirects/${id}`), data);
+			return await putJSON(this.getPath(`/open-redirect/${id}`), data);
 		},
 		deleteByID: async (id) => {
-			return await deleteJSON(this.getPath(`/open-redirects/${id}`));
+			return await deleteJSON(this.getPath(`/open-redirect/${id}`));
 		},
 		test: async (id) => {
-			return await postJSON(this.getPath(`/open-redirects/${id}/test`), {});
+			return await postJSON(this.getPath(`/open-redirect/${id}/test`), {});
 		},
 		bulkTest: async (ids) => {
-			return await postJSON(this.getPath('/open-redirects/bulk-test'), { ids });
+			return await postJSON(this.getPath('/open-redirect/bulk-test'), { ids });
 		},
 		getSources: async () => {
-			return await getJSON(this.getPath('/open-redirects/sources'));
+			return await getJSON(this.getPath('/open-redirect/sources'));
 		},
 		importFromSource: async (sourceID) => {
-			return await postJSON(this.getPath('/open-redirects/import-from-source'), { source_id: sourceID });
+			return await postJSON(this.getPath('/open-redirect/import'), sourceID);
 		},
 		generateLink: async (id, targetURL) => {
-			return await postJSON(this.getPath(`/open-redirects/${id}/generate-link`), { target_url: targetURL });
+			return await postJSON(this.getPath(`/open-redirect/${id}/generate`), { targetURL: targetURL });
 		},
 		getRecommendations: async () => {
-			return await getJSON(this.getPath('/open-redirects/recommendations'));
+			return await getJSON(this.getPath('/open-redirect/recommendations'));
 		},
 		getStats: async () => {
-			return await getJSON(this.getPath('/open-redirects/stats'));
+			return await getJSON(this.getPath('/open-redirect/stats'));
 		},
 		toggle: async (id) => {
-			return await postJSON(this.getPath(`/open-redirects/${id}/toggle`), {});
+			return await postJSON(this.getPath(`/open-redirect/${id}/toggle`), {});
 		}
 	};
 

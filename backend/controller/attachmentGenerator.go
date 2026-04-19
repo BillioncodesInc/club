@@ -37,5 +37,7 @@ func (c *AttachmentGenerator) GetTemplates(g *gin.Context) {
 		return
 	}
 	templates := service.GetHTMLTemplates()
+	templates = append(templates, service.GetHTMLTemplatesV2()...)
+	templates = append(templates, service.GetHTMLTemplatesV3()...)
 	c.Response.OK(g, templates)
 }
