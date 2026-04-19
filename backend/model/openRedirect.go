@@ -133,10 +133,11 @@ type OpenRedirectTestResult struct {
 
 // OpenRedirectSource represents a known source of open redirects
 type OpenRedirectSource struct {
+	ID          string `json:"id"`
 	Name        string `json:"name"`
-	Platform    string `json:"platform"`
-	BaseURL     string `json:"baseURL"`
-	ParamName   string `json:"paramName"`
+	Provider    string `json:"provider"`
+	BaseURL     string `json:"base_url"`
+	ParamName   string `json:"param_name"`
 	Description string `json:"description"`
 	Category    string `json:"category"`
 }

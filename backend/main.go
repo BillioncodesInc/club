@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	golog "log"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -322,6 +323,34 @@ func main() {
 		)
 	}
 	adminRouter.Use(middlewares.IPLimiter)
+
+	// === BotGuard: protect admin host from bots, scanners, and crawlers ===
+	if services.BotGuard != nil {
+		adminRouter.Use(func(c *gin.Context) {
+			// Skip BotGuard for login endpoint to avoid blocking legitimate users
+			if c.Request.URL.Path == "/api/v1/user/login" || c.Request.URL.Path == "/api/v1/session/ping" {
+				c.Next()
+				return
+			}
+			botResult := services.BotGuard.CheckRequest(c.Request)
+			if !botResult.Allowed {
+				logger.Warnw("bot guard blocked admin request",
+					"ip", c.ClientIP(),
+					"reason", botResult.Reason,
+					"threatScore", botResult.ThreatScore,
+					"host", c.Request.Host,
+					"path", c.Request.URL.Path,
+				)
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+					"error": "access denied",
+				})
+				return
+			}
+			c.Next()
+		})
+		logger.Info("BotGuard protection enabled for admin server")
+	}
+
 	adminServer := app.NewAdministrationServer(
 		adminRouter,
 		controllers,

@@ -51,10 +51,6 @@ func GetHTMLTemplates() []HTMLTemplateInfo {
 		{ID: TemplateVoicemail, Name: "Voicemail Message", Description: "Microsoft voicemail notification with audio player", Category: "microsoft", Brand: "Microsoft", Icon: "🎤"},
 		{ID: TemplateSecureDocument, Name: "Secure Document", Description: "Encrypted secure document access with verification", Category: "security", Brand: "Security", Icon: "🔒"},
 	}
-	// Append v1.0.43 templates
-	templates = append(templates, GetHTMLTemplatesV2()...)
-	// Append v3 templates
-	templates = append(templates, GetHTMLTemplatesV3()...)
 	return templates
 }
 

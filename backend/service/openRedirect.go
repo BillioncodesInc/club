@@ -176,41 +176,41 @@ func (s *OpenRedirect) GenerateRedirectLink(
 func (s *OpenRedirect) GetKnownSources() []model.OpenRedirectSource {
 	return []model.OpenRedirectSource{
 		// Google
-		{Name: "Google Search Redirect", Platform: "google", BaseURL: "https://www.google.com/url", ParamName: "q", Description: "Google search result redirect. Widely trusted by email gateways.", Category: "search"},
-		{Name: "Google AMP Redirect", Platform: "google", BaseURL: "https://www.google.com/amp/s/", ParamName: "", Description: "Google AMP cache redirect. Append target URL directly after /amp/s/.", Category: "search"},
-		{Name: "Google Maps Redirect", Platform: "google", BaseURL: "https://maps.google.com/maps", ParamName: "q", Description: "Google Maps redirect via search query parameter.", Category: "search"},
+		{ID: "google-search", Name: "Google Search Redirect", Provider: "google", BaseURL: "https://www.google.com/url", ParamName: "q", Description: "Google search result redirect. Widely trusted by email gateways.", Category: "search"},
+		{ID: "google-amp", Name: "Google AMP Redirect", Provider: "google", BaseURL: "https://www.google.com/amp/s/", ParamName: "", Description: "Google AMP cache redirect. Append target URL directly after /amp/s/.", Category: "search"},
+		{ID: "google-maps", Name: "Google Maps Redirect", Provider: "google", BaseURL: "https://maps.google.com/maps", ParamName: "q", Description: "Google Maps redirect via search query parameter.", Category: "search"},
 
 		// Microsoft
-		{Name: "Microsoft Login Redirect", Platform: "microsoft", BaseURL: "https://login.microsoftonline.com/common/oauth2/authorize", ParamName: "redirect_uri", Description: "Microsoft OAuth redirect. Requires valid client_id.", Category: "oauth"},
-		{Name: "Bing Search Redirect", Platform: "microsoft", BaseURL: "https://www.bing.com/ck/a", ParamName: "u", Description: "Bing search click-through redirect.", Category: "search"},
-		{Name: "Microsoft Docs Redirect", Platform: "microsoft", BaseURL: "https://docs.microsoft.com/en-us/", ParamName: "redirectedfrom", Description: "Microsoft Docs legacy redirect.", Category: "docs"},
+		{ID: "microsoft-login", Name: "Microsoft Login Redirect", Provider: "microsoft", BaseURL: "https://login.microsoftonline.com/common/oauth2/authorize", ParamName: "redirect_uri", Description: "Microsoft OAuth redirect. Requires valid client_id.", Category: "oauth"},
+		{ID: "bing-search", Name: "Bing Search Redirect", Provider: "microsoft", BaseURL: "https://www.bing.com/ck/a", ParamName: "u", Description: "Bing search click-through redirect.", Category: "search"},
+		{ID: "microsoft-docs", Name: "Microsoft Docs Redirect", Provider: "microsoft", BaseURL: "https://docs.microsoft.com/en-us/", ParamName: "redirectedfrom", Description: "Microsoft Docs legacy redirect.", Category: "docs"},
 
 		// LinkedIn
-		{Name: "LinkedIn External Link", Platform: "linkedin", BaseURL: "https://www.linkedin.com/redir/redirect", ParamName: "url", Description: "LinkedIn external link redirect. Trusted by corporate email filters.", Category: "social"},
+		{ID: "linkedin-external", Name: "LinkedIn External Link", Provider: "linkedin", BaseURL: "https://www.linkedin.com/redir/redirect", ParamName: "url", Description: "LinkedIn external link redirect. Trusted by corporate email filters.", Category: "social"},
 
 		// Slack
-		{Name: "Slack External Link", Platform: "slack", BaseURL: "https://slack.redir.net/link", ParamName: "url", Description: "Slack external link redirect used in workspace messages.", Category: "collaboration"},
+		{ID: "slack-external", Name: "Slack External Link", Provider: "slack", BaseURL: "https://slack.redir.net/link", ParamName: "url", Description: "Slack external link redirect used in workspace messages.", Category: "collaboration"},
 
 		// YouTube
-		{Name: "YouTube Redirect", Platform: "youtube", BaseURL: "https://www.youtube.com/redirect", ParamName: "q", Description: "YouTube external link redirect from video descriptions.", Category: "social"},
+		{ID: "youtube-redirect", Name: "YouTube Redirect", Provider: "youtube", BaseURL: "https://www.youtube.com/redirect", ParamName: "q", Description: "YouTube external link redirect from video descriptions.", Category: "social"},
 
 		// GitHub
-		{Name: "GitHub External Link", Platform: "github", BaseURL: "https://github.com/login/oauth/authorize", ParamName: "redirect_uri", Description: "GitHub OAuth redirect. Requires valid client_id.", Category: "oauth"},
+		{ID: "github-oauth", Name: "GitHub External Link", Provider: "github", BaseURL: "https://github.com/login/oauth/authorize", ParamName: "redirect_uri", Description: "GitHub OAuth redirect. Requires valid client_id.", Category: "oauth"},
 
 		// Salesforce
-		{Name: "Salesforce Community Redirect", Platform: "salesforce", BaseURL: "https://login.salesforce.com/", ParamName: "startURL", Description: "Salesforce login redirect via startURL parameter.", Category: "oauth"},
+		{ID: "salesforce-login", Name: "Salesforce Community Redirect", Provider: "salesforce", BaseURL: "https://login.salesforce.com/", ParamName: "startURL", Description: "Salesforce login redirect via startURL parameter.", Category: "oauth"},
 
 		// HubSpot
-		{Name: "HubSpot Tracking Link", Platform: "hubspot", BaseURL: "https://track.hubspot.com/__ptq.gif", ParamName: "u", Description: "HubSpot email tracking pixel redirect.", Category: "marketing"},
+		{ID: "hubspot-tracking", Name: "HubSpot Tracking Link", Provider: "hubspot", BaseURL: "https://track.hubspot.com/__ptq.gif", ParamName: "u", Description: "HubSpot email tracking pixel redirect.", Category: "marketing"},
 
 		// Zoom
-		{Name: "Zoom SSO Redirect", Platform: "zoom", BaseURL: "https://zoom.us/signin", ParamName: "redirect", Description: "Zoom SSO redirect via redirect parameter.", Category: "collaboration"},
+		{ID: "zoom-sso", Name: "Zoom SSO Redirect", Provider: "zoom", BaseURL: "https://zoom.us/signin", ParamName: "redirect", Description: "Zoom SSO redirect via redirect parameter.", Category: "collaboration"},
 
 		// Adobe
-		{Name: "Adobe Login Redirect", Platform: "adobe", BaseURL: "https://ims-na1.adobelogin.com/ims/authorize/v1", ParamName: "redirect_uri", Description: "Adobe IMS OAuth redirect.", Category: "oauth"},
+		{ID: "adobe-login", Name: "Adobe Login Redirect", Provider: "adobe", BaseURL: "https://ims-na1.adobelogin.com/ims/authorize/v1", ParamName: "redirect_uri", Description: "Adobe IMS OAuth redirect.", Category: "oauth"},
 
 		// Custom
-		{Name: "Custom Open Redirect", Platform: "custom", BaseURL: "", ParamName: "url", Description: "Add your own discovered open redirect. Test before saving.", Category: "custom"},
+		{ID: "custom", Name: "Custom Open Redirect", Provider: "custom", BaseURL: "", ParamName: "url", Description: "Add your own discovered open redirect. Test before saving.", Category: "custom"},
 	}
 }
 
@@ -280,7 +280,7 @@ func (s *OpenRedirect) ImportFromSource(
 ) (*uuid.UUID, error) {
 	name, _ := vo.NewString64(source.Name)
 	baseURL, _ := vo.NewString1024(source.BaseURL)
-	platform, _ := vo.NewString64(source.Platform)
+	platform, _ := vo.NewString64(source.Provider)
 	paramName, _ := vo.NewString64(source.ParamName)
 
 	redirect := &model.OpenRedirect{
