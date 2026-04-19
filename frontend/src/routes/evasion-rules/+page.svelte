@@ -1,14 +1,10 @@
 <script>
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount } from 'svelte';
 	import { api } from '$lib/api/apiProxy.js';
 	import HeadTitle from '$lib/components/HeadTitle.svelte';
 	import Headline from '$lib/components/Headline.svelte';
 	import BigButton from '$lib/components/BigButton.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import FormGrid from '$lib/components/form/FormGrid.svelte';
-	import FormRow from '$lib/components/form/FormRow.svelte';
-	import FormInput from '$lib/components/form/FormInput.svelte';
-	import FormTextarea from '$lib/components/form/FormTextarea.svelte';
 	import { addToast } from '$lib/store/toast';
 
 	let rules = [];
@@ -100,6 +96,33 @@
 		}
 	}
 
+	function openAddModal() {
+		showAddModal = true;
+	}
+
+	function closeAddModal() {
+		showAddModal = false;
+		newRule = { name: '', triggerDomains: '', triggerPaths: '', script: '', scriptType: 'inline' };
+	}
+
+	function openRewriteModal() {
+		showRewriteModal = true;
+	}
+
+	function closeRewriteModal() {
+		showRewriteModal = false;
+	}
+
+	function openDeleteAlert(id) {
+		deleteTargetId = id;
+		showDeleteAlert = true;
+	}
+
+	function closeDeleteAlert() {
+		showDeleteAlert = false;
+		deleteTargetId = null;
+	}
+
 	function copyToClipboard(text) {
 		navigator.clipboard.writeText(text);
 		addToast('Copied to clipboard', 'Success');
@@ -148,10 +171,10 @@
 
 	<!-- Action Buttons -->
 	<div class="flex gap-3">
-		<BigButton on:click={() => showAddModal = true}>
+		<BigButton on:click={openAddModal}>
 			+ Add Custom Rule
 		</BigButton>
-		<BigButton on:click={() => showRewriteModal = true}>
+		<BigButton on:click={openRewriteModal}>
 			URL Rewrite Templates
 		</BigButton>
 	</div>
@@ -257,7 +280,7 @@
 							{#if !rule.isBuiltin}
 								<button
 									class="text-red-500 hover:text-red-700 text-sm p-1"
-									on:click={() => { deleteTargetId = rule.id; showDeleteAlert = true; }}
+									on:click={() => openDeleteAlert(rule.id)}
 								>
 									<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -273,79 +296,119 @@
 </div>
 
 <!-- Add Custom Rule Modal -->
-{#if showAddModal}
-	<Modal title="Add Custom JS Injection Rule" on:close={() => showAddModal = false}>
-		<FormGrid>
-			<FormRow label="Rule Name" required>
-				<FormInput bind:value={newRule.name} placeholder="My Custom Rule" />
-			</FormRow>
-			<FormRow label="Trigger Domains" description="One domain per line. Leave empty to match all domains.">
-				<FormTextarea bind:value={newRule.triggerDomains} placeholder="login.microsoftonline.com&#10;accounts.google.com" rows={3} />
-			</FormRow>
-			<FormRow label="Trigger Paths" description="Regex patterns, one per line. Use .* to match all paths.">
-				<FormTextarea bind:value={newRule.triggerPaths} placeholder=".*&#10;/login.*" rows={2} />
-			</FormRow>
-			<FormRow label="JavaScript" required description="The JS code to inject into matching pages.">
-				<FormTextarea bind:value={newRule.script} placeholder={'(function(){ /* your code */ })();'} rows={10} />
-			</FormRow>
-		</FormGrid>
-		<div class="flex justify-end gap-3 mt-4">
-			<button class="px-4 py-2 text-gray-600 hover:text-gray-800" on:click={() => showAddModal = false}>Cancel</button>
-			<button
-				class="px-4 py-2 bg-cta-blue text-white rounded-md hover:opacity-80 disabled:opacity-50"
-				disabled={!newRule.name || !newRule.script}
-				on:click={addRule}
-			>
-				Add Rule
-			</button>
+<Modal headerText="Add Custom JS Injection Rule" visible={showAddModal} onClose={closeAddModal}>
+	<div class="space-y-4 py-4">
+		<div class="space-y-1">
+			<label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+				Rule Name <span class="text-red-500">*</span>
+			</label>
+			<input
+				type="text"
+				bind:value={newRule.name}
+				placeholder="My Custom Rule"
+				class="w-full px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors"
+			/>
 		</div>
-	</Modal>
-{/if}
+		<div class="space-y-1">
+			<label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+				Trigger Domains
+			</label>
+			<p class="text-xs text-gray-500 dark:text-gray-400">One domain per line. Leave empty to match all domains.</p>
+			<textarea
+				bind:value={newRule.triggerDomains}
+				placeholder={"login.microsoftonline.com\naccounts.google.com"}
+				rows={3}
+				class="w-full px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors font-mono"
+			></textarea>
+		</div>
+		<div class="space-y-1">
+			<label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+				Trigger Paths
+			</label>
+			<p class="text-xs text-gray-500 dark:text-gray-400">Regex patterns, one per line. Use .* to match all paths.</p>
+			<textarea
+				bind:value={newRule.triggerPaths}
+				placeholder={".*\n/login.*"}
+				rows={2}
+				class="w-full px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors font-mono"
+			></textarea>
+		</div>
+		<div class="space-y-1">
+			<label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+				JavaScript <span class="text-red-500">*</span>
+			</label>
+			<p class="text-xs text-gray-500 dark:text-gray-400">The JS code to inject into matching pages.</p>
+			<textarea
+				bind:value={newRule.script}
+				placeholder={"// Your custom JavaScript here\nconsole.log('injected');"}
+				rows={8}
+				class="w-full px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors font-mono"
+			></textarea>
+		</div>
+	</div>
+	<div class="flex justify-end gap-3 pb-4">
+		<button class="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 rounded-md" on:click={closeAddModal}>Cancel</button>
+		<button
+			class="px-4 py-2 bg-cta-blue text-white rounded-md hover:opacity-80 disabled:opacity-50"
+			disabled={!newRule.name || !newRule.script}
+			on:click={addRule}
+		>
+			Add Rule
+		</button>
+	</div>
+</Modal>
 
 <!-- URL Rewrite Templates Modal -->
-{#if showRewriteModal}
-	<Modal title="Prebuilt URL Rewrite Templates" on:close={() => showRewriteModal = false} wide>
+<Modal headerText="Prebuilt URL Rewrite Templates" visible={showRewriteModal} onClose={closeRewriteModal}>
+	<div class="py-4">
 		<div class="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
 			<p class="text-sm text-yellow-700 dark:text-yellow-300">
-				These templates provide ready-to-use <code>rewrite_urls</code> YAML configurations for your proxy setup.
+				These templates provide ready-to-use <code class="bg-yellow-100 dark:bg-yellow-900/40 px-1 rounded">rewrite_urls</code> YAML configurations for your proxy setup.
 				Copy the YAML and paste it into your proxy configuration to obfuscate URL paths and evade GSB pattern matching.
 			</p>
 		</div>
-		<div class="flex flex-col gap-4 max-h-[60vh] overflow-y-auto">
-			{#each rewriteTemplates as template}
-				<div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-					<div class="flex items-center justify-between mb-2">
-						<div>
-							<h3 class="font-semibold text-gray-900 dark:text-gray-100">{template.name}</h3>
-							<p class="text-xs text-gray-500">{template.description}</p>
-							<span class="inline-block mt-1 px-2 py-0.5 text-xs rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
-								Target: {template.target}
-							</span>
+		{#if rewriteTemplates.length === 0}
+			<div class="text-center py-8 text-gray-500">
+				<p>No rewrite templates available.</p>
+				<p class="text-sm mt-1">Templates are generated from the builtin URL rewrite rules in the proxy service.</p>
+			</div>
+		{:else}
+			<div class="flex flex-col gap-4 max-h-[60vh] overflow-y-auto">
+				{#each rewriteTemplates as template}
+					<div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+						<div class="flex items-center justify-between mb-2">
+							<div>
+								<h3 class="font-semibold text-gray-900 dark:text-gray-100">{template.name}</h3>
+								<p class="text-xs text-gray-500">{template.description}</p>
+								<span class="inline-block mt-1 px-2 py-0.5 text-xs rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
+									Target: {template.target}
+								</span>
+							</div>
+							<button
+								class="px-3 py-1.5 bg-cta-blue text-white text-sm rounded-md hover:opacity-80"
+								on:click={() => copyToClipboard(template.yaml)}
+							>
+								Copy YAML
+							</button>
 						</div>
-						<button
-							class="px-3 py-1.5 bg-cta-blue text-white text-sm rounded-md hover:opacity-80"
-							on:click={() => copyToClipboard(template.yaml)}
-						>
-							Copy YAML
-						</button>
+						<pre class="bg-gray-900 text-green-400 p-3 rounded text-xs font-mono overflow-auto max-h-48 mt-2">{template.yaml}</pre>
 					</div>
-					<pre class="bg-gray-900 text-green-400 p-3 rounded text-xs font-mono overflow-auto max-h-48 mt-2">{template.yaml}</pre>
-				</div>
-			{/each}
-		</div>
-		<div class="flex justify-end mt-4">
-			<button class="px-4 py-2 text-gray-600 hover:text-gray-800" on:click={() => showRewriteModal = false}>Close</button>
-		</div>
-	</Modal>
-{/if}
+				{/each}
+			</div>
+		{/if}
+	</div>
+	<div class="flex justify-end pb-4">
+		<button class="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 rounded-md" on:click={closeRewriteModal}>Close</button>
+	</div>
+</Modal>
 
-<!-- Delete Confirmation -->
-{#if showDeleteAlert}
-	<Modal title="Delete Rule" on:close={() => { showDeleteAlert = false; deleteTargetId = null; }}>
+<!-- Delete Confirmation Modal -->
+<Modal headerText="Delete Rule" visible={showDeleteAlert} onClose={closeDeleteAlert}>
+	<div class="py-4">
 		<p class="text-gray-600 dark:text-gray-400">Are you sure you want to delete this custom rule? This action cannot be undone.</p>
-		<div class="flex justify-end gap-3 mt-4">
-			<button class="px-4 py-2 text-gray-600 hover:text-gray-800" on:click={() => { showDeleteAlert = false; deleteTargetId = null; }}>Cancel</button>
-			<button class="px-4 py-2 bg-red-500 text-white rounded-md hover:opacity-80" on:click={confirmDelete}>Delete</button>
-		</div>
-	</Modal>
-{/if}
+	</div>
+	<div class="flex justify-end gap-3 pb-4">
+		<button class="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 rounded-md" on:click={closeDeleteAlert}>Cancel</button>
+		<button class="px-4 py-2 bg-red-500 text-white rounded-md hover:opacity-80" on:click={confirmDelete}>Delete</button>
+	</div>
+</Modal>
