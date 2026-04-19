@@ -46,10 +46,10 @@
 		name: '',
 		baseURL: '',
 		paramName: '',
-		provider: '',
+		platform: '',
 		notes: '',
 		useWithProxy: false,
-		proxyDomain: ''
+		proxyID: ''
 	};
 
 	// Delete alert
@@ -71,7 +71,7 @@
 	let generatedLink = '';
 	let isGenerating = false;
 
-	// Sources modal
+	// Sources
 	let sources = [];
 	let sourcesLoading = false;
 	let isImportingSource = false;
@@ -185,10 +185,10 @@
 			name: '',
 			baseURL: '',
 			paramName: 'url',
-			provider: '',
+			platform: '',
 			notes: '',
 			useWithProxy: false,
-			proxyDomain: ''
+			proxyID: ''
 		};
 		formError = '';
 		isModalVisible = true;
@@ -204,12 +204,12 @@
 				formValues = {
 					id: r.id,
 					name: r.name || '',
-					baseURL: r.base_url || '',
-					paramName: r.param_name || 'url',
-					provider: r.provider || '',
+					baseURL: r.baseURL || '',
+					paramName: r.paramName || 'url',
+					platform: r.platform || '',
 					notes: r.notes || '',
-					useWithProxy: r.use_with_proxy || false,
-					proxyDomain: r.proxy_domain || ''
+					useWithProxy: r.useWithProxy || false,
+					proxyID: r.proxyID || ''
 				};
 				formError = '';
 				isModalVisible = true;
@@ -227,14 +227,15 @@
 		isSubmitting = true;
 		formError = '';
 		try {
+			// Backend binds to model.OpenRedirect which uses camelCase JSON tags
 			const payload = {
 				name: formValues.name,
-				base_url: formValues.baseURL,
-				param_name: formValues.paramName,
-				provider: formValues.provider,
+				baseURL: formValues.baseURL,
+				paramName: formValues.paramName,
+				platform: formValues.platform,
 				notes: formValues.notes,
-				use_with_proxy: formValues.useWithProxy,
-				proxy_domain: formValues.proxyDomain
+				useWithProxy: formValues.useWithProxy,
+				proxyID: formValues.proxyID || null
 			};
 
 			let res;
@@ -297,12 +298,13 @@
 		try {
 			const res = await api.openRedirects.test(id);
 			if (res.success) {
+				// Backend returns: isWorking, statusCode, finalURL, url, responseTimeMs, error
 				testResult = res.data;
 			} else {
-				testResult = { working: false, error: res.error || 'Test failed' };
+				testResult = { isWorking: false, error: res.error || 'Test failed' };
 			}
 		} catch (e) {
-			testResult = { working: false, error: 'Test request failed' };
+			testResult = { isWorking: false, error: 'Test request failed' };
 		}
 		isTesting = false;
 	}
@@ -364,7 +366,8 @@
 		try {
 			const res = await api.openRedirects.generateLink(generateLinkRedirectId, generateTargetURL);
 			if (res.success) {
-				generatedLink = res.data.generated_url || res.data.url || '';
+				// Backend returns: { redirectURL: "..." }
+				generatedLink = res.data.redirectURL || res.data.generated_url || res.data.url || '';
 			} else {
 				addToast(res.error || 'Failed to generate link', 'Error');
 			}
@@ -387,7 +390,7 @@
 		try {
 			const res = await api.openRedirects.importFromSource(sourceId);
 			if (res.success) {
-				const count = res.data?.imported || 0;
+				const count = res.data?.imported || 1;
 				addToast(`Imported ${count} redirect(s)`, 'Success');
 				await refreshRedirects();
 			} else {
@@ -425,7 +428,13 @@
 		}
 	}
 
-	// Status badge helper
+	// Status helpers - derive from backend fields
+	function getRedirectStatus(redirect) {
+		if (redirect.isVerified === true) return 'working';
+		if (redirect.isVerified === false && redirect.lastTestedAt) return 'failed';
+		return 'untested';
+	}
+
 	function getStatusColor(status) {
 		switch (status) {
 			case 'working':
@@ -433,9 +442,9 @@
 			case 'failed':
 				return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
 			case 'untested':
-				return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200';
-			default:
 				return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200';
+			default:
+				return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200';
 		}
 	}
 
@@ -536,27 +545,28 @@
 						</button>
 					</TableCell>
 					<TableCell>
-						{#if redirect.provider}
+						{#if redirect.platform}
 							<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-								{redirect.provider}
+								{redirect.platform}
 							</span>
 						{:else}
 							<span class="text-gray-400">-</span>
 						{/if}
 					</TableCell>
 					<TableCell>
-						<span class="text-xs font-mono text-gray-600 dark:text-gray-400 truncate block max-w-xs" title={redirect.base_url}>
-							{redirect.base_url}
+						<span class="text-xs font-mono text-gray-600 dark:text-gray-400 truncate block max-w-xs" title={redirect.baseURL}>
+							{redirect.baseURL || '-'}
 						</span>
 					</TableCell>
 					<TableCell>
-						<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {getStatusColor(redirect.status)}">
-							{redirect.status || 'untested'}
+						{@const status = getRedirectStatus(redirect)}
+						<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {getStatusColor(status)}">
+							{status}
 						</span>
 					</TableCell>
 					<TableCell>
 						<span class="text-xs text-gray-500 dark:text-gray-400">
-							{formatDate(redirect.last_tested_at)}
+							{formatDate(redirect.lastTestedAt)}
 						</span>
 					</TableCell>
 					<TableCellEmpty />
@@ -576,13 +586,6 @@
 								title="Generate Link"
 							>
 								<p class="ml-2 text-left">Generate Link</p>
-							</button>
-							<button
-								class="w-full px py-1 text-slate-600 dark:text-gray-200 hover:bg-highlight-blue dark:hover:bg-highlight-blue/50 hover:text-white cursor-pointer text-left transition-colors duration-200"
-								on:click={() => toggleActive(redirect.id)}
-								title={redirect.is_active ? 'Disable' : 'Enable'}
-							>
-								<p class="ml-2 text-left">{redirect.is_active ? 'Disable' : 'Enable'}</p>
 							</button>
 							<TableDeleteButton on:click={() => openDeleteAlert(redirect)} />
 						</TableDropDownEllipsis>
@@ -615,7 +618,7 @@
 										{source.base_url}
 									</p>
 									{#if source.description}
-										<p class="text-xs text-gray-400 dark:text-gray-500 mt-1">
+										<p class="text-xs text-gray-400 dark:text-gray-500 mt-1 line-clamp-2">
 											{source.description}
 										</p>
 									{/if}
@@ -630,11 +633,17 @@
 							</div>
 							<div class="mt-2 flex items-center gap-2">
 								<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-									{source.provider}
+									{source.category || source.provider}
 								</span>
-								<span class="text-xs text-gray-400">
-									Param: <code class="bg-gray-100 dark:bg-gray-800 px-1 rounded">{source.param_name}</code>
-								</span>
+								{#if source.param_name}
+									<span class="text-xs text-gray-400">
+										Param: <code class="bg-gray-100 dark:bg-gray-800 px-1 rounded">{source.param_name}</code>
+									</span>
+								{:else}
+									<span class="text-xs text-gray-400">
+										<code class="bg-gray-100 dark:bg-gray-800 px-1 rounded">path-based</code>
+									</span>
+								{/if}
 							</div>
 						</div>
 					{/each}
@@ -737,15 +746,14 @@
 
 			<TextField
 				label="Parameter Name"
-				placeholder="e.g., url, q, redirect_uri"
+				placeholder="e.g., url, q, redirect_uri (leave empty for path-based)"
 				bind:value={formValues.paramName}
-				required
 			/>
 
 			<TextField
 				label="Provider"
 				placeholder="e.g., Google, Microsoft, LinkedIn"
-				bind:value={formValues.provider}
+				bind:value={formValues.platform}
 			/>
 
 			<TextareaField
@@ -773,12 +781,12 @@
 							Proxy Domain
 						</label>
 						<select
-							bind:value={formValues.proxyDomain}
+							bind:value={formValues.proxyID}
 							class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-3 py-2 text-sm focus:ring-highlight-blue focus:border-highlight-blue"
 						>
 							<option value="">Select a proxy domain...</option>
 							{#each proxyDomains as domain}
-								<option value={domain.name || domain.domain}>{domain.name || domain.domain}</option>
+								<option value={domain.id}>{domain.name || domain.domain}</option>
 							{/each}
 						</select>
 					</div>
@@ -810,9 +818,9 @@
 				<span class="ml-3 text-gray-600 dark:text-gray-400">Testing redirect...</span>
 			</div>
 		{:else if testResult}
-			<div class="rounded-lg p-4 {testResult.working ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'}">
+			<div class="rounded-lg p-4 {testResult.isWorking ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'}">
 				<div class="flex items-center gap-2">
-					{#if testResult.working}
+					{#if testResult.isWorking}
 						<svg class="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
 						</svg>
@@ -826,35 +834,35 @@
 				</div>
 			</div>
 
-			{#if testResult.status_code}
+			{#if testResult.statusCode}
 				<div class="text-sm">
 					<span class="text-gray-500 dark:text-gray-400">Status Code:</span>
-					<span class="font-mono font-medium ml-1">{testResult.status_code}</span>
+					<span class="font-mono font-medium ml-1">{testResult.statusCode}</span>
 				</div>
 			{/if}
 
-			{#if testResult.final_url}
+			{#if testResult.finalURL}
 				<div class="text-sm">
 					<span class="text-gray-500 dark:text-gray-400">Final URL:</span>
 					<code class="block mt-1 p-2 bg-gray-100 dark:bg-gray-800 rounded text-xs font-mono break-all">
-						{testResult.final_url}
+						{testResult.finalURL}
 					</code>
 				</div>
 			{/if}
 
-			{#if testResult.redirect_chain && testResult.redirect_chain.length > 0}
+			{#if testResult.responseTimeMs}
 				<div class="text-sm">
-					<span class="text-gray-500 dark:text-gray-400">Redirect Chain ({testResult.redirect_chain.length} hops):</span>
-					<div class="mt-1 space-y-1">
-						{#each testResult.redirect_chain as hop, i}
-							<div class="flex items-center gap-2 text-xs">
-								<span class="flex-shrink-0 w-5 h-5 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-gray-600 dark:text-gray-400 font-medium">
-									{i + 1}
-								</span>
-								<code class="font-mono text-gray-600 dark:text-gray-400 truncate">{hop}</code>
-							</div>
-						{/each}
-					</div>
+					<span class="text-gray-500 dark:text-gray-400">Response Time:</span>
+					<span class="font-mono font-medium ml-1">{testResult.responseTimeMs}ms</span>
+				</div>
+			{/if}
+
+			{#if testResult.url}
+				<div class="text-sm">
+					<span class="text-gray-500 dark:text-gray-400">Test URL:</span>
+					<code class="block mt-1 p-2 bg-gray-100 dark:bg-gray-800 rounded text-xs font-mono break-all">
+						{testResult.url}
+					</code>
 				</div>
 			{/if}
 

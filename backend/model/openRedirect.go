@@ -41,8 +41,10 @@ func (m *OpenRedirect) Validate() error {
 	if err := validate.NullableFieldRequired("platform", m.Platform); err != nil {
 		return err
 	}
-	if err := validate.NullableFieldRequired("paramName", m.ParamName); err != nil {
-		return err
+	// paramName is optional for path-based redirects (e.g., Google AMP /amp/s/)
+	// Only validate if specified and non-null
+	if m.ParamName.IsSpecified() && !m.ParamName.IsNull() {
+		// It's specified, which is fine - no further validation needed
 	}
 	// validate base URL format
 	baseURL, err := m.BaseURL.Get()

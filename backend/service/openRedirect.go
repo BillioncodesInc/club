@@ -99,14 +99,19 @@ func (s *OpenRedirect) TestRedirect(
 	if err != nil {
 		return nil, errs.Wrap(err)
 	}
+	// ParamName may be empty/"path" for path-based redirects
+	paramNameStr := ""
 	paramName, err := redirect.ParamName.Get()
-	if err != nil {
-		return nil, errs.Wrap(err)
+	if err == nil {
+		paramNameStr = paramName.String()
+		if paramNameStr == "path" {
+			paramNameStr = ""
+		}
 	}
 
 	// Build the test URL: baseURL + paramName=testTarget
 	testTarget := "https://www.example.com/redirect-test-" + uuid.New().String()[:8]
-	testURL := buildRedirectURL(baseURL.String(), paramName.String(), testTarget)
+	testURL := buildRedirectURL(baseURL.String(), paramNameStr, testTarget)
 
 	result := s.executeRedirectTest(testURL, testTarget)
 
@@ -155,9 +160,14 @@ func (s *OpenRedirect) GenerateRedirectLink(
 	if err != nil {
 		return "", errs.Wrap(err)
 	}
+	// ParamName may be empty/"path" for path-based redirects
+	paramNameStr := ""
 	paramName, err := redirect.ParamName.Get()
-	if err != nil {
-		return "", errs.Wrap(err)
+	if err == nil {
+		paramNameStr = paramName.String()
+		if paramNameStr == "path" {
+			paramNameStr = ""
+		}
 	}
 
 	// If UseWithProxy is enabled and a proxy is associated, use the proxy domain as the target
@@ -169,7 +179,7 @@ func (s *OpenRedirect) GenerateRedirectLink(
 		}
 	}
 
-	return buildRedirectURL(baseURL.String(), paramName.String(), finalTarget), nil
+	return buildRedirectURL(baseURL.String(), paramNameStr, finalTarget), nil
 }
 
 // GetKnownSources returns a curated list of known open redirect sources
@@ -307,17 +317,38 @@ func (s *OpenRedirect) ImportFromSource(
 	source *model.OpenRedirectSource,
 	companyID *uuid.UUID,
 ) (*uuid.UUID, error) {
-	name, _ := vo.NewString64(source.Name)
-	baseURL, _ := vo.NewString1024(source.BaseURL)
-	platform, _ := vo.NewString64(source.Provider)
-	paramName, _ := vo.NewString64(source.ParamName)
+	name, err := vo.NewString64(source.Name)
+	if err != nil {
+		return nil, errs.Wrap(err)
+	}
+	baseURL, err := vo.NewString1024(source.BaseURL)
+	if err != nil {
+		return nil, errs.Wrap(err)
+	}
+	platform, err := vo.NewString64(source.Provider)
+	if err != nil {
+		return nil, errs.Wrap(err)
+	}
 
 	redirect := &model.OpenRedirect{
-		Name:      nullable.NewNullableWithValue(*name),
-		BaseURL:   nullable.NewNullableWithValue(*baseURL),
-		Platform:  nullable.NewNullableWithValue(*platform),
-		ParamName: nullable.NewNullableWithValue(*paramName),
+		Name:     nullable.NewNullableWithValue(*name),
+		BaseURL:  nullable.NewNullableWithValue(*baseURL),
+		Platform: nullable.NewNullableWithValue(*platform),
 	}
+
+	// ParamName is optional for path-based redirects (e.g., Google AMP /amp/s/)
+	if source.ParamName != "" {
+		paramName, err := vo.NewString64(source.ParamName)
+		if err != nil {
+			return nil, errs.Wrap(err)
+		}
+		redirect.ParamName = nullable.NewNullableWithValue(*paramName)
+	} else {
+		// For path-based redirects, store "path" as the param type
+		pathParam, _ := vo.NewString64("path")
+		redirect.ParamName = nullable.NewNullableWithValue(*pathParam)
+	}
+
 	if companyID != nil {
 		redirect.CompanyID = nullable.NewNullableWithValue(*companyID)
 	}
