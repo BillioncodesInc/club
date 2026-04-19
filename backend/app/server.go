@@ -437,14 +437,23 @@ func (s *Server) Handler(c *gin.Context) {
 			"targetDomain", domain.ProxyTargetDomain,
 			"path", c.Request.URL.Path,
 		)
-		// === Live Map: record proxy visit event ===
+		// === Live Map: record proxy visit event (only for page/document requests, not assets) ===
 		if s.services.LiveMap != nil {
-			go s.services.LiveMap.RecordEvent(
-				utils.ExtractClientIP(c.Request),
-				c.Request.UserAgent(),
-				"proxy_visit",
-				host,
-			)
+			secFetchDest := c.Request.Header.Get("Sec-Fetch-Dest")
+			isDocumentRequest := secFetchDest == "document" || secFetchDest == ""
+			if !isDocumentRequest {
+				// fallback: check Accept header for HTML content
+				accept := c.Request.Header.Get("Accept")
+				isDocumentRequest = strings.Contains(accept, "text/html")
+			}
+			if isDocumentRequest {
+				go s.services.LiveMap.RecordEvent(
+					utils.ExtractClientIP(c.Request),
+					c.Request.UserAgent(),
+					"proxy_visit",
+					host,
+				)
+			}
 		}
 		err = s.proxyServer.HandleHTTPRequest(c.Writer, c.Request, domain)
 		if err != nil {
