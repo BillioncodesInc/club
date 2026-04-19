@@ -207,22 +207,40 @@ func (m *OpenRedirectCtrl) GetRecommendations(g *gin.Context) {
 	m.Response.OK(g, m.OpenRedirectService.GetOpenSourceRecommendations())
 }
 
-// ImportSource imports a known source as a new redirect entry
+// ImportSource imports a known source as a new redirect entry.
+// Accepts either {"source_id": "google-search"} or a full OpenRedirectSource object.
 func (m *OpenRedirectCtrl) ImportSource(g *gin.Context) {
 	_, _, ok := m.handleSession(g)
 	if !ok {
 		return
 	}
-	var req model.OpenRedirectSource
+
+	var req struct {
+		SourceID string `json:"source_id"`
+	}
 	if ok := m.handleParseRequest(g, &req); !ok {
 		return
 	}
+
+	// Look up the source from the known sources list
+	var source *model.OpenRedirectSource
+	for _, s := range m.OpenRedirectService.GetKnownSources() {
+		if s.ID == req.SourceID {
+			source = &s
+			break
+		}
+	}
+	if source == nil {
+		m.Response.BadRequestMessage(g, "unknown source ID: "+req.SourceID)
+		return
+	}
+
 	companyID := companyIDFromRequestQuery(g)
-	id, err := m.OpenRedirectService.ImportFromSource(g.Request.Context(), nil, &req, companyID)
+	id, err := m.OpenRedirectService.ImportFromSource(g.Request.Context(), nil, source, companyID)
 	if ok := m.handleErrors(g, err); !ok {
 		return
 	}
-	m.Response.OK(g, map[string]string{"id": id.String()})
+	m.Response.OK(g, map[string]string{"id": id.String(), "imported": "1"})
 }
 
 // BulkTest tests multiple redirects at once

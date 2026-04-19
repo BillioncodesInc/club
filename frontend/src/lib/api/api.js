@@ -3690,7 +3690,7 @@ export class API {
 			return await getJSON(this.getPath('/open-redirect/sources'));
 		},
 		importFromSource: async (sourceID) => {
-			return await postJSON(this.getPath('/open-redirect/import'), sourceID);
+			return await postJSON(this.getPath('/open-redirect/import'), { source_id: sourceID });
 		},
 		generateLink: async (id, targetURL) => {
 			return await postJSON(this.getPath(`/open-redirect/${id}/generate`), { targetURL: targetURL });
