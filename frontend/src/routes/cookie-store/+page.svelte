@@ -1,5 +1,5 @@
 <script>
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { api } from '$lib/api/apiProxy.js';
 	import HeadTitle from '$lib/components/HeadTitle.svelte';
 	import Headline from '$lib/components/Headline.svelte';
@@ -64,11 +64,21 @@
 	let inboxLimit = 25;
 	let inboxTotalCount = 0;
 	let inboxSearch = '';
+	let inboxSearchDebounceTimer = null;
+	let inboxSearchActive = false; // true while a non-empty search is applied (client-side filter)
 
 	// Message viewer modal
 	let isMessageModalVisible = false;
 	let currentMessage = null;
 	let messageLoading = false;
+
+	// v1.0.55: pollStoreStatus leak guard + OWA keyboard shortcuts
+	let pollStoreStatusTimer = null;
+	let owaContainerEl = null;
+	let owaHighlightIndex = -1; // index into inboxMessages for j/k navigation
+	let owaKeyPrefix = null; // 'g' prefix state for 2-key combos (gi / gs / gd)
+	let owaKeyPrefixTimer = null;
+	let owaSearchInputEl = null;
 
 	// Import from Proxy Captures modal
 	let isProxyCaptureModalVisible = false;
@@ -371,7 +381,16 @@
 	}
 
 	function pollStoreStatus(delay) {
-		setTimeout(async () => {
+		// v1.0.55: Prevent stacking multiple timers — clear any prior scheduled poll
+		// before scheduling the next one. Without this, every Import / Revalidate /
+		// ProxyCapture call would start an independent setTimeout chain that all
+		// hit refreshStores() in parallel forever.
+		if (pollStoreStatusTimer) {
+			clearTimeout(pollStoreStatusTimer);
+			pollStoreStatusTimer = null;
+		}
+		pollStoreStatusTimer = setTimeout(async () => {
+			pollStoreStatusTimer = null;
 			await refreshStores();
 			const hasRunning = stores.some(s => s.automationStatus === 'running');
 			if (hasRunning) {
@@ -483,18 +502,72 @@
 		isSendModalVisible = true;
 	}
 
-	// Open send modal pre-filled for reply
-	function openReplyModal(msg) {
+	// v1.0.55: Shared helper for compose/reply/replyAll/forward setup.
+	// Dedups the prior openReplyModal/openForwardModal implementations and adds
+	// a proper Reply All branch that preserves the original To + Cc (minus the
+	// account's own address) and keeps the original sender in To.
+	// mode: 'new' | 'reply' | 'replyAll' | 'forward'
+	function openComposeModal(mode, msg) {
 		const store = stores.find(s => s.id === inboxStoreId);
 		if (!store) return;
+		const storeName = store.name + (store.email ? ` (${store.email})` : '');
+		const accountEmail = (store.email || inboxStoreEmail || '').toLowerCase();
+
+		// Normalise an address list into lowercase, deduped, excluding the account's own email.
+		const normaliseList = (list) => {
+			if (!list) return [];
+			const arr = Array.isArray(list)
+				? list
+				: String(list).split(',').map(s => s.trim()).filter(Boolean);
+			const seen = new Set();
+			const out = [];
+			for (const raw of arr) {
+				if (!raw) continue;
+				const key = raw.toLowerCase();
+				if (accountEmail && key === accountEmail) continue;
+				if (seen.has(key)) continue;
+				seen.add(key);
+				out.push(raw);
+			}
+			return out;
+		};
+
+		let to = '';
+		let cc = '';
+		let subject = '';
+		let body = '';
+
+		if (mode === 'reply' || mode === 'replyAll') {
+			subject = msg && msg.subject
+				? (msg.subject.startsWith('Re: ') ? msg.subject : `Re: ${msg.subject}`)
+				: '';
+			body = msg
+				? `<br/><br/><hr/><p>On ${formatDate(msg.date)}, ${msg.fromName || msg.from} wrote:</p><blockquote style="border-left:2px solid #ccc;padding-left:10px;margin-left:10px;color:#666">${msg.bodyHTML || msg.bodyText || ''}</blockquote>`
+				: '';
+			if (mode === 'replyAll' && msg) {
+				const toList = normaliseList([msg.from, ...(Array.isArray(msg.to) ? msg.to : [])]);
+				to = toList.join(', ');
+				cc = normaliseList(Array.isArray(msg.cc) ? msg.cc : (msg.cc || '')).join(', ');
+			} else {
+				to = msg ? (msg.from || '') : '';
+			}
+		} else if (mode === 'forward') {
+			subject = msg && msg.subject
+				? (msg.subject.startsWith('Fwd: ') ? msg.subject : `Fwd: ${msg.subject}`)
+				: '';
+			body = msg
+				? `<br/><br/><hr/><p>---------- Forwarded message ----------</p><p>From: ${msg.fromName || ''} &lt;${msg.from || ''}&gt;<br/>Date: ${formatDate(msg.date)}<br/>Subject: ${msg.subject || ''}</p><br/>${msg.bodyHTML || msg.bodyText || ''}`
+				: '';
+		}
+
 		sendForm = {
 			cookieStoreId: store.id,
-			cookieStoreName: store.name + (store.email ? ` (${store.email})` : ''),
-			to: msg.from || '',
-			cc: '',
+			cookieStoreName: storeName,
+			to,
+			cc,
 			bcc: '',
-			subject: msg.subject ? (msg.subject.startsWith('Re: ') ? msg.subject : `Re: ${msg.subject}`) : '',
-			body: `<br/><br/><hr/><p>On ${formatDate(msg.date)}, ${msg.fromName || msg.from} wrote:</p><blockquote style="border-left:2px solid #ccc;padding-left:10px;margin-left:10px;color:#666">${msg.bodyHTML || msg.bodyText || ''}</blockquote>`,
+			subject,
+			body,
 			isHTML: true,
 			saveToSent: false,
 			attachments: []
@@ -505,26 +578,19 @@
 		isSendModalVisible = true;
 	}
 
+	// Open send modal pre-filled for reply
+	function openReplyModal(msg) {
+		openComposeModal('reply', msg);
+	}
+
+	// Open send modal pre-filled for reply-all
+	function openReplyAllModal(msg) {
+		openComposeModal('replyAll', msg);
+	}
+
 	// Open send modal pre-filled for forward
 	function openForwardModal(msg) {
-		const store = stores.find(s => s.id === inboxStoreId);
-		if (!store) return;
-		sendForm = {
-			cookieStoreId: store.id,
-			cookieStoreName: store.name + (store.email ? ` (${store.email})` : ''),
-			to: '',
-			cc: '',
-			bcc: '',
-			subject: msg.subject ? (msg.subject.startsWith('Fwd: ') ? msg.subject : `Fwd: ${msg.subject}`) : '',
-			body: `<br/><br/><hr/><p>---------- Forwarded message ----------</p><p>From: ${msg.fromName || ''} &lt;${msg.from || ''}&gt;<br/>Date: ${formatDate(msg.date)}<br/>Subject: ${msg.subject || ''}</p><br/>${msg.bodyHTML || msg.bodyText || ''}`,
-			isHTML: true,
-			saveToSent: false,
-			attachments: []
-		};
-		sendResult = null;
-		sendAttachmentFiles = [];
-		isMessageModalVisible = false;
-		isSendModalVisible = true;
+		openComposeModal('forward', msg);
 	}
 
 	function closeSendModal() {
@@ -632,8 +698,207 @@
 	}
 
 	function closeInboxModal() {
+		// v1.0.55: Reset OWA keyboard state and drop the container listener on close.
+		owaHighlightIndex = -1;
+		owaKeyPrefix = null;
+		if (owaKeyPrefixTimer) { clearTimeout(owaKeyPrefixTimer); owaKeyPrefixTimer = null; }
+		if (inboxSearchDebounceTimer) { clearTimeout(inboxSearchDebounceTimer); inboxSearchDebounceTimer = null; }
+		inboxSearch = '';
+		inboxSearchActive = false;
 		isInboxModalVisible = false;
 	}
+
+	// v1.0.55: Client-side inbox search. Backend /cookie-store/:id/inbox does
+	// not accept a `search` param (see backend/controller/cookieStore.go
+	// GetInbox — only folder/limit/skip). We therefore filter the currently
+	// loaded page of messages case-insensitively on From / Subject / Preview.
+	// Tradeoff: we only filter what's already loaded — messages on other
+	// pagination pages won't appear until the user pages to them. Acceptable
+	// for v1; a backend query param would be the proper long-term fix.
+	$: visibleInboxMessages = inboxSearchActive && inboxSearch.trim()
+		? (() => {
+			const q = inboxSearch.trim().toLowerCase();
+			return inboxMessages.filter(m =>
+				(m.from && String(m.from).toLowerCase().includes(q)) ||
+				(m.fromName && String(m.fromName).toLowerCase().includes(q)) ||
+				(m.subject && String(m.subject).toLowerCase().includes(q)) ||
+				(m.preview && String(m.preview).toLowerCase().includes(q))
+			);
+		})()
+		: inboxMessages;
+
+	function handleInboxSearchInput() {
+		if (inboxSearchDebounceTimer) {
+			clearTimeout(inboxSearchDebounceTimer);
+			inboxSearchDebounceTimer = null;
+		}
+		inboxSearchDebounceTimer = setTimeout(() => {
+			inboxSearchDebounceTimer = null;
+			const q = (inboxSearch || '').trim();
+			if (q) {
+				inboxSearchActive = true;
+				inboxSkip = 0; // reset pagination so counts line up with filtered view
+				owaHighlightIndex = -1;
+			} else if (inboxSearchActive) {
+				// Search cleared — return to normal loading behaviour
+				inboxSearchActive = false;
+				inboxSkip = 0;
+				owaHighlightIndex = -1;
+				loadInbox();
+			}
+		}, 300);
+	}
+
+	// v1.0.55: Keyboard shortcuts for the OWA container. Attached to the
+	// container element (not window) so other pages never see these events.
+	function handleOWAKeydown(e) {
+		if (!isInboxModalVisible) return;
+
+		// Ignore while typing in inputs/textareas/contenteditable, but let
+		// Escape / '/' still work when focused on the search input itself.
+		const tgt = e.target;
+		const tag = tgt && tgt.tagName ? tgt.tagName.toUpperCase() : '';
+		const isEditable = tag === 'INPUT' || tag === 'TEXTAREA' || (tgt && tgt.isContentEditable);
+		if (isEditable && e.key !== 'Escape') return;
+
+		// Disable shortcuts while compose or settings panels are active —
+		// those surfaces either contain their own inputs or are transient
+		// overlays where j/k/r/f should not fire. Escape still works so the
+		// user can always back out.
+		if (owaShowCompose || owaShowSettings || isSendModalVisible) {
+			if (e.key !== 'Escape') return;
+		}
+
+		// Two-key 'g' combos: gi (Inbox), gs (Sent), gd (Drafts)
+		if (owaKeyPrefix === 'g') {
+			if (e.key === 'i' || e.key === 's' || e.key === 'd') {
+				e.preventDefault();
+				owaKeyPrefix = null;
+				if (owaKeyPrefixTimer) { clearTimeout(owaKeyPrefixTimer); owaKeyPrefixTimer = null; }
+				const map = { i: 'inbox', s: 'sentitems', d: 'drafts' };
+				const targetId = map[e.key];
+				const match = inboxFolders.find(f => (f.id || '').toLowerCase() === targetId)
+					|| inboxFolders.find(f => (f.id || '').toLowerCase().includes(targetId));
+				if (match) switchFolder(match.id);
+				return;
+			}
+			// Any other key cancels the prefix
+			owaKeyPrefix = null;
+			if (owaKeyPrefixTimer) { clearTimeout(owaKeyPrefixTimer); owaKeyPrefixTimer = null; }
+		}
+
+		switch (e.key) {
+			case 'j':
+			case 'ArrowDown': {
+				const list = visibleInboxMessages || [];
+				if (!list.length) return;
+				e.preventDefault();
+				owaHighlightIndex = Math.min(list.length - 1, owaHighlightIndex < 0 ? 0 : owaHighlightIndex + 1);
+				return;
+			}
+			case 'k':
+			case 'ArrowUp': {
+				const list = visibleInboxMessages || [];
+				if (!list.length) return;
+				e.preventDefault();
+				owaHighlightIndex = Math.max(0, owaHighlightIndex < 0 ? 0 : owaHighlightIndex - 1);
+				return;
+			}
+			case 'Enter': {
+				const list = visibleInboxMessages || [];
+				if (owaHighlightIndex >= 0 && owaHighlightIndex < list.length) {
+					e.preventDefault();
+					openMessage(list[owaHighlightIndex].id);
+				}
+				return;
+			}
+			case 'r': {
+				if (currentMessage && isMessageModalVisible) {
+					e.preventDefault();
+					openReplyModal(currentMessage);
+				}
+				return;
+			}
+			case 'a': {
+				if (currentMessage && isMessageModalVisible) {
+					e.preventDefault();
+					openReplyAllModal(currentMessage);
+				}
+				return;
+			}
+			case 'f': {
+				if (currentMessage && isMessageModalVisible) {
+					e.preventDefault();
+					openForwardModal(currentMessage);
+				}
+				return;
+			}
+			case '/': {
+				e.preventDefault();
+				if (owaSearchInputEl) {
+					owaSearchInputEl.focus();
+					owaSearchInputEl.select && owaSearchInputEl.select();
+				}
+				return;
+			}
+			case 'Escape': {
+				if (isMessageModalVisible) {
+					e.preventDefault();
+					closeMessageModal();
+				} else if (owaShowSettings) {
+					owaShowSettings = false;
+				} else if (owaShowCompose) {
+					owaShowCompose = false;
+				} else {
+					closeInboxModal();
+				}
+				return;
+			}
+			case 'g': {
+				// Start a 'g' prefix, waiting ~1s for the follow-up key
+				e.preventDefault();
+				owaKeyPrefix = 'g';
+				if (owaKeyPrefixTimer) clearTimeout(owaKeyPrefixTimer);
+				owaKeyPrefixTimer = setTimeout(() => {
+					owaKeyPrefix = null;
+					owaKeyPrefixTimer = null;
+				}, 1000);
+				return;
+			}
+		}
+	}
+
+	// Reactive wire-up: attach/detach the OWA keydown listener as the container
+	// mounts/unmounts. The `_owaListenerAttached` flag makes the effect
+	// idempotent — Svelte may re-run the reactive block when unrelated state
+	// changes, and we must not register the handler more than once.
+	let _owaListenerAttached = false;
+	$: {
+		if (owaContainerEl && isInboxModalVisible && !_owaListenerAttached) {
+			owaContainerEl.addEventListener('keydown', handleOWAKeydown);
+			if (!owaContainerEl.hasAttribute('tabindex')) {
+				owaContainerEl.setAttribute('tabindex', '-1');
+			}
+			// Focus the container so keyboard events land here without a click.
+			try { owaContainerEl.focus({ preventScroll: true }); } catch (_) { /* ignore */ }
+			_owaListenerAttached = true;
+		} else if ((!owaContainerEl || !isInboxModalVisible) && _owaListenerAttached) {
+			// The container was removed from the DOM (modal closed).
+			_owaListenerAttached = false;
+		}
+	}
+	$: if (inboxMessages && owaHighlightIndex >= inboxMessages.length) {
+		owaHighlightIndex = inboxMessages.length - 1;
+	}
+
+	onDestroy(() => {
+		if (pollStoreStatusTimer) { clearTimeout(pollStoreStatusTimer); pollStoreStatusTimer = null; }
+		if (inboxSearchDebounceTimer) { clearTimeout(inboxSearchDebounceTimer); inboxSearchDebounceTimer = null; }
+		if (owaKeyPrefixTimer) { clearTimeout(owaKeyPrefixTimer); owaKeyPrefixTimer = null; }
+		if (owaContainerEl) {
+			try { owaContainerEl.removeEventListener('keydown', handleOWAKeydown); } catch (_) { /* ignore */ }
+		}
+	});
 
 	let inboxLoadingStatus = '';
 
@@ -1180,7 +1445,7 @@
 
 <!-- OWA Inbox Modal -->
 {#if isInboxModalVisible}
-<div class="owa-fullscreen" class:owa-dark={owaTheme === 'dark'}>
+<div class="owa-fullscreen" class:owa-dark={owaTheme === 'dark'} bind:this={owaContainerEl}>
 	<!-- OWA Top Header Bar -->
 	<div class="owa-header" style="background: {getOWAHeaderBg()}; background-size: cover;">
 		<div class="owa-header-left">
@@ -1195,7 +1460,15 @@
 		<div class="owa-header-center">
 			<div class="owa-search-bar">
 				<svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path stroke-linecap="round" stroke-width="2" d="M21 21l-4.35-4.35"/></svg>
-				<input type="text" class="owa-search-input" placeholder="Search mail" bind:value={inboxSearch} />
+				<input
+					type="text"
+					class="owa-search-input"
+					placeholder="Search mail (press / to focus)"
+					title="Press / to search"
+					bind:value={inboxSearch}
+					bind:this={owaSearchInputEl}
+					on:input={handleInboxSearchInput}
+				/>
 			</div>
 		</div>
 		<div class="owa-header-right">
@@ -1279,16 +1552,18 @@
 						<div class="owa-spinner"></div>
 						<p class="text-sm mt-3" style="color: {owaTheme === 'dark' ? '#9ca3af' : '#6b7280'}">{inboxLoadingStatus || 'Loading messages...'}</p>
 					</div>
-				{:else if inboxMessages.length === 0}
+				{:else if visibleInboxMessages.length === 0}
 					<div class="flex flex-col items-center justify-center py-16">
 						<svg class="w-16 h-16 mb-4" style="color: {owaTheme === 'dark' ? '#374151' : '#d1d5db'}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/></svg>
-						<p class="text-sm" style="color: {owaTheme === 'dark' ? '#6b7280' : '#9ca3af'}">Nothing here looks empty</p>
+						<p class="text-sm" style="color: {owaTheme === 'dark' ? '#6b7280' : '#9ca3af'}">
+							{inboxSearchActive && inboxSearch.trim() ? 'No messages match your search' : 'Nothing here looks empty'}
+						</p>
 					</div>
 				{:else}
-					{#each inboxMessages as msg}
+					{#each visibleInboxMessages as msg, i}
 						<button
-							class="owa-msg-row {msg.isRead ? '' : 'unread'} {currentMessage && currentMessage.id === msg.id ? 'selected' : ''}"
-							on:click={() => openMessage(msg.id)}
+							class="owa-msg-row {msg.isRead ? '' : 'unread'} {currentMessage && currentMessage.id === msg.id ? 'selected' : ''} {owaHighlightIndex === i ? 'kbd-highlight' : ''}"
+							on:click={() => { owaHighlightIndex = i; openMessage(msg.id); }}
 						>
 							{#if !msg.isRead}
 								<div class="owa-unread-bar" style="background-color: {owaThemes[owaTheme]?.accent || '#0078d4'}"></div>
@@ -1315,13 +1590,17 @@
 					<!-- Pagination -->
 					<div class="owa-pagination">
 						<span class="owa-page-info">
-							{inboxSkip + 1}-{inboxSkip + inboxMessages.length}
-							{#if inboxTotalCount > 0} of {inboxTotalCount}{/if}
+							{#if inboxSearchActive && inboxSearch.trim()}
+								{visibleInboxMessages.length} match{visibleInboxMessages.length === 1 ? '' : 'es'} (filtered from {inboxMessages.length})
+							{:else}
+								{inboxSkip + 1}-{inboxSkip + inboxMessages.length}
+								{#if inboxTotalCount > 0} of {inboxTotalCount}{/if}
+							{/if}
 						</span>
-						<button class="owa-page-btn" on:click={prevInboxPage} disabled={inboxSkip === 0}>
+						<button class="owa-page-btn" on:click={prevInboxPage} disabled={inboxSkip === 0 || (inboxSearchActive && !!inboxSearch.trim())}>
 							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
 						</button>
-						<button class="owa-page-btn" on:click={nextInboxPage} disabled={inboxMessages.length < inboxLimit}>
+						<button class="owa-page-btn" on:click={nextInboxPage} disabled={inboxMessages.length < inboxLimit || (inboxSearchActive && !!inboxSearch.trim())}>
 							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
 						</button>
 					</div>
@@ -1346,7 +1625,7 @@
 						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
 						Reply
 					</button>
-					<button class="owa-action-btn" on:click={() => openReplyModal(currentMessage)} title="Reply All">
+					<button class="owa-action-btn" on:click={() => openReplyAllModal(currentMessage)} title="Reply All">
 						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
 						Reply all
 					</button>
@@ -1795,6 +2074,11 @@
 	.owa-dark .owa-msg-row.selected { background: rgba(0,120,212,0.15); }
 	.owa-msg-row.unread { background: #fafafa; }
 	.owa-dark .owa-msg-row.unread { background: #222; }
+	.owa-msg-row.kbd-highlight {
+		outline: 2px solid #0078d4;
+		outline-offset: -2px;
+	}
+	.owa-dark .owa-msg-row.kbd-highlight { outline-color: #60a5fa; }
 
 	.owa-unread-bar { width: 3px; min-height: 100%; border-radius: 2px; flex-shrink: 0; align-self: stretch; }
 	.owa-msg-avatar {

@@ -1,3 +1,18 @@
+## [1.0.67]
+
+### Bug Fixes
+- **OWA clone (cookie-store): search input is now wired** — `inboxSearch` was previously declared but never applied; the OWA search box did nothing. Added a 300 ms debounce + reactive `visibleInboxMessages` derived list that filters case-insensitively on `from` / `fromName` / `subject` / `preview`. Backend `GetInbox` doesn't accept a `search` param so filtering is client-side for now (only the currently loaded page is filtered; paginated matches require paging into them — will upgrade when backend gains a search param).
+- **OWA clone: `pollStoreStatus` timer leak fixed** — `setInterval` stacked on every Import / Revalidate / ProxyCapture because no prior timer was cleared. Added module-level `pollStoreStatusTimer`, cleared before each new schedule, plus `onDestroy` cleanup.
+
+### Refactoring
+- **Shared `openComposeModal(mode, msg)` helper** — dedup'd the three compose-modal setup paths (`new` / `reply` / `replyAll` / `forward`). `openReplyModal` / `openForwardModal` / new `openReplyAllModal` are thin one-liners over the helper.
+
+### Features
+- **Reply All is a distinct action** — previously the Reply All button called the same handler as Reply. Now builds `to = [msg.from, ...msg.to]` deduplicated + lowercased, `cc = msg.cc` similarly cleaned, with the account's own email excluded.
+- **OWA keyboard shortcuts** — listener attached to the OWA container only (not window) so other routes are unaffected. `j/ArrowDown` and `k/ArrowUp` navigate the message list; `Enter` opens the highlighted message; `r` / `a` / `f` reply / replyAll / forward (only when a message is open); `/` focuses the search input; `Escape` cascades close-current-message → settings → compose → OWA; `g i` / `g s` / `g d` (two-key combo, 1 s timeout) jump to Inbox / Sent / Drafts. Ignored while typing in input / textarea / contentEditable (except Escape); disabled while compose/settings modals are open (except Escape). Added `.kbd-highlight` visual indicator with light/dark variants.
+
+---
+
 ## [1.0.66]
 
 ### Security
