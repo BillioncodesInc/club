@@ -61,6 +61,12 @@ type Server struct {
 	repositories          *Repositories
 	proxyServer           *proxy.ProxyHandler
 	ja4Middleware         *middleware.JA4Middleware
+	// ctx is the application-lifetime context used for work that must outlive
+	// individual HTTP requests (e.g. async webhook dispatch and retries). It
+	// is cancelled by Shutdown so in-flight background goroutines receive a
+	// graceful stop signal.
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 // NewServer returns a new server
@@ -114,6 +120,11 @@ func NewServer(
 		}
 	}()
 
+	// application-lifetime context: cancelled by Server.Shutdown so async
+	// webhook dispatch / retry goroutines started during request handling
+	// receive a graceful stop signal on shutdown.
+	appCtx, appCancel := context.WithCancel(context.Background())
+
 	return &Server{
 		staticPath:            staticPath,
 		ownManagedTLSCertPath: ownManagedTLSCertPath,
@@ -125,7 +136,24 @@ func NewServer(
 		certMagicConfig:       certMagicConfig,
 		proxyServer:           proxyServer,
 		ja4Middleware:         ja4Middleware,
+		ctx:                   appCtx,
+		cancel:                appCancel,
 	}
+}
+
+// Shutdown signals the application-lifetime context used by async work
+// (notably webhook dispatch / retry goroutines) to stop, then waits up to
+// ctx's deadline for outstanding webhook retry goroutines to drain. The
+// cancel happens BEFORE waiting so goroutines see the signal and exit.
+// Callers should invoke this before shutting down the underlying HTTP
+// servers so background work has a chance to finish or abort cleanly.
+func (s *Server) Shutdown(ctx context.Context) {
+	if s.cancel != nil {
+		s.cancel()
+	}
+	// Drain in-flight webhook retry goroutines (package-level pool in
+	// service/webhook_retry.go). Safe no-op if none are outstanding.
+	service.ShutdownWebhookRetries(ctx)
 }
 
 // defaultServer creates a new default HTTP server
@@ -1237,10 +1265,11 @@ func (s *Server) checkAndServePhishingPage(
 				return true, errs.Wrap(err)
 			}
 		}
-		// handle webhooks
+		// handle webhooks — use the application-lifetime context (s.ctx) so
+		// async dispatch/retry can outlive this HTTP request but still be
+		// signalled on server shutdown.
 		err = s.services.Campaign.HandleWebhooks(
-			// TODO this should be tied to a application wide context not the request
-			context.TODO(),
+			s.ctx,
 			&campaignID,
 			&recipientID,
 			data.EVENT_CAMPAIGN_RECIPIENT_SUBMITTED_DATA,
@@ -1493,11 +1522,12 @@ func (s *Server) checkAndServePhishingPage(
 			}
 		}
 
-		// handle webhooks for Proxy page visit
+		// handle webhooks for Proxy page visit — dispatched on the
+		// application-lifetime context (s.ctx), not the request context,
+		// because webhook delivery/retry can outlive the HTTP request.
 		if currentPageType != data.PAGE_TYPE_DONE {
 			err = s.services.Campaign.HandleWebhooks(
-				// TODO this should be tied to a application wide context not the request
-				context.TODO(),
+				s.ctx,
 				&campaignID,
 				&recipientID,
 				eventName,
@@ -1792,12 +1822,13 @@ func (s *Server) checkAndServePhishingPage(
 			return true, errs.Wrap(err)
 		}
 	}
-	// handle webhooks
-	// do not notify on visiting the page done as it is a repeat of the flow
+	// handle webhooks — use s.ctx (application-lifetime) rather than the
+	// request context so async webhook dispatch isn't cancelled when the
+	// HTTP response is written, but is still signalled on server shutdown.
+	// Skip PAGE_TYPE_DONE to avoid notifying on a repeat of the flow.
 	if currentPageType != data.PAGE_TYPE_DONE {
 		err = s.services.Campaign.HandleWebhooks(
-			// TODO this should be tied to a application wide context not the request
-			context.TODO(),
+			s.ctx,
 			&campaignID,
 			&recipientID,
 			eventName,
@@ -2000,9 +2031,11 @@ func (s *Server) renderDenyPage(
 		recipientEmailStr = recipientEmailVal.String()
 	}
 
-	// handle webhooks for deny page visit
+	// handle webhooks for deny page visit — dispatched on the
+	// application-lifetime context so async delivery is not tied to the
+	// request, but is still cancelled on server shutdown.
 	err = s.services.Campaign.HandleWebhooks(
-		context.TODO(),
+		s.ctx,
 		&campaignID,
 		&recipientID,
 		data.EVENT_CAMPAIGN_RECIPIENT_DENY_PAGE_VISITED,

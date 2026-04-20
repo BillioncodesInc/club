@@ -511,6 +511,15 @@ func main() {
 		logger.Debugf("Stopping daemons")
 		cancelDaemons()
 
+		// Cancel the phishing server's application-lifetime context so
+		// async webhook dispatch / retry goroutines started during request
+		// handling receive a stop signal and can drain before we start
+		// tearing down HTTP servers and the database. The cancel happens
+		// before we wait on the HTTP servers so those goroutines are not
+		// blocked by an in-flight request we're also draining.
+		logger.Debugf("Stopping phishing server async work")
+		phishingServer.Shutdown(ctx)
+
 		// Graceful shutdown for admin server
 		logger.Debugf("Stopping administration server")
 		if err := adminServer.Server.Shutdown(ctx); err != nil {
