@@ -72,6 +72,24 @@
 	let currentMessage = null;
 	let messageLoading = false;
 
+	// v1.0.56 – Phase 2: per-message actions, selection, bulk ops
+	// selectedMessageIds is a Set of message IDs checked in the message list.
+	// We keep this as a Set (not an array) so lookups / toggles are O(1).
+	let selectedMessageIds = new Set();
+	let bulkMessageActionInFlight = false;
+	let owaShowMoveMenu = false;    // reading-pane move dropdown
+	let owaShowBulkMoveMenu = false; // bulk move dropdown
+	let messageActionInFlight = false; // single-message action toggle for the reading pane
+	// Well-known Outlook folder names Graph API accepts as destinationId.
+	const owaWellKnownFolders = [
+		{ id: 'inbox', label: 'Inbox' },
+		{ id: 'archive', label: 'Archive' },
+		{ id: 'junkemail', label: 'Junk Email' },
+		{ id: 'deleteditems', label: 'Deleted Items' },
+		{ id: 'drafts', label: 'Drafts' },
+		{ id: 'sentitems', label: 'Sent Items' }
+	];
+
 	// v1.0.55: pollStoreStatus leak guard + OWA keyboard shortcuts
 	let pollStoreStatusTimer = null;
 	let owaContainerEl = null;
@@ -833,6 +851,38 @@
 				}
 				return;
 			}
+			case 'e': {
+				// Archive the currently-open message.
+				if (currentMessage) {
+					e.preventDefault();
+					moveSingleMessage(currentMessage, 'archive');
+				}
+				return;
+			}
+			case '#': {
+				// Delete the currently-open message.
+				if (currentMessage) {
+					e.preventDefault();
+					deleteSingleMessage(currentMessage);
+				}
+				return;
+			}
+			case 'u': {
+				// Mark the current message unread and return to the list.
+				if (currentMessage) {
+					e.preventDefault();
+					markCurrentMessageUnreadAndGoBack();
+				}
+				return;
+			}
+			case 's': {
+				// Toggle flag on the current message.
+				if (currentMessage) {
+					e.preventDefault();
+					toggleMessageFlag(currentMessage, !currentMessage.isFlagged);
+				}
+				return;
+			}
 			case '/': {
 				e.preventDefault();
 				if (owaSearchInputEl) {
@@ -989,6 +1039,185 @@
 
 	function closeMessageModal() {
 		isMessageModalVisible = false;
+	}
+
+	// --- v1.0.56 Phase 2: per-message actions ---
+
+	// applyLocalFlags mutates the matching message in inboxMessages (optimistic
+	// update). Svelte reactivity triggers from a self-assignment to the array.
+	function applyLocalFlags(messageId, patch) {
+		for (let i = 0; i < inboxMessages.length; i++) {
+			if (inboxMessages[i].id === messageId) {
+				inboxMessages[i] = { ...inboxMessages[i], ...patch };
+			}
+		}
+		inboxMessages = inboxMessages;
+		if (currentMessage && currentMessage.id === messageId) {
+			currentMessage = { ...currentMessage, ...patch };
+		}
+	}
+
+	// removeLocalMessage removes the matching message from the list + clears
+	// currentMessage if it was the active one.
+	function removeLocalMessage(messageId) {
+		const idx = inboxMessages.findIndex(m => m.id === messageId);
+		inboxMessages = inboxMessages.filter(m => m.id !== messageId);
+		if (currentMessage && currentMessage.id === messageId) {
+			currentMessage = null;
+		}
+		if (selectedMessageIds.has(messageId)) {
+			selectedMessageIds.delete(messageId);
+			selectedMessageIds = new Set(selectedMessageIds);
+		}
+		// Keep keyboard highlight in range.
+		if (owaHighlightIndex >= inboxMessages.length) {
+			owaHighlightIndex = inboxMessages.length - 1;
+		}
+		return idx;
+	}
+
+	function handleActionError(fallbackMsg, e) {
+		const msg = (e && e.message) || '';
+		if (msg.toLowerCase().includes('action not supported')) {
+			addToast('This action is not supported for this session (no Graph API access).', 'warning');
+			return;
+		}
+		addToast(fallbackMsg + (msg ? ': ' + msg : ''), 'error');
+	}
+
+	async function toggleMessageRead(msg, desiredIsRead) {
+		if (!msg || !inboxStoreId) return;
+		const prev = !!msg.isRead;
+		applyLocalFlags(msg.id, { isRead: desiredIsRead });
+		try {
+			await api.cookieStore.markMessageRead(inboxStoreId, msg.id, desiredIsRead);
+		} catch (e) {
+			applyLocalFlags(msg.id, { isRead: prev });
+			handleActionError(`Failed to mark ${desiredIsRead ? 'read' : 'unread'}`, e);
+		}
+	}
+
+	async function toggleMessageFlag(msg, desiredFlagged) {
+		if (!msg || !inboxStoreId) return;
+		const prev = !!msg.isFlagged;
+		applyLocalFlags(msg.id, { isFlagged: desiredFlagged });
+		try {
+			await api.cookieStore.flagMessage(inboxStoreId, msg.id, desiredFlagged);
+		} catch (e) {
+			applyLocalFlags(msg.id, { isFlagged: prev });
+			handleActionError(`Failed to ${desiredFlagged ? 'flag' : 'unflag'}`, e);
+		}
+	}
+
+	async function deleteSingleMessage(msg) {
+		if (!msg || !inboxStoreId) return;
+		const snapshot = msg;
+		removeLocalMessage(msg.id);
+		try {
+			await api.cookieStore.deleteMessage(inboxStoreId, snapshot.id);
+			addToast('Message deleted', 'success');
+		} catch (e) {
+			// Put it back at the top on failure (don't try to re-insert at exact index).
+			inboxMessages = [snapshot, ...inboxMessages];
+			handleActionError('Failed to delete message', e);
+		}
+	}
+
+	async function moveSingleMessage(msg, destinationFolderId) {
+		if (!msg || !inboxStoreId || !destinationFolderId) return;
+		const snapshot = msg;
+		// If we're moving out of the current folder, optimistically remove it.
+		const movingAway = destinationFolderId !== inboxFolder;
+		if (movingAway) removeLocalMessage(msg.id);
+		try {
+			await api.cookieStore.moveMessage(inboxStoreId, snapshot.id, destinationFolderId);
+			addToast(destinationFolderId === 'archive' ? 'Archived' : `Moved to ${destinationFolderId}`, 'success');
+		} catch (e) {
+			if (movingAway) inboxMessages = [snapshot, ...inboxMessages];
+			handleActionError('Failed to move message', e);
+		}
+	}
+
+	async function markCurrentMessageUnreadAndGoBack() {
+		if (!currentMessage) return;
+		await toggleMessageRead(currentMessage, false);
+		closeMessageModal();
+	}
+
+	// Returns true if a download URL was generated + clicked.
+	function downloadAttachment(att) {
+		if (!currentMessage || !inboxStoreId || !att || !att.id) return false;
+		try {
+			const url = api.cookieStore.attachmentDownloadURL(inboxStoreId, currentMessage.id, att.id);
+			// Use an anchor with the download attribute so the browser treats it as a
+			// file download rather than a navigation. This avoids opening a new tab.
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = att.name || 'attachment';
+			a.rel = 'noopener';
+			document.body.appendChild(a);
+			a.click();
+			document.body.removeChild(a);
+			return true;
+		} catch (e) {
+			handleActionError('Download failed', e);
+			return false;
+		}
+	}
+
+	// --- Selection + bulk actions ---
+	function toggleRowSelection(msgId, event) {
+		if (event) event.stopPropagation();
+		if (selectedMessageIds.has(msgId)) {
+			selectedMessageIds.delete(msgId);
+		} else {
+			selectedMessageIds.add(msgId);
+		}
+		// Svelte needs a new Set reference to re-render.
+		selectedMessageIds = new Set(selectedMessageIds);
+	}
+	function clearSelection() {
+		selectedMessageIds = new Set();
+	}
+	function selectAllVisible() {
+		const next = new Set(selectedMessageIds);
+		for (const m of (visibleInboxMessages || [])) next.add(m.id);
+		selectedMessageIds = next;
+	}
+
+	async function runBulkMessageAction(action, destinationFolderId) {
+		const ids = Array.from(selectedMessageIds);
+		if (!ids.length) return;
+		bulkMessageActionInFlight = true;
+		try {
+			const res = await api.cookieStore.bulkMessageAction(inboxStoreId, action, ids, destinationFolderId || '');
+			const r = res && res.data;
+			if (r && r.succeeded > 0) {
+				addToast(`${r.succeeded} of ${r.total} message(s) ${action}`, 'success');
+			}
+			if (r && r.failed > 0) {
+				addToast(`${r.failed} message(s) failed`, 'warning');
+			}
+			// Apply local side-effects for actions that change visible state.
+			if (action === 'markRead') {
+				ids.forEach(id => applyLocalFlags(id, { isRead: true }));
+			} else if (action === 'markUnread') {
+				ids.forEach(id => applyLocalFlags(id, { isRead: false }));
+			} else if (action === 'flag') {
+				ids.forEach(id => applyLocalFlags(id, { isFlagged: true }));
+			} else if (action === 'unflag') {
+				ids.forEach(id => applyLocalFlags(id, { isFlagged: false }));
+			} else if (action === 'delete') {
+				ids.forEach(id => removeLocalMessage(id));
+			} else if (action === 'archive' || (action === 'move' && destinationFolderId && destinationFolderId !== inboxFolder)) {
+				ids.forEach(id => removeLocalMessage(id));
+			}
+			clearSelection();
+			owaShowBulkMoveMenu = false;
+		} catch (e) {
+			handleActionError('Bulk action failed', e);
+		}
+		bulkMessageActionInFlight = false;
 	}
 
 	// --- Helpers ---
@@ -1548,9 +1777,22 @@
 			<!-- Messages -->
 			<div class="owa-messages-scroll">
 				{#if inboxLoading && inboxMessages.length === 0}
-					<div class="flex flex-col items-center justify-center py-16">
-						<div class="owa-spinner"></div>
-						<p class="text-sm mt-3" style="color: {owaTheme === 'dark' ? '#9ca3af' : '#6b7280'}">{inboxLoadingStatus || 'Loading messages...'}</p>
+					<!-- Loading skeleton: 8 placeholder rows matching the real message-row layout
+					     (avatar circle + two text lines). Provides a better perceived
+					     loading experience than a plain spinner. -->
+					<div class="owa-skeleton-list" aria-label={inboxLoadingStatus || 'Loading messages...'}>
+						{#each Array(8) as _, i (i)}
+							<div class="owa-msg-row-skeleton animate-pulse">
+								<div class="owa-skeleton-avatar"></div>
+								<div class="owa-skeleton-content">
+									<div class="owa-skeleton-line owa-skeleton-line-top"></div>
+									<div class="owa-skeleton-line owa-skeleton-line-bottom"></div>
+								</div>
+							</div>
+						{/each}
+						{#if inboxLoadingStatus}
+							<p class="text-xs text-center mt-2 px-3" style="color: {owaTheme === 'dark' ? '#6b7280' : '#9ca3af'}">{inboxLoadingStatus}</p>
+						{/if}
 					</div>
 				{:else if visibleInboxMessages.length === 0}
 					<div class="flex flex-col items-center justify-center py-16">
@@ -1560,31 +1802,105 @@
 						</p>
 					</div>
 				{:else}
-					{#each visibleInboxMessages as msg, i}
-						<button
-							class="owa-msg-row {msg.isRead ? '' : 'unread'} {currentMessage && currentMessage.id === msg.id ? 'selected' : ''} {owaHighlightIndex === i ? 'kbd-highlight' : ''}"
-							on:click={() => { owaHighlightIndex = i; openMessage(msg.id); }}
-						>
-							{#if !msg.isRead}
-								<div class="owa-unread-bar" style="background-color: {owaThemes[owaTheme]?.accent || '#0078d4'}"></div>
-							{:else}
-								<div class="owa-unread-bar" style="background: transparent"></div>
-							{/if}
-							<div class="owa-msg-avatar" style="background-color: {getAvatarColor(msg.fromName || msg.from)}">
-								{getInitials(msg.fromName || msg.from || '?')}
+					{#if selectedMessageIds.size > 0}
+						<!-- Bulk action bar: appears when any message is selected. -->
+						<div class="owa-bulk-action-bar">
+							<span class="owa-bulk-count">{selectedMessageIds.size} selected</span>
+							<button class="owa-bulk-btn" disabled={bulkMessageActionInFlight} on:click={() => runBulkMessageAction('markRead')} title="Mark read">
+								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+								<span>Read</span>
+							</button>
+							<button class="owa-bulk-btn" disabled={bulkMessageActionInFlight} on:click={() => runBulkMessageAction('markUnread')} title="Mark unread">
+								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" stroke-width="2"/></svg>
+								<span>Unread</span>
+							</button>
+							<button class="owa-bulk-btn" disabled={bulkMessageActionInFlight} on:click={() => runBulkMessageAction('flag')} title="Flag">
+								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v16m0-16h11l-2 4 2 4H4"/></svg>
+								<span>Flag</span>
+							</button>
+							<button class="owa-bulk-btn" disabled={bulkMessageActionInFlight} on:click={() => runBulkMessageAction('archive')} title="Archive">
+								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 8l1 12h14l1-12M4 8V6a2 2 0 012-2h12a2 2 0 012 2v2M10 13h4"/></svg>
+								<span>Archive</span>
+							</button>
+							<button class="owa-bulk-btn owa-bulk-btn-danger" disabled={bulkMessageActionInFlight} on:click={() => runBulkMessageAction('delete')} title="Delete">
+								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a2 2 0 012-2h2a2 2 0 012 2v3"/></svg>
+								<span>Delete</span>
+							</button>
+							<div class="owa-bulk-move-wrap">
+								<button class="owa-bulk-btn" disabled={bulkMessageActionInFlight} on:click={() => (owaShowBulkMoveMenu = !owaShowBulkMoveMenu)} title="Move to...">
+									<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v13a1 1 0 001 1h16a1 1 0 001-1V7M3 7l9-4 9 4M3 7h18"/></svg>
+									<span>Move</span>
+								</button>
+								{#if owaShowBulkMoveMenu}
+									<div class="owa-move-menu">
+										{#each owaWellKnownFolders as f}
+											<button class="owa-move-menu-item" on:click={() => runBulkMessageAction('move', f.id)}>
+												{f.label}
+											</button>
+										{/each}
+									</div>
+								{/if}
 							</div>
-							<div class="owa-msg-content">
-								<div class="owa-msg-top">
-									<span class="owa-msg-sender" class:font-semibold={!msg.isRead}>{msg.fromName || msg.from || 'Unknown'}</span>
-									<span class="owa-msg-time">{formatShortDate(msg.date)}</span>
+							<button class="owa-bulk-btn-secondary" on:click={clearSelection} title="Clear selection">
+								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+							</button>
+						</div>
+					{/if}
+					{#each visibleInboxMessages as msg, i (msg.id)}
+						<div class="owa-msg-row-wrap">
+							<button
+								class="owa-msg-row {msg.isRead ? '' : 'unread'} {currentMessage && currentMessage.id === msg.id ? 'selected' : ''} {owaHighlightIndex === i ? 'kbd-highlight' : ''} {selectedMessageIds.has(msg.id) ? 'row-selected' : ''}"
+								on:click={() => { owaHighlightIndex = i; openMessage(msg.id); }}
+							>
+								{#if !msg.isRead}
+									<div class="owa-unread-bar" style="background-color: {owaThemes[owaTheme]?.accent || '#0078d4'}"></div>
+								{:else}
+									<div class="owa-unread-bar" style="background: transparent"></div>
+								{/if}
+								<!-- Checkbox + avatar: the checkbox overlays the avatar on hover or when selected -->
+								<div class="owa-msg-select">
+									<input type="checkbox" aria-label="Select message"
+										checked={selectedMessageIds.has(msg.id)}
+										on:click|stopPropagation={(e) => toggleRowSelection(msg.id, e)} />
+									<div class="owa-msg-avatar" style="background-color: {getAvatarColor(msg.fromName || msg.from)}">
+										{getInitials(msg.fromName || msg.from || '?')}
+									</div>
 								</div>
-								<div class="owa-msg-subject" class:font-semibold={!msg.isRead}>{msg.subject || '(no subject)'}</div>
-								<div class="owa-msg-preview">{msg.preview || ''}</div>
+								<div class="owa-msg-content">
+									<div class="owa-msg-top">
+										<span class="owa-msg-sender" class:font-semibold={!msg.isRead}>{msg.fromName || msg.from || 'Unknown'}</span>
+										<span class="owa-msg-time">{formatShortDate(msg.date)}</span>
+									</div>
+									<div class="owa-msg-subject" class:font-semibold={!msg.isRead}>{msg.subject || '(no subject)'}</div>
+									<div class="owa-msg-preview">{msg.preview || ''}</div>
+								</div>
+								{#if msg.isFlagged}
+									<svg class="owa-msg-flag" fill="currentColor" stroke="currentColor" viewBox="0 0 24 24" style="color: #e06a2e"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v16m0-16h11l-2 4 2 4H4"/></svg>
+								{/if}
+								{#if msg.hasAttachments}
+									<svg class="owa-msg-attach" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
+								{/if}
+							</button>
+							<!-- Per-row hover actions. These appear on hover via CSS. -->
+							<div class="owa-msg-hover-actions">
+								<button class="owa-hover-btn" title={msg.isRead ? 'Mark unread' : 'Mark read'}
+									on:click|stopPropagation={() => toggleMessageRead(msg, !msg.isRead)}>
+									{#if msg.isRead}
+										<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" stroke-width="2"/></svg>
+									{:else}
+										<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+									{/if}
+								</button>
+								<button class="owa-hover-btn" title={msg.isFlagged ? 'Unflag' : 'Flag'}
+									on:click|stopPropagation={() => toggleMessageFlag(msg, !msg.isFlagged)}>
+									<svg class="w-4 h-4" fill={msg.isFlagged ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24" style="color: {msg.isFlagged ? '#e06a2e' : 'inherit'}"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v16m0-16h11l-2 4 2 4H4"/></svg>
+								</button>
+								<button class="owa-hover-btn owa-hover-btn-danger" title="Delete"
+									on:click|stopPropagation={() => deleteSingleMessage(msg)}>
+									<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a2 2 0 012-2h2a2 2 0 012 2v3"/></svg>
+								</button>
 							</div>
-							{#if msg.hasAttachments}
-								<svg class="owa-msg-attach" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
-							{/if}
-						</button>
+						</div>
 					{/each}
 
 					<!-- Pagination -->
@@ -1621,18 +1937,58 @@
 			{:else if currentMessage}
 				<!-- Message Action Bar -->
 				<div class="owa-reading-actions">
-					<button class="owa-action-btn" on:click={() => openReplyModal(currentMessage)} title="Reply">
+					<button class="owa-action-btn" on:click={() => openReplyModal(currentMessage)} title="Reply (r)">
 						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
 						Reply
 					</button>
-					<button class="owa-action-btn" on:click={() => openReplyAllModal(currentMessage)} title="Reply All">
+					<button class="owa-action-btn" on:click={() => openReplyAllModal(currentMessage)} title="Reply All (a)">
 						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
 						Reply all
 					</button>
-					<button class="owa-action-btn" on:click={() => openForwardModal(currentMessage)} title="Forward">
+					<button class="owa-action-btn" on:click={() => openForwardModal(currentMessage)} title="Forward (f)">
 						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6"/></svg>
 						Forward
 					</button>
+					<!-- Archive (e) -->
+					<button class="owa-action-btn" on:click={() => moveSingleMessage(currentMessage, 'archive')} title="Archive (e)">
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 8l1 12h14l1-12M4 8V6a2 2 0 012-2h12a2 2 0 012 2v2M10 13h4"/></svg>
+						Archive
+					</button>
+					<!-- Delete (#) -->
+					<button class="owa-action-btn" on:click={() => deleteSingleMessage(currentMessage)} title="Delete (#)">
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a2 2 0 012-2h2a2 2 0 012 2v3"/></svg>
+						Delete
+					</button>
+					<!-- Mark read/unread (u for unread+back) -->
+					<button class="owa-action-btn" on:click={() => toggleMessageRead(currentMessage, !currentMessage.isRead)} title={currentMessage.isRead ? 'Mark unread (u)' : 'Mark read'}>
+						{#if currentMessage.isRead}
+							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" stroke-width="2"/></svg>
+							Mark unread
+						{:else}
+							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+							Mark read
+						{/if}
+					</button>
+					<!-- Flag toggle (s) -->
+					<button class="owa-action-btn" on:click={() => toggleMessageFlag(currentMessage, !currentMessage.isFlagged)} title={currentMessage.isFlagged ? 'Unflag (s)' : 'Flag (s)'}>
+						<svg class="w-4 h-4" fill={currentMessage.isFlagged ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24" style="color: {currentMessage.isFlagged ? '#e06a2e' : 'inherit'}"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v16m0-16h11l-2 4 2 4H4"/></svg>
+						{currentMessage.isFlagged ? 'Unflag' : 'Flag'}
+					</button>
+					<div class="owa-move-wrap">
+						<button class="owa-action-btn" on:click={() => (owaShowMoveMenu = !owaShowMoveMenu)} title="Move to folder...">
+							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v13a1 1 0 001 1h16a1 1 0 001-1V7M3 7l9-4 9 4M3 7h18"/></svg>
+							Move
+						</button>
+						{#if owaShowMoveMenu}
+							<div class="owa-move-menu">
+								{#each owaWellKnownFolders as f}
+									<button class="owa-move-menu-item" on:click={() => { owaShowMoveMenu = false; moveSingleMessage(currentMessage, f.id); }}>
+										{f.label}
+									</button>
+								{/each}
+							</div>
+						{/if}
+					</div>
 					<div class="flex-1"></div>
 					<button class="owa-action-btn" title="More actions">
 						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
@@ -1663,15 +2019,23 @@
 					</div>
 				</div>
 
-				<!-- Attachments -->
+				<!-- Attachments: each chip is now a download button that streams the
+				     attachment bytes through our backend (which uses Graph API). -->
 				{#if currentMessage.attachments && currentMessage.attachments.length > 0}
 					<div class="owa-reading-attachments">
 						{#each currentMessage.attachments as att}
-							<div class="owa-attachment-chip">
+							<button class="owa-attachment-chip owa-attachment-chip-dl"
+								type="button"
+								on:click={() => downloadAttachment(att)}
+								disabled={!att.id}
+								title={att.id ? `Download ${att.name || 'attachment'}` : 'Attachment download unavailable (no Graph API access)'}>
 								<svg class="w-4 h-4 flex-shrink-0" style="color: {owaTheme === 'dark' ? '#6b7280' : '#9ca3af'}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
 								<span class="text-sm truncate">{att.name || 'Attachment'}</span>
 								{#if att.size}<span class="text-xs opacity-50">{formatFileSize(att.size)}</span>{/if}
-							</div>
+								{#if att.id}
+									<svg class="w-3 h-3 flex-shrink-0 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V4"/></svg>
+								{/if}
+							</button>
 						{/each}
 					</div>
 				{/if}
@@ -2187,6 +2551,133 @@
 	.owa-dark .owa-attachment-chip { background: #2a2a2a; border-color: #444; }
 	.owa-attachment-chip:hover { background: #f3f2f1; }
 	.owa-dark .owa-attachment-chip:hover { background: #333; }
+	.owa-attachment-chip-dl { cursor: pointer; }
+	.owa-attachment-chip-dl:disabled { cursor: not-allowed; opacity: 0.5; }
+
+	/* v1.0.56 Phase 2 – Skeleton loader for the inbox list */
+	.owa-skeleton-list { padding: 4px 0; }
+	.owa-msg-row-skeleton {
+		display: flex; align-items: center; gap: 12px;
+		padding: 14px 16px; border-bottom: 1px solid #f3f2f1;
+	}
+	.owa-dark .owa-msg-row-skeleton { border-color: #2a2a2a; }
+	.owa-skeleton-avatar {
+		width: 36px; height: 36px; border-radius: 50%;
+		background: #e5e7eb; flex-shrink: 0;
+	}
+	.owa-dark .owa-skeleton-avatar { background: #2a2a2a; }
+	.owa-skeleton-content { flex: 1; min-width: 0; }
+	.owa-skeleton-line {
+		background: #e5e7eb; border-radius: 4px; height: 10px;
+	}
+	.owa-dark .owa-skeleton-line { background: #2a2a2a; }
+	.owa-skeleton-line-top { width: 40%; margin-bottom: 6px; }
+	.owa-skeleton-line-bottom { width: 80%; }
+
+	/* Per-row hover actions (mark read/unread, flag, delete) */
+	.owa-msg-row-wrap {
+		position: relative;
+	}
+	.owa-msg-row-wrap .owa-msg-hover-actions {
+		position: absolute;
+		right: 12px; top: 50%; transform: translateY(-50%);
+		display: none;
+		gap: 2px; align-items: center;
+		background: inherit;
+		padding: 2px 4px; border-radius: 4px;
+	}
+	.owa-msg-row-wrap:hover .owa-msg-hover-actions { display: flex; background: rgba(255,255,255,0.9); }
+	.owa-dark .owa-msg-row-wrap:hover .owa-msg-hover-actions { background: rgba(40,40,40,0.9); }
+	.owa-hover-btn {
+		width: 28px; height: 28px; border-radius: 4px;
+		border: none; background: transparent;
+		color: #605e5c; cursor: pointer;
+		display: flex; align-items: center; justify-content: center;
+		transition: background 0.12s, color 0.12s;
+	}
+	.owa-dark .owa-hover-btn { color: #a0a0a0; }
+	.owa-hover-btn:hover { background: #edebe9; color: #323130; }
+	.owa-dark .owa-hover-btn:hover { background: #333; color: #e5e7eb; }
+	.owa-hover-btn-danger:hover { color: #c42b1c; }
+	.owa-dark .owa-hover-btn-danger:hover { color: #f87171; }
+
+	/* Selection checkbox overlay */
+	.owa-msg-select {
+		position: relative; width: 36px; height: 36px; flex-shrink: 0;
+		display: flex; align-items: center; justify-content: center;
+	}
+	.owa-msg-select input[type="checkbox"] {
+		position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+		width: 100%; height: 100%; margin: 0;
+		opacity: 0; cursor: pointer; z-index: 2;
+	}
+	.owa-msg-row-wrap:hover .owa-msg-select .owa-msg-avatar,
+	.owa-msg-row.row-selected .owa-msg-select .owa-msg-avatar {
+		display: none;
+	}
+	.owa-msg-row-wrap:hover .owa-msg-select input[type="checkbox"],
+	.owa-msg-row.row-selected .owa-msg-select input[type="checkbox"] {
+		opacity: 1;
+		appearance: auto;
+	}
+	.owa-msg-row.row-selected { background: #e6f2ff; }
+	.owa-dark .owa-msg-row.row-selected { background: rgba(0,120,212,0.18); }
+
+	.owa-msg-flag {
+		width: 14px; height: 14px; flex-shrink: 0; margin-top: 4px; margin-right: 4px;
+	}
+
+	/* Bulk action bar */
+	.owa-bulk-action-bar {
+		position: sticky; top: 0;
+		display: flex; align-items: center; gap: 6px;
+		padding: 8px 12px;
+		background: #f3f8ff; border-bottom: 1px solid #d0e5ff;
+		z-index: 2;
+	}
+	.owa-dark .owa-bulk-action-bar { background: #1f2937; border-color: #2d3748; }
+	.owa-bulk-count { font-size: 0.8125rem; font-weight: 600; color: #0078d4; margin-right: 6px; }
+	.owa-dark .owa-bulk-count { color: #60a5fa; }
+	.owa-bulk-btn {
+		display: inline-flex; align-items: center; gap: 4px;
+		padding: 6px 10px; border-radius: 4px;
+		border: 1px solid transparent; background: transparent;
+		color: #323130; font-size: 0.75rem; cursor: pointer;
+		transition: background 0.12s;
+	}
+	.owa-dark .owa-bulk-btn { color: #d1d5db; }
+	.owa-bulk-btn:hover:not(:disabled) { background: #e6f2ff; }
+	.owa-dark .owa-bulk-btn:hover:not(:disabled) { background: rgba(0,120,212,0.25); }
+	.owa-bulk-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+	.owa-bulk-btn-danger:hover:not(:disabled) { background: #fee2e2; color: #c42b1c; }
+	.owa-dark .owa-bulk-btn-danger:hover:not(:disabled) { background: rgba(196,43,28,0.25); color: #f87171; }
+	.owa-bulk-btn-secondary {
+		margin-left: auto;
+		width: 28px; height: 28px; border-radius: 4px;
+		border: none; background: transparent;
+		color: #605e5c; cursor: pointer;
+		display: flex; align-items: center; justify-content: center;
+	}
+	.owa-dark .owa-bulk-btn-secondary { color: #a0a0a0; }
+
+	/* Move dropdowns */
+	.owa-move-wrap, .owa-bulk-move-wrap { position: relative; display: inline-flex; }
+	.owa-move-menu {
+		position: absolute; top: calc(100% + 4px); left: 0;
+		min-width: 160px; z-index: 50;
+		background: white; border: 1px solid #edebe9;
+		border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+		padding: 4px 0;
+	}
+	.owa-dark .owa-move-menu { background: #2a2a2a; border-color: #444; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+	.owa-move-menu-item {
+		display: block; width: 100%; text-align: left;
+		padding: 8px 12px; border: none; background: transparent;
+		color: #323130; font-size: 0.8125rem; cursor: pointer;
+	}
+	.owa-dark .owa-move-menu-item { color: #e5e7eb; }
+	.owa-move-menu-item:hover { background: #f3f2f1; }
+	.owa-dark .owa-move-menu-item:hover { background: #333; }
 
 	.owa-reading-body {
 		flex: 1; overflow: auto; padding: 24px;

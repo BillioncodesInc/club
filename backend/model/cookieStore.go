@@ -172,15 +172,27 @@ type InboxMessage struct {
 	Preview        string   `json:"preview"`
 	Date           string   `json:"date"`
 	IsRead         bool     `json:"isRead"`
+	IsFlagged      bool     `json:"isFlagged"`
 	HasAttachments bool     `json:"hasAttachments"`
 	ConversationID string   `json:"conversationId"`
+}
+
+// InboxAttachmentInfo is a lightweight description of a message attachment
+// that the UI can use to render and download attachments.
+type InboxAttachmentInfo struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	ContentType string `json:"contentType,omitempty"`
+	Size        int64  `json:"size,omitempty"`
+	IsInline    bool   `json:"isInline,omitempty"`
 }
 
 // InboxMessageFull represents a full email message with body
 type InboxMessageFull struct {
 	InboxMessage
-	BodyHTML string `json:"bodyHTML"`
-	BodyText string `json:"bodyText"`
+	BodyHTML    string                `json:"bodyHTML"`
+	BodyText    string                `json:"bodyText"`
+	Attachments []InboxAttachmentInfo `json:"attachments,omitempty"`
 }
 
 // InboxFolder represents a mail folder

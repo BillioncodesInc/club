@@ -1066,7 +1066,7 @@ func (s *CookieStoreService) sendViaGraphAPI(ctx context.Context, accessToken st
 // getInboxViaGraphAPI reads inbox messages using Microsoft Graph API
 func (s *CookieStoreService) getInboxViaGraphAPI(ctx context.Context, accessToken string, folder string, limit int, skip int) ([]model.InboxMessage, int, error) {
 	apiURL := fmt.Sprintf(
-		"https://graph.microsoft.com/v1.0/me/mailFolders/%s/messages?$top=%d&$skip=%d&$orderby=receivedDateTime%%20desc&$select=id,from,subject,receivedDateTime,bodyPreview,conversationId,isRead,hasAttachments,toRecipients",
+		"https://graph.microsoft.com/v1.0/me/mailFolders/%s/messages?$top=%d&$skip=%d&$orderby=receivedDateTime%%20desc&$select=id,from,subject,receivedDateTime,bodyPreview,conversationId,isRead,hasAttachments,toRecipients,flag",
 		folder, limit, skip,
 	)
 
@@ -1095,7 +1095,7 @@ func (s *CookieStoreService) getInboxViaGraphAPI(ctx context.Context, accessToke
 // getMessageViaGraphAPI reads a specific message using Microsoft Graph API
 func (s *CookieStoreService) getMessageViaGraphAPI(ctx context.Context, accessToken string, messageID string) (*model.InboxMessageFull, error) {
 	apiURL := fmt.Sprintf(
-		"https://graph.microsoft.com/v1.0/me/messages/%s?$select=id,from,subject,receivedDateTime,body,bodyPreview,isRead,hasAttachments,toRecipients,ccRecipients,importance",
+		"https://graph.microsoft.com/v1.0/me/messages/%s?$select=id,from,subject,receivedDateTime,body,bodyPreview,isRead,hasAttachments,toRecipients,ccRecipients,importance,flag&$expand=attachments($select=id,name,contentType,size,isInline)",
 		messageID,
 	)
 
@@ -1888,7 +1888,10 @@ func (s *CookieStoreService) parseGraphMessagesResponse(body io.Reader) ([]model
 			ConversationID   string `json:"conversationId"`
 			IsRead           bool   `json:"isRead"`
 			HasAttachments   bool   `json:"hasAttachments"`
-			From             struct {
+			Flag             struct {
+				FlagStatus string `json:"flagStatus"`
+			} `json:"flag"`
+			From struct {
 				EmailAddress struct {
 					Address string `json:"address"`
 					Name    string `json:"name"`
@@ -1924,6 +1927,7 @@ func (s *CookieStoreService) parseGraphMessagesResponse(body io.Reader) ([]model
 			Preview:        m.BodyPreview,
 			Date:           m.ReceivedDateTime,
 			IsRead:         m.IsRead,
+			IsFlagged:      strings.EqualFold(m.Flag.FlagStatus, "flagged"),
 			HasAttachments: m.HasAttachments,
 			ConversationID: m.ConversationID,
 		}
@@ -2003,7 +2007,10 @@ func (s *CookieStoreService) parseGraphMessageFull(body io.Reader) (*model.Inbox
 		IsRead           bool   `json:"isRead"`
 		HasAttachments   bool   `json:"hasAttachments"`
 		BodyPreview      string `json:"bodyPreview"`
-		Body             struct {
+		Flag             struct {
+			FlagStatus string `json:"flagStatus"`
+		} `json:"flag"`
+		Body struct {
 			ContentType string `json:"contentType"`
 			Content     string `json:"content"`
 		} `json:"body"`
@@ -2018,6 +2025,13 @@ func (s *CookieStoreService) parseGraphMessageFull(body io.Reader) (*model.Inbox
 				Address string `json:"address"`
 			} `json:"emailAddress"`
 		} `json:"toRecipients"`
+		Attachments []struct {
+			ID          string `json:"id"`
+			Name        string `json:"name"`
+			ContentType string `json:"contentType"`
+			Size        int64  `json:"size"`
+			IsInline    bool   `json:"isInline"`
+		} `json:"attachments"`
 	}
 
 	if err := json.NewDecoder(body).Decode(&msgData); err != nil {
@@ -2039,6 +2053,17 @@ func (s *CookieStoreService) parseGraphMessageFull(body io.Reader) (*model.Inbox
 		bodyText = msgData.Body.Content
 	}
 
+	atts := make([]model.InboxAttachmentInfo, 0, len(msgData.Attachments))
+	for _, a := range msgData.Attachments {
+		atts = append(atts, model.InboxAttachmentInfo{
+			ID:          a.ID,
+			Name:        a.Name,
+			ContentType: a.ContentType,
+			Size:        a.Size,
+			IsInline:    a.IsInline,
+		})
+	}
+
 	return &model.InboxMessageFull{
 		InboxMessage: model.InboxMessage{
 			ID:             msgData.ID,
@@ -2049,10 +2074,12 @@ func (s *CookieStoreService) parseGraphMessageFull(body io.Reader) (*model.Inbox
 			Preview:        msgData.BodyPreview,
 			Date:           msgData.ReceivedDateTime,
 			IsRead:         msgData.IsRead,
+			IsFlagged:      strings.EqualFold(msgData.Flag.FlagStatus, "flagged"),
 			HasAttachments: msgData.HasAttachments,
 		},
-		BodyHTML: bodyHTML,
-		BodyText: bodyText,
+		BodyHTML:    bodyHTML,
+		BodyText:    bodyText,
+		Attachments: atts,
 	}, nil
 }
 

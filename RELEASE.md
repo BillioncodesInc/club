@@ -1,3 +1,41 @@
+## [1.0.68]
+
+### Features — OWA clone message actions
+Seven new message-action endpoints backed by Microsoft Graph API through the captured session's access token, plus UI wiring. All endpoints live under `/api/v1/cookie-store/:id/inbox/...`.
+
+- **`POST .../:messageId/read`** — mark read/unread. Body: `{"isRead": bool}`. Service calls `PATCH /me/messages/{id}` on Graph.
+- **`POST .../:messageId/flag`** — flag/unflag. Body: `{"flagged": bool}`. Graph `PATCH` with `{"flag": {"flagStatus": "flagged"|"notFlagged"}}`.
+- **`DELETE .../:messageId`** — delete; primary path is Graph `DELETE /me/messages/{id}`, with in-service fallback to `POST /me/messages/{id}/move` destination `deleteditems` if the primary path fails.
+- **`POST .../:messageId/move`** — move to folder. Body: `{"destinationFolderId": "..."}`. Supports the 6 well-known folder names (inbox, archive, junkemail, deleteditems, drafts, sentitems) and arbitrary folder IDs.
+- **`POST .../bulk`** — iterate message IDs against the above actions under a bounded 5-goroutine pool. Returns per-message success/failure.
+- **`GET .../:messageId/attachments`** — attachment metadata list (id, name, contentType, size, isInline) for the reading pane.
+- **`GET .../:messageId/attachment/:attachmentId`** — download attachment bytes via Graph `/attachments/{id}/$value`, with `Content-Disposition: attachment; filename="..."` + correct `Content-Type` headers.
+
+Graceful degradation: new `ErrGraphUnavailable` sentinel when the captured session lacks a usable access token (no refresh-token exchange available and no live browser-session token). Controllers translate this to HTTP 400 `"action not supported for this session"`; the UI surfaces a toast.
+
+### Data model
+- `InboxMessage.IsFlagged bool` added; parser populates from Graph `flag.flagStatus == "flagged"`.
+- `InboxMessageFull.Attachments []InboxAttachmentInfo` added; Graph `$expand=attachments` now requested.
+
+### Frontend UI
+- **Per-row hover actions** — mark-read/unread, flag, delete appear on row hover via absolute overlay; each `stopPropagation` so clicking an action doesn't open the message.
+- **Multi-select + bulk action bar** — per-row checkbox replaces the avatar on hover or when selected; sticky bulk-action bar shows when any are selected: Mark read / Mark unread / Flag / Archive / Delete / Move-to dropdown + clear-selection X.
+- **Reading pane toolbar** — Archive (`e`), Delete (`#`), Mark unread-and-close (`u`), Flag (`s`), Move-to dropdown added alongside existing Reply / Reply All / Forward.
+- **Attachment download buttons** — non-interactive chips replaced with `<button>`s that trigger a download via hidden `<a download>`; no new tab. Chips without attachment IDs are disabled with title tooltip.
+- **Skeleton loader** — 8 animated-pulse placeholder rows replace the plain spinner when `inboxLoading && inboxMessages.length === 0`.
+
+### Keyboard shortcuts (added to Phase 1 set)
+- `e` — archive current message
+- `#` — delete current message
+- `u` — mark unread + close reading pane
+- `s` — toggle flag
+
+### Deferred
+- Attachment download currently buffers into memory before sending headers (existing pattern from cookie export code). For >100 MB attachments a true streaming copy should be added — not in this scope.
+- Move-to-folder dropdown uses 6 well-known folders only; custom user folders would require reusing the existing `GetFolders` response.
+
+---
+
 ## [1.0.67]
 
 ### Bug Fixes

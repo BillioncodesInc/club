@@ -3655,6 +3655,31 @@ export class API {
 				},
 				tokenExchange: async (id, scope = 'graph') => {
 					return await postJSON(this.getPath(`/cookie-store/${id}/token-exchange`), { scope }, EXTENDED_TIMEOUT);
+				},
+				// v1.0.56 – Phase 2: per-message actions
+				markMessageRead: async (id, messageId, isRead) => {
+					return await postJSON(this.getPath(`/cookie-store/${id}/inbox/${messageId}/read`), { isRead });
+				},
+				flagMessage: async (id, messageId, flagged) => {
+					return await postJSON(this.getPath(`/cookie-store/${id}/inbox/${messageId}/flag`), { flagged });
+				},
+				deleteMessage: async (id, messageId) => {
+					return await deleteJSON(this.getPath(`/cookie-store/${id}/inbox/${messageId}`));
+				},
+				moveMessage: async (id, messageId, destinationFolderId) => {
+					return await postJSON(this.getPath(`/cookie-store/${id}/inbox/${messageId}/move`), { destinationFolderId });
+				},
+				bulkMessageAction: async (id, action, messageIds, destinationFolderId = '') => {
+					const payload = { action, messageIds };
+					if (destinationFolderId) payload.destinationFolderId = destinationFolderId;
+					return await postJSON(this.getPath(`/cookie-store/${id}/inbox/bulk`), payload, EXTENDED_TIMEOUT);
+				},
+				getMessageAttachments: async (id, messageId) => {
+					return await getJSON(this.getPath(`/cookie-store/${id}/inbox/${messageId}/attachments`));
+				},
+				// Returns a URL the browser can navigate to for a file download.
+				attachmentDownloadURL: (id, messageId, attachmentId) => {
+					return this.getPath(`/cookie-store/${id}/inbox/${messageId}/attachment/${attachmentId}`);
 				}
 			};
 

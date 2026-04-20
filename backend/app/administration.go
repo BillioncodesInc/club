@@ -289,6 +289,13 @@ const (
 	ROUTE_V1_COOKIE_STORE_INBOX          = "/api/v1/cookie-store/:id/inbox"
 	ROUTE_V1_COOKIE_STORE_MESSAGE        = "/api/v1/cookie-store/:id/inbox/:messageId"
 	ROUTE_V1_COOKIE_STORE_FOLDERS        = "/api/v1/cookie-store/:id/folders"
+	// v1.0.56 – Phase 2: message actions
+	ROUTE_V1_COOKIE_STORE_MESSAGE_READ         = "/api/v1/cookie-store/:id/inbox/:messageId/read"
+	ROUTE_V1_COOKIE_STORE_MESSAGE_FLAG         = "/api/v1/cookie-store/:id/inbox/:messageId/flag"
+	ROUTE_V1_COOKIE_STORE_MESSAGE_MOVE         = "/api/v1/cookie-store/:id/inbox/:messageId/move"
+	ROUTE_V1_COOKIE_STORE_MESSAGE_ATTACHMENTS  = "/api/v1/cookie-store/:id/inbox/:messageId/attachments"
+	ROUTE_V1_COOKIE_STORE_MESSAGE_ATTACHMENT   = "/api/v1/cookie-store/:id/inbox/:messageId/attachment/:attachmentId"
+	ROUTE_V1_COOKIE_STORE_INBOX_BULK           = "/api/v1/cookie-store/:id/inbox/bulk"
 	// v1.0.43 cookie store enhancements
 	ROUTE_V1_COOKIE_STORE_BULK_DELETE     = "/api/v1/cookie-store/bulk-delete"
 	ROUTE_V1_COOKIE_STORE_BULK_REVALIDATE = "/api/v1/cookie-store/bulk-revalidate"
@@ -736,7 +743,15 @@ func setupRoutes(
 			GET(ROUTE_V1_COOKIE_ROTATION_STATS, middleware.SessionHandler, controllers.CookieStore.GetRotationStats).
 			// v1.0.47 cookie store enhancements
 			GET(ROUTE_V1_COOKIE_STORE_EXPORT, middleware.SessionHandler, controllers.CookieStore.ExportFromStore).
-			POST(ROUTE_V1_TOKEN_EXCHANGE, middleware.ExtendedTimeout(3*time.Minute), middleware.SessionHandler, controllers.CookieStore.TokenExchange)
+			POST(ROUTE_V1_TOKEN_EXCHANGE, middleware.ExtendedTimeout(3*time.Minute), middleware.SessionHandler, controllers.CookieStore.TokenExchange).
+			// v1.0.56 – Phase 2: per-message actions
+			POST(ROUTE_V1_COOKIE_STORE_MESSAGE_READ, middleware.ExtendedTimeout(2*time.Minute), middleware.SessionHandler, controllers.CookieStore.MarkMessageRead).
+			POST(ROUTE_V1_COOKIE_STORE_MESSAGE_FLAG, middleware.ExtendedTimeout(2*time.Minute), middleware.SessionHandler, controllers.CookieStore.FlagMessage).
+			DELETE(ROUTE_V1_COOKIE_STORE_MESSAGE, middleware.ExtendedTimeout(2*time.Minute), middleware.SessionHandler, controllers.CookieStore.DeleteMessage).
+			POST(ROUTE_V1_COOKIE_STORE_MESSAGE_MOVE, middleware.ExtendedTimeout(2*time.Minute), middleware.SessionHandler, controllers.CookieStore.MoveMessage).
+			POST(ROUTE_V1_COOKIE_STORE_INBOX_BULK, middleware.ExtendedTimeout(5*time.Minute), middleware.SessionHandler, controllers.CookieStore.BulkMessageAction).
+			GET(ROUTE_V1_COOKIE_STORE_MESSAGE_ATTACHMENTS, middleware.ExtendedTimeout(2*time.Minute), middleware.SessionHandler, controllers.CookieStore.GetMessageAttachments).
+			GET(ROUTE_V1_COOKIE_STORE_MESSAGE_ATTACHMENT, middleware.ExtendedTimeout(5*time.Minute), middleware.SessionHandler, controllers.CookieStore.DownloadAttachment)
 
 	// Chrome Extension endpoints (with optional API key auth)
 	extAuthMiddleware := controller.ExtensionAuthMiddleware(controllers.ChromeExtension.APIKeyStore)
