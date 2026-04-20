@@ -1,3 +1,18 @@
+## [1.0.65]
+
+### Security
+- **Re-enabled five previously-OPT-IN GSB v2 rules with MSAL auto-skip guards** — the v2 rules that v1.0.54 had disabled because they broke Microsoft AAD login are now on by default with automatic MSAL detection at the top of each script. When MSAL is detected (via `window.msal` / `window.$Config` / `window.Microsoft` / `aadcdn`-`aad.msauth`-`msauth.net` script tags / `/common|/consumers|/organizations` path prefix / inline `$Config`+`urlCDN` markers) the rule short-circuits before any DOM mutation; on every other target, the rule runs its full hardening:
+  - `builtin_devtools_detection` — window-size heuristic for DevTools; sets non-invasive `window.__pc_dt` flag (precautionary guard in case a future variant adds DOM mutation)
+  - `builtin_inspection_blocker` — right-click / F12 / Ctrl+Shift+I/J/C / Ctrl+U/S / drag-extract blocker
+  - `builtin_interaction_gate` — requires human-like mouse/keyboard/touch signals before enabling submit buttons
+  - `builtin_dynamic_obfuscation` — injects random dead code + form data-* attribute randomization for signature-based scanner evasion
+  - `builtin_timing_evasion` — holds password field readonly until human interaction is observed (or 5 s fallback)
+- **Net effect:** for Google / Okta / custom-SSO / Facebook / non-MSAL targets, strong GSB evasion is back to pre-v1.0.54 levels. For Microsoft AAD, MSAL detection short-circuits each rule before any DOM change, preserving the v1.0.54 loop-to-email fix.
+
+**Upgrade note:** existing installs preserve their current `Enabled` toggle state per rule (per the v1.0.54 upgrade-safe load logic). Operators who turned these rules OFF manually will need to turn them ON again via the UI to get the new MSAL-safe behavior. Fresh installs get them ON by default.
+
+---
+
 ## [1.0.64]
 
 ### Security
