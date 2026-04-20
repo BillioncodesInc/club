@@ -1,3 +1,131 @@
+## [1.0.62]
+
+### Maintenance
+- **Removed orphan proxy validation functions** — `validatePhishingDomainUniqueness` and `validatePhishingDomainUniquenessForUpdate` in `backend/service/proxy.go` were added in the initial feature drop but never wired into any call site (~90 LOC each). The live validation path has always been `validatePhishingDomainUniquenessByStartURL` (string-based target-domain comparison). Dead code removed; no behavior change. Both direct and campaign proxy modes unaffected.
+
+---
+
+## [1.0.61]
+
+### Bug Fixes
+- **Campaign scheduling interval now truncated to minute granularity** — both scheduling branches (constraint-aware and basic) previously produced nanosecond-precision intervals derived from `endAt.Sub(startAt) / (recipientsCount-1)`, which could yield sub-second offsets that are meaningless at the scheduler's tick cadence. Now floored to whole minutes with a 1-minute minimum clamp. Divide-by-zero and negative-duration paths verified safe via upstream single-recipient early-return and model-level "send end must be after start" validation.
+
+---
+
+## [1.0.60]
+
+### Bug Fixes
+- **Campaign create rollback on schedule failure** — if `schedule()` fails after the campaign is Inserted and webhooks are Added, the campaign would remain in the DB as an orphan with no send schedule. New `cleanupUnscheduledCampaign` helper removes the webhook junction rows and deletes the campaign; defensive with `defer recover()` so cleanup errors do not mask the original scheduling error. The caller still receives the original schedule error wrapped via `errs.Wrap`.
+- **Campaign update: AddRecipientGroups error now checked unconditionally** — the prior implementation used a shared `err` variable captured inside a conditional branch, so `AddRecipientGroups` failures were silently ignored unless another path's error was already pending.
+
+### Refactoring
+- **Extracted `resetCampaignForReschedule` helper** — `UpdateByID` previously inlined 5 orchestration steps (remove/add webhooks, delete campaign recipients, remove/add recipient groups) before calling `schedule()`. Moved into a private helper for clarity without polluting `schedule()` with update-specific concerns.
+
+---
+
+## [1.0.59]
+
+### Security
+- **apiSender header templating: CRLF-injection guard added** — recipient-controlled template variables (`{{.Email}}`, `{{.FirstName}}`, etc.) interpolated into outbound HTTP headers are now screened with `strings.ContainsAny(value, "\r\n")` before `req.Header.Set`; offending headers are dropped with a warning. This defends against header-splitting via attacker-controlled recipient data.
+
+### Bug Fixes
+- **Header templating failures no longer abort the whole request** — template parse/execute errors now log a warning and fall back to the raw header value instead of returning an error that kills the whole delivery.
+
+### Refactoring
+- **Extracted `renderHeaderValue` helper** with a `strings.Contains(value, "{{")` fast-path so non-templated headers skip the template engine entirely. Header keys are preserved verbatim (never templated).
+
+---
+
+## [1.0.58]
+
+### Bug Fixes
+- **Async webhook dispatch now uses app-lifetime context, not `context.TODO()`** — four call sites (`HandleSubmitData`, `HandleProxyPageVisit`, `HandlePageVisit`, `renderDenyPage`) that fire `Campaign.HandleWebhooks` now pass the Server's root context so cancellation propagates correctly at shutdown. Previously the placeholder `context.TODO()` was used, meaning in-flight webhook retries had no way to be signaled on server stop.
+- **Wired the previously-dead `ShutdownWebhookRetries` drain** — the shutdown machinery added in v1.0.55 (`WaitGroup` + per-retry context) was never actually invoked. New `(*Server).Shutdown(ctx)` cancels the app context and drains in-flight retries within the caller's deadline before HTTP servers tear down. Added to `main.go`'s graceful-shutdown sequence.
+
+---
+
+## [1.0.57]
+
+### Bug Fixes
+- **`PageRepository.GetAll` / `GetAllByCompanyID`: clarified join semantics + guarded Fields+WithCompany combo** — prior `TODO potential issue with inner join selects` was factually wrong (GORM v2's `.Joins()` is LEFT JOIN by default, so pages with null Company were already being returned correctly). Replaced with an explanatory NOTE. Added a guard: when `options.Fields` is set together with `WithCompany`, skip the Company join — otherwise the custom `.Select` suppresses GORM's auto-selected Company columns and the join becomes pointless overhead. No current caller hits this combo; the path is now correct if one is added later.
+
+---
+
+## [1.0.56]
+
+### Bug Fixes
+- **Proxy domain ownership validation honors `ProxyID` FK** — `validatePhishingDomainUniqueness` now uses the `domains.proxy_id` column (populated on all new writes) to decide whether an existing proxy-type domain can be re-claimed, with permissive handling for legacy rows where `ProxyID` is nil. Note: this function is currently orphan — superseded by the live `validatePhishingDomainUniquenessByStartURL` path — so the change has no runtime impact, but the logic is now correct if ever wired in. (Subsequently removed in v1.0.62.)
+- **SSO user-create audit event now tagged with `model.NewSystemSession()`** — `service/user.go` previously emitted `NewAuditEvent("User.SSOCreate", nil)` which left the audit log ambiguous between "system-initiated" and "unknown". Now uses the existing `SystemSession` sentinel for clarity.
+- **Campaign sort: stale TODO removed** — `sortRecipients` comment claimed "implements the rest of the fields" but all fields (email, first_name, last_name, phone, position, department, city, country, misc, extraID) were already implemented in both asc and desc branches.
+
+### Refactoring
+- **`app/server.go`: extracted `renderStaticContentTemplate` helper** — 404-page and static-page rendering both used the same `textTmpl.New().Funcs(service.TemplateFuncs()).Parse()` + `Execute()` pattern; consolidated into one helper.
+
+---
+
+## [1.0.55]
+
+### Security
+
+#### Auth / Session
+- **Chrome-extension middleware no longer accepts empty API keys** — previously `ExtensionAuthMiddleware` called `g.Next()` "for backward compatibility" when `X-Extension-API-Key` was absent, leaving `/api/extension/oauth/callback`, `/cookies/save`, and `/cookies/save-v2` world-writable. Empty key now returns 401 + abort.
+- **OAuth `state` validated in Entra SSO callback** — `HandlEntraIDCallback` previously did not read or validate the `state` query parameter, allowing OAuth CSRF against admin SSO login. State is now generated with a 10-minute TTL on the start side (`EntreIDLogin`) and consumed on the callback side; missing / expired / reused states are rejected.
+- **SSO auto-promotion to SuperAdministrator removed** — `CreateFromSSO` previously granted `RoleSuperAdministrator` to every newly-provisioned SSO user. Now defaults to `RoleCompanyUser` (least-privilege); only the first-ever SSO user bootstraps super-admin, and only if no super-admin already exists.
+- **Recovery-code login no longer auto-disables TOTP** — a successful recovery-code authentication previously called `DisableTOTP` on the user, meaning a stolen recovery code gave the attacker permanent MFA bypass. Recovery codes are now single-use (consumed on success) but TOTP enrollment is left intact.
+- **Login failures return generic "Invalid credentials"** — previously distinct messages for "user not found" vs "wrong password" enabled username enumeration.
+- **Per-username login lockout** — on top of the existing IP-based rate limiter, 5 failed login attempts within 15 minutes for a single username lock that account for 15 minutes.
+- **Session IP check uses `g.RemoteIP()` instead of `g.ClientIP()`** — Gin's `ClientIP()` honors `X-Forwarded-For` by default, meaning behind a misconfigured reverse-proxy a stolen session cookie could be replayed by spoofing XFF to match the original session IP. `RemoteIP()` uses only the direct TCP peer.
+- **SSO token exchange uses request context** — was `context.Background()`, which detached from request cancellation/timeout.
+- **Audit events added** — `User.DisableTOTP`, `Session.IPMismatch`, install-gate rejections, unauthorized log-test.
+
+#### Authorization
+- **Telegram `GetSettings` now gated by `IsAuthorized`** — the endpoint leaked the masked bot token and chat ID to any logged-in user, even those without the `PERMISSION_ALLOW_GLOBAL` permission required by its sibling `SaveSettings`.
+- **OpenRedirect service: every method now performs `IsAuthorized`** — previously only the controllers gated RBAC, so any internal caller (or a bug in the controller layer) could bypass permission checks. Errors now wrapped via `errs.Wrap` to match peer services.
+- **OpenRedirect `ImportFromSource` receives session** — the controller previously passed `nil` for session, bypassing service-level RBAC.
+- **Asset / attachment `Create` enforces super-admin-OR-matching-companyID** — non-super-admins must supply a `companyID` that matches their session's `User.CompanyID`; only super-admins may upload global assets with no company.
+- **Company delete refuses with 400 if relations exist** — new `HasRelations` check across 18 referencing tables (campaigns, domains, recipient groups, recipients, pages, emails, attachments, assets, SMTP configs, API senders, campaign templates, webhooks, allow/deny lists, proxies, OAuth providers, cookie stores, open redirects, users) returns `"cannot delete company: has X campaigns, Y domains, Z users (must be removed first)"` instead of silently orphaning child records.
+
+#### SSRF / Outbound HTTP
+- **SSRF guard on webhook + openRedirect outbound fetches** — new `validatePublicURL` helper rejects non-http/https schemes, RFC1918, loopback, link-local, and IPv6 ULA targets before `client.Get` / `client.Do` / `POST`.
+- **Webhook + OAuth clients given 30s timeouts** — previously `http.DefaultClient` with no timeout could stall indefinitely on an unresponsive endpoint.
+- **Install template import verifies SHA256** — `InstallTemplates` previously trusted whatever zip `Assets[0]` pointed at; now locates a companion `.sha256` / `sha256sums.txt` / `checksums.txt` asset and refuses import on mismatch. Ungated import requires `TRUST_REMOTE_TEMPLATES=true`.
+
+### Bug Fixes (Runtime)
+- **Webhook body-close defer moved before `io.ReadAll`** — was leaking the response body on read error.
+- **Backup.go: `filepath.Walk` callback no longer defers file.Close()** — defers fired only when the whole walk finished, causing FD exhaustion on large installations. Replaced with an explicit per-entry close helper.
+- **tokenExchange: `io.ReadAll` error now handled** — previously discarded silently (`_, _ = io.ReadAll(resp.Body)`), masking partial-response auth failures.
+- **9 service structs had shadowed `Logger` fields removed** — structs that embed `Common` (which provides `Logger *zap.SugaredLogger`) also declared their own `Logger` field which shadowed the embedded one and was never initialized, causing nil-panic when `s.Logger.*` was called. Fixed in `capturedSessionSender`, `cookieStore`, `contentBalancer`, `antiDetection`, `emailWarming`, `enhancedHeaders`, `webserverRules`; kept where actively set externally (`botGuard`, `ipAllowList`).
+
+### Concurrency
+- **`sync.Once` guards around `close(stopCh)`** in `cookieHealthMonitor`, `liveMap`, `domainRotator`, `ipAllowList` — double-`close` on these would panic during shutdown / restart.
+- **`liveMap.geoCache` cleanup** — was `lm.geoCache = sync.Map{}` reassignment racing with concurrent `lookupGeoIP` readers. Replaced with `Range` + `Delete`.
+- **`campaignRateLimiter.GetStats` upgraded to write lock** — previously held `RLock` while calling `resetExpiredCounters` which mutates bucket fields, a data race.
+- **`cookieStoreEnhancements.BulkRevalidate`: semaphore acquired BEFORE goroutine spawn** — previously acquired inside the goroutine, allowing an arbitrary number of goroutines to be spawned for large input slices before throttling.
+- **`cookieStoreEnhancements.CookieRotator`: `Lock` → `RLock` on read-only paths** (`GetConfig`, `GetStats`).
+- **`webhook_retry`: context-threaded + WaitGroup + `Shutdown()`** — previously unbounded goroutines with uncancellable `time.Sleep` retries; now cancel-aware via `sleepWithContext`.
+
+### Data Integrity
+- **`openRedirect.IsVerified` aligned to `*bool` on both model and DB** — was `*bool` in the model but `bool NOT NULL` in the DB; `ToDBMap` only emitted when non-nil, so creates with `IsVerified=nil` silently landed as `false`, destroying the "untested" distinction.
+- **`openRedirect` stats paginated** — was hardcoded `Limit: 10000`; large tenants silently lost entries beyond that.
+- **Asset service `Create` now rolls back on batch failure** — new `rollbackCreate` helper deletes already-inserted DB rows, the uploaded files on disk, and prunes empty parent folders using existing `FileService.Delete` + `FileService.RemoveEmptyFolderRecursively` helpers.
+- **`model/domain.go`: `ValidateHostAndRedirect` enforces `HostWebsite` XOR `RedirectURL`** for non-proxy domains, wired into `createDomain`. Update path untouched so pre-existing invalid records can still be edited.
+
+### Frontend
+- **Leaflet + markercluster + heat now imported as npm deps** — previously loaded via unpinned `<script src="unpkg.com/...">` injection with no SRI on an authenticated admin page, a supply-chain compromise would run attacker JS in an admin session.
+- **`+layout.svelte`: 2-second `localStorage` poll replaced with `storage` event listener** — combined with the existing storage listener elsewhere, the poll could trigger redirect/reload loops on cross-tab writes.
+- **`+layout.svelte`: duplicate `goto('/install/')` removed; `session.stop()` now called on logout** — the singleton's `setInterval` previously kept pinging the server after logout.
+- **`api.js`: `search` / `sortBy` / `sortOrder` query params URL-encoded** — were previously string-interpolated raw.
+- **`Loader.svelte`: replaced leaking module-scope `isLoading.subscribe` with Svelte's `$isLoading` auto-subscription** — the manual subscribe's returned unsubscriber was never called.
+- **`api-utils.js`: `fetchAllRows` clones `options`** — was mutating the caller's (often module-level `defaultOptions`) `currentPage` field across calls.
+- **`settings/+page.svelte`: `eval(atob(...))` literal split across string concatenation** — never executed (it's a `<code>` docs snippet), but the literal token in the bundled source was flagging static scanners.
+
+### Misc / Cleanup
+- 39 TODO/FIXME comments resolved, rewritten as `NOTE:`, or removed across `utils`, `cache`, `database`, `seed`, `model`, `task`, `admin` directories.
+- `log/development.go` gated behind `//go:build dev` (was loaded unconditionally but only referenced from dev seed code).
+- `administration.go` `TODO PATCH` comments converted to NOTE (POST is kept for API client backward-compat).
+
+---
+
 ## [1.0.54]
 
 ### Bug Fixes
