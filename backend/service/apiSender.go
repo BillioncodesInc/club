@@ -719,36 +719,64 @@ func (a *APISender) buildHeader(
 	requestHeaders := apiSender.RequestHeaders
 	if requestHeaders.IsSpecified() && !requestHeaders.IsNull() {
 		for _, header := range requestHeaders.MustGet().Headers {
-			keyTemplate := template.New("key")
-			keyTemplate, err := keyTemplate.Parse(header.Key)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse header key: %s", err)
-			}
-			keyTemplate = keyTemplate.Funcs(TemplateFuncs())
-			var key bytes.Buffer
-			if err := keyTemplate.Execute(&key, templateData); err != nil {
-				return nil, errs.Wrap(err)
-			}
-			valueTemplate := template.New("value")
-			valueTemplate, err = valueTemplate.Parse(header.Value)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse header value: %s", err)
-			}
-			valueTemplate = valueTemplate.Funcs(TemplateFuncs())
-			var value bytes.Buffer
-			if err := valueTemplate.Execute(&value, templateData); err != nil {
-				return nil, fmt.Errorf("failed to execute value template: %s", err)
-			}
+			// Key is preserved verbatim - we intentionally do not
+			// template header names to avoid ambiguity and to keep
+			// header keys deterministic.
+			key := header.Key
+			// Value may contain recipient template variables
+			// (e.g. {{.FirstName}}). On parse/execute error we log
+			// and fall back to the raw value so a single malformed
+			// template does not abort the whole delivery.
+			value := a.renderHeaderValue(key, header.Value, templateData)
 			apiReqHeaders = append(
 				apiReqHeaders,
 				&model.HTTPHeader{
-					Key:   key.String(),
-					Value: value.String(),
+					Key:   key,
+					Value: value,
 				},
 			)
 		}
 	}
 	return apiReqHeaders, nil
+}
+
+// renderHeaderValue templates a single HTTP header value against the
+// supplied data map using the same TemplateFuncs used for email
+// subject/body. Values that do not contain the template delimiters are
+// returned unchanged (fast path). On parse or execute error the raw
+// value is returned and a warning is logged - this matches the
+// tolerant behaviour email headers have historically had and prevents
+// one bad recipient attribute from breaking an entire campaign.
+func (a *APISender) renderHeaderValue(
+	key string,
+	rawValue string,
+	templateData *map[string]any,
+) string {
+	// fast path: no template delimiters, nothing to do.
+	if !strings.Contains(rawValue, "{{") {
+		return rawValue
+	}
+	tmplName := "header:" + key
+	tmpl := template.New(tmplName).Funcs(TemplateFuncs())
+	tmpl, err := tmpl.Parse(rawValue)
+	if err != nil {
+		a.Logger.Warnw(
+			"failed to parse api sender header template; using raw value",
+			"header", key,
+			"error", err,
+		)
+		return rawValue
+	}
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, templateData); err != nil {
+		a.Logger.Warnw(
+			"failed to execute api sender header template; using raw value",
+			"header", key,
+			"error", err,
+		)
+		return rawValue
+	}
+	return buf.String()
 }
 
 // sendRequest builds and sends the request to the API
@@ -777,14 +805,28 @@ func (a *APISender) sendRequest(
 		reqCancel()
 		return nil, func() {}, errs.Wrap(err)
 	}
-	// TODO these headers should be enrished with template variables like {{.FirstName}} or etc
+	// Header values have already been rendered through the template
+	// engine (see buildHeader / renderHeaderValue). Defence in depth:
+	// reject any rendered value that contains CR or LF to mitigate
+	// HTTP header-splitting / response-splitting attacks where a
+	// recipient-controlled attribute smuggles additional headers or a
+	// body via embedded CRLF sequences.
+	safeHeaders := make([]*model.HTTPHeader, 0, len(apiRequestHeaders))
 	for _, header := range apiRequestHeaders {
+		if strings.ContainsAny(header.Value, "\r\n") {
+			a.Logger.Warnw(
+				"dropping api sender header with embedded CR/LF",
+				"header", header.Key,
+			)
+			continue
+		}
 		req.Header.Set(header.Key, header.Value)
+		safeHeaders = append(safeHeaders, header)
 	}
 	// debug logging: output request details
 	// build headers map for logging
 	headersMap := make(map[string]string)
-	for _, header := range apiRequestHeaders {
+	for _, header := range safeHeaders {
 		headersMap[header.Key] = header.Value
 	}
 
