@@ -1,6 +1,7 @@
 <script>
 	import { AppStateService } from '$lib/service/appState';
 	import { onMount } from 'svelte';
+	import { ChevronDown } from 'lucide-svelte';
 	import Logo from './Logo.svelte';
 	import ThemeToggle from '../ThemeToggle.svelte';
 	import CompanyBanner from './CompanyBanner.svelte';
@@ -141,19 +142,10 @@
 						</div>
 
 						<!-- dropdown indicator -->
-						<svg
+						<ChevronDown
 							class="w-4 h-4 ml-2 text-gray-300 dark:text-highlight-blue transition-transform duration-200 group-hover:text-white"
-							fill="none"
-							stroke="currentColor"
-							viewBox="0 0 24 24"
-						>
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="2"
-								d="M19 9l-7 7-7-7"
-							/>
-						</svg>
+							strokeWidth={2}
+						/>
 					</button>
 				</div>
 			</div>

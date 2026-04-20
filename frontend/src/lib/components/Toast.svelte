@@ -1,3 +1,10 @@
+<!--
+	@deprecated Phase 3 migration: this component has been replaced by
+	svelte-sonner's <Toaster /> in the root layout. It is intentionally left
+	on disk so downstream patches/merges don't explode; remove in a follow-up.
+	Do not import from new code. New code should import addToast from
+	`$lib/store/toast` or `$lib/utils/toast`.
+-->
 <script>
 	import { toasts, removeToast } from '$lib/store/toast';
 	import { slide, draw } from 'svelte/transition';

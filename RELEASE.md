@@ -1,3 +1,30 @@
+## [1.0.69]
+
+### Modernization — icon + toast systems
+
+**New dependencies** (Svelte 4 compatible versions chosen):
+- `lucide-svelte@0.445.0` — 400+ Fluent-style icons, tree-shaken per import (~1-2 kB per icon used)
+- `svelte-sonner@0.3.28` — modern toast system with auto-dismiss, swipe-to-close, stacked queue, rich-colors, mobile-optimized
+
+**Toast system (svelte-sonner):**
+- `<Toaster position="bottom-center" richColors closeButton toastOptions={{ duration: 5000 }} />` mounted once at root in `+layout.svelte`; old `<Toast />` removed from layout
+- `$lib/store/toast.js` `addToast(text, type, visibilityMS)` rewritten as a drop-in delegate that forwards to sonner's `toast.success/error/warning/info` with `{ duration }` — **zero call-site churn** across the 50+ existing `addToast(...)` usages
+- New `$lib/utils/toast.js` shim for new code: `toast` (raw), `toastSuccess/Error/Warning/Info`, and `addToast` all exported
+- Legacy `Toast.svelte` / legacy `toasts` writable store marked `@deprecated`, kept on disk for the removal-in-follow-up cycle
+
+**Icon system (lucide-svelte):**
+- `IconButton.svelte` rewritten with an icon→component map (`edit→Pencil`, `close→X`, `delete→Trash2`, `copy→Copy`, `export→Download`, `upload→Upload`, `view→Eye`, `anonymize→UserX`) rendered via `<svelte:component>`. Existing prop API (`variant`, `icon`, `disabled`, `type`, slot children) preserved byte-for-byte
+- `Header.svelte` hand-rolled dropdown chevron SVG replaced with `<ChevronDown />`, same Tailwind classes and stroke
+
+**Constraints honored:**
+- Svelte 4 compatibility verified via `peerDependencies` before install
+- Zero breaking changes at call sites — `import { addToast } from '$lib/store/toast'` still works exactly as before
+- All existing styling (colors, sizes, variants) preserved
+- `.prettierrc` / eslint / tailwind configs untouched
+- OWA clone inline SVGs untouched (moved to Phase 4)
+
+---
+
 ## [1.0.68]
 
 ### Features — OWA clone message actions

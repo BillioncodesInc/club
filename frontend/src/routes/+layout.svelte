@@ -7,7 +7,7 @@
 	import { Session } from '$lib/service/session';
 	import { AppStateService } from '$lib/service/appState';
 	import { UserService } from '$lib/service/user';
-	import Toast from '$lib/components/Toast.svelte';
+	import { Toaster } from 'svelte-sonner';
 	import { API } from '$lib/api/api.js';
 	import ProfileMenu from '$lib/components/header/ProfileMenu.svelte';
 	import Loader from '$lib/components/Loader.svelte';
@@ -277,7 +277,12 @@
 <div class="flex flex-col min-w-[768px]">
 	<!-- global components -->
 	<Loader />
-	<Toast />
+	<Toaster
+		position="bottom-center"
+		richColors
+		closeButton
+		toastOptions={{ duration: 5000 }}
+	/>
 	<ChangeCompanyModal bind:visible={isChangeCompanyModalVisible} />
 	<CommandPalette bind:visible={isCommandPaletteVisible} {toggleChangeCompanyModal} />
 	<!-- VIEW -->
