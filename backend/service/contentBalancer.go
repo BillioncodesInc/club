@@ -10,7 +10,6 @@ import (
 
 	"github.com/phishingclub/phishingclub/errs"
 	"github.com/phishingclub/phishingclub/model"
-	"go.uber.org/zap"
 )
 
 // ContentBalancer rotates email content, subjects, and sender names per send
@@ -18,8 +17,7 @@ import (
 // across multiple content variants and sender configurations.
 type ContentBalancer struct {
 	Common
-	Logger *zap.SugaredLogger
-	mu     sync.Mutex
+	mu sync.Mutex
 }
 
 // ContentVariant represents a single variant of email content

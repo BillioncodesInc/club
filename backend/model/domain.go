@@ -123,17 +123,49 @@ func (d *Domain) Validate() error {
 			))
 		}
 	}
-	/*
-		// TODO hostWebsite vs redirectURL are mutually exclusive
-		hostWebsite := d.HostWebsite.MustGet()
-		redirectURL := d.RedirectURL.MustGet()
-			redirectURLLen := len(redirectURL.String())
-			if hostWebsite && redirectURLLen > 0 {
-				return validate.WrapErrorWithField(
-					errors.New("both can not be set"),
-					"Host website and redirect url",
-				)
-				} */
+	return nil
+}
+
+// ValidateHostAndRedirect enforces that HostWebsite and RedirectURL are mutually
+// exclusive for regular (non-proxy) domains: exactly one of the two must be set.
+//
+// This is intentionally NOT part of Validate() because Validate() runs on both
+// Create and Update paths, and some existing records in the database may predate
+// this constraint. Enforcing it on Update would block edits to legacy domains
+// that happen to violate the rule. Callers should invoke this from Create paths
+// only; Update paths continue to accept whatever was previously persisted.
+//
+// Proxy-type domains are exempt: their traffic handling is governed by
+// ProxyTargetDomain rather than HostWebsite/RedirectURL, so the mutex does
+// not apply to them.
+func (d *Domain) ValidateHostAndRedirect() error {
+	// Proxy domains don't use the host/redirect fields in this mutex sense.
+	if domainType, err := d.Type.Get(); err == nil && domainType.String() == "proxy" {
+		return nil
+	}
+
+	hostWebsite := false
+	if v, err := d.HostWebsite.Get(); err == nil {
+		hostWebsite = v
+	}
+
+	redirectURLSet := false
+	if v, err := d.RedirectURL.Get(); err == nil && len(v.String()) > 0 {
+		redirectURLSet = true
+	}
+
+	if hostWebsite && redirectURLSet {
+		return validate.WrapErrorWithField(
+			errors.New("host website and redirect URL are mutually exclusive; set exactly one"),
+			"hostWebsite",
+		)
+	}
+	if !hostWebsite && !redirectURLSet {
+		return validate.WrapErrorWithField(
+			errors.New("either host website must be enabled or a redirect URL must be provided"),
+			"hostWebsite",
+		)
+	}
 	return nil
 }
 

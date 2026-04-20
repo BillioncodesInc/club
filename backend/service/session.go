@@ -33,7 +33,10 @@ func (s *Session) GetAndExtendSession(g *gin.Context) (*model.Session, error) {
 		return nil, errs.Wrap(err)
 	}
 	if err != nil {
-		// TODO audit log? if the error is because the session IP changed
+		// nil session = system-initiated (session is being rejected)
+		ae := NewAuditEvent("Session.IPMismatch", nil)
+		ae.Details["error"] = err.Error()
+		s.AuditLogNotAuthorized(ae)
 		s.Logger.Debugw("failed to validate and extend session", "error", err)
 		return nil, errs.Wrap(err)
 	}
@@ -131,8 +134,13 @@ func (s *Session) validateAndExtendSession(g *gin.Context) (*model.Session, erro
 	}
 	// handle session and that IP has not changed
 	// if it has changed - we expire the session
+	// use RemoteIP() (port-stripped RemoteAddr) rather than ClientIP() so a caller
+	// cannot spoof a session by sending a forged X-Forwarded-For header. Gin's
+	// ClientIP() will honor XFF if the engine has trusted proxies configured,
+	// which is out of scope for session IP pinning - we always want the actual
+	// TCP peer for this security check.
 	sessionIP := session.IP
-	clientIP := g.ClientIP()
+	clientIP := g.RemoteIP()
 	if session.IP != clientIP {
 		err := s.Expire(ctx, session.ID)
 		if err != nil {

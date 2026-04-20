@@ -1,11 +1,11 @@
+//go:build dev
+
 package log
 
 import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
-
-// TODO add a build tag to this
 
 // log is the global development logger for the application
 // it is always in debug mode and should only be used for

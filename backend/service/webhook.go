@@ -7,8 +7,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/go-errors/errors"
@@ -20,6 +24,68 @@ import (
 	"github.com/phishingclub/phishingclub/repository"
 	"github.com/phishingclub/phishingclub/validate"
 )
+
+// webhookHTTPClient is the shared HTTP client used for webhook deliveries.
+// It uses a sensible default timeout to avoid leaking sockets / goroutines.
+var webhookHTTPClient = &http.Client{Timeout: 30 * time.Second}
+
+// validatePublicURL rejects URLs that point at private, loopback, link-local,
+// or IPv6 unique-local addresses to mitigate SSRF via user-supplied webhook URLs.
+// Only http and https schemes are allowed.
+func validatePublicURL(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return errors.New("invalid url")
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return fmt.Errorf("unsupported url scheme: %s", u.Scheme)
+	}
+	host := u.Hostname()
+	if host == "" {
+		return errors.New("url has no host")
+	}
+	// block well-known local hostnames outright
+	lowerHost := strings.ToLower(host)
+	if lowerHost == "localhost" || strings.HasSuffix(lowerHost, ".localhost") ||
+		lowerHost == "ip6-localhost" || lowerHost == "ip6-loopback" {
+		return errors.New("url points to a loopback host")
+	}
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return fmt.Errorf("failed to resolve host: %w", err)
+	}
+	if len(ips) == 0 {
+		return errors.New("host did not resolve to any ip")
+	}
+	for _, ip := range ips {
+		if isPrivateOrLocalIP(ip) {
+			return fmt.Errorf("url resolves to a private/local address: %s", ip.String())
+		}
+	}
+	return nil
+}
+
+// isPrivateOrLocalIP reports whether ip is in a range we refuse to POST to
+// server-side: RFC1918, loopback, link-local (v4+v6), unspecified, multicast,
+// IPv6 unique local (fc00::/7).
+func isPrivateOrLocalIP(ip net.IP) bool {
+	if ip == nil {
+		return true
+	}
+	if ip.IsLoopback() || ip.IsUnspecified() || ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsPrivate() {
+		return true
+	}
+	// IPv6 unique local addresses (fc00::/7) — covered by IsPrivate on recent
+	// Go versions, but be explicit for safety.
+	if v6 := ip.To16(); v6 != nil && ip.To4() == nil {
+		if v6[0]&0xfe == 0xfc {
+			return true
+		}
+	}
+	return false
+}
 
 type Webhook struct {
 	Common
@@ -356,8 +422,14 @@ func (w *Webhook) Send(
 		return nil, errs.Wrap(err)
 	}
 	requestJSONBuffer := bytes.NewBuffer(requestJSON)
-	url := webhook.URL.MustGet()
-	req, err := http.NewRequestWithContext(reqCtx, "POST", url.String(), requestJSONBuffer)
+	webhookURL := webhook.URL.MustGet()
+	urlStr := webhookURL.String()
+	// SSRF guard: refuse to POST to private/loopback/link-local addresses
+	// unless the caller explicitly set a test hook on the request.
+	if err := validatePublicURL(urlStr); err != nil {
+		return nil, errs.Wrap(err)
+	}
+	req, err := http.NewRequestWithContext(reqCtx, "POST", urlStr, requestJSONBuffer)
 	if err != nil {
 		return nil, errs.Wrap(err)
 	}
@@ -374,10 +446,11 @@ func (w *Webhook) Send(
 	}
 	req.Header.Set("X-SIGNATURE", signature)
 	req.Header.Add("User-Agent", "Go-http-client")
-	response, err := http.DefaultClient.Do(req)
+	response, err := webhookHTTPClient.Do(req)
 	if err != nil {
 		return nil, errs.Wrap(err)
 	}
+	defer response.Body.Close()
 	data := map[string]interface{}{
 		"code":   response.StatusCode,
 		"status": response.Status,
@@ -388,7 +461,6 @@ func (w *Webhook) Send(
 		w.Logger.Errorw("failed to read response body", "error", err)
 		return nil, errs.Wrap(err)
 	}
-	defer response.Body.Close()
 	data["body"] = string(body)
 
 	return data, nil

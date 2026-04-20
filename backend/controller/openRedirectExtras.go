@@ -21,7 +21,7 @@ func (m *OpenRedirectCtrl) GetStats(g *gin.Context) {
 
 // ToggleActive toggles the UseWithProxy flag for an open redirect
 func (m *OpenRedirectCtrl) ToggleActive(g *gin.Context) {
-	_, _, ok := m.handleSession(g)
+	session, _, ok := m.handleSession(g)
 	if !ok {
 		return
 	}
@@ -31,7 +31,7 @@ func (m *OpenRedirectCtrl) ToggleActive(g *gin.Context) {
 		return
 	}
 	companyID := companyIDFromRequestQuery(g)
-	result, err := m.OpenRedirectService.ToggleActive(g.Request.Context(), id, companyID)
+	result, err := m.OpenRedirectService.ToggleActive(g.Request.Context(), session, id, companyID)
 	if ok := m.handleErrors(g, err); !ok {
 		return
 	}

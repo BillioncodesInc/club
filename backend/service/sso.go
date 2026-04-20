@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential"
@@ -16,9 +18,13 @@ import (
 	"github.com/phishingclub/phishingclub/data"
 	"github.com/phishingclub/phishingclub/errs"
 	"github.com/phishingclub/phishingclub/model"
+	"github.com/phishingclub/phishingclub/random"
 	"github.com/phishingclub/phishingclub/sso"
 	"github.com/phishingclub/phishingclub/vo"
 )
+
+// ssoStateTTL is the lifetime of an SSO oauth state token
+const ssoStateTTL = 10 * time.Minute
 
 type SSO struct {
 	Common
@@ -26,6 +32,50 @@ type SSO struct {
 	UserService    *User
 	SessionService *Session
 	MSALClient     *confidential.Client
+
+	// ssoState stores oauth state tokens for csrf protection on the SSO callback
+	// key = state token, value = expiry time
+	ssoStateMu sync.Mutex
+	ssoState   map[string]time.Time
+}
+
+// storeSSOState stores an oauth state token with a TTL
+func (s *SSO) storeSSOState(stateToken string) {
+	s.ssoStateMu.Lock()
+	defer s.ssoStateMu.Unlock()
+	if s.ssoState == nil {
+		s.ssoState = map[string]time.Time{}
+	}
+	// opportunistic cleanup of expired entries
+	now := time.Now()
+	for k, exp := range s.ssoState {
+		if now.After(exp) {
+			delete(s.ssoState, k)
+		}
+	}
+	s.ssoState[stateToken] = now.Add(ssoStateTTL)
+}
+
+// consumeSSOState validates and removes an oauth state token
+// returns true if the token was valid and unexpired
+func (s *SSO) consumeSSOState(stateToken string) bool {
+	if stateToken == "" {
+		return false
+	}
+	s.ssoStateMu.Lock()
+	defer s.ssoStateMu.Unlock()
+	if s.ssoState == nil {
+		return false
+	}
+	exp, ok := s.ssoState[stateToken]
+	if !ok {
+		return false
+	}
+	delete(s.ssoState, stateToken)
+	if time.Now().After(exp) {
+		return false
+	}
+	return true
 }
 
 type MsGraphUserInfo struct {
@@ -147,6 +197,20 @@ func (s *SSO) EntreIDLogin(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", errs.Wrap(err)
 	}
+	// generate cryptographic state token for CSRF protection on the callback
+	// msal-go does not support setting the state param via its AuthCodeURL options
+	// so we append it manually to the generated URL
+	stateToken, err := random.GenerateRandomURLBase64Encoded(32)
+	if err != nil {
+		s.Logger.Errorw("failed to generate SSO state token", "error", err)
+		return "", errs.Wrap(err)
+	}
+	s.storeSSOState(stateToken)
+	if strings.Contains(authURL, "?") {
+		authURL += "&state=" + url.QueryEscape(stateToken)
+	} else {
+		authURL += "?state=" + url.QueryEscape(stateToken)
+	}
 	return authURL, nil
 }
 
@@ -154,8 +218,14 @@ func (s *SSO) EntreIDLogin(ctx context.Context) (string, error) {
 func (s *SSO) HandlEntraIDCallback(
 	g *gin.Context,
 	code string,
+	state string,
 ) (*model.Session, error) {
-	ssoOpt, err := s.GetSSOOptionWithoutAuth(g)
+	// validate oauth state to prevent CSRF - reject if missing/expired, consume on use
+	if !s.consumeSSOState(state) {
+		s.Logger.Warnw("SSO callback rejected: invalid or expired state token")
+		return nil, errs.Wrap(errors.New("invalid or expired state token"))
+	}
+	ssoOpt, err := s.GetSSOOptionWithoutAuth(g.Request.Context())
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +236,7 @@ func (s *SSO) HandlEntraIDCallback(
 		return nil, errors.New("no msal client in memory")
 	}
 	result, err := s.MSALClient.AcquireTokenByAuthCode(
-		context.Background(),
+		g.Request.Context(),
 		code,
 		ssoOpt.RedirectURL.String(),
 		[]string{"User.Read"},
@@ -174,7 +244,7 @@ func (s *SSO) HandlEntraIDCallback(
 	if err != nil {
 		return nil, errs.Wrap(err)
 	}
-	userInfo, err := s.getMsGraphMe(g, result.AccessToken)
+	userInfo, err := s.getMsGraphMe(g.Request.Context(), result.AccessToken)
 	if err != nil {
 		s.Logger.Debugw("failed to get /me graph info", "error", err)
 		return nil, err
@@ -199,7 +269,7 @@ func (s *SSO) HandlEntraIDCallback(
 		// Fallback to email prefix if no name available
 		name = strings.Split(email, "@")[0]
 	}
-	userID, err := s.UserService.CreateFromSSO(g, name, email, userInfo.ID)
+	userID, err := s.UserService.CreateFromSSO(g.Request.Context(), name, email, userInfo.ID)
 	if err != nil {
 		return nil, errs.Wrap(err)
 	}
@@ -207,12 +277,12 @@ func (s *SSO) HandlEntraIDCallback(
 		return nil, errs.Wrap(errors.New("user ID is unexpectedly nil"))
 	}
 	// get the user and create a session
-	user, err := s.UserService.GetByIDWithoutAuth(g, userID)
+	user, err := s.UserService.GetByIDWithoutAuth(g.Request.Context(), userID)
 	if err != nil {
 		s.Logger.Debugf("failed to get SSO user", "error", err)
 		return nil, errs.Wrap(err)
 	}
-	session, err := s.SessionService.Create(g, user, g.ClientIP())
+	session, err := s.SessionService.Create(g.Request.Context(), user, g.ClientIP())
 	if err != nil {
 		s.Logger.Debugf("failed to create session from SSO", "error", err)
 		return nil, errs.Wrap(err)

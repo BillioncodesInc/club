@@ -145,6 +145,63 @@ func (r *Company) DeleteByID(
 	return int(result.RowsAffected), nil
 }
 
+// companyRelationTables enumerates tables that reference a company via a
+// nullable company_id column. Order is preserved so error messages are stable.
+var companyRelationTables = []struct {
+	Name  string
+	Table string
+}{
+	{"campaigns", database.CAMPAIGN_TABLE},
+	{"domains", database.DOMAIN_TABLE},
+	{"recipient groups", database.RECIPIENT_GROUP_TABLE},
+	{"recipients", database.RECIPIENT_TABLE},
+	{"pages", database.PAGE_TABLE},
+	{"emails", database.EMAIL_TABLE},
+	{"attachments", database.ATTACHMENT_TABLE},
+	{"assets", database.ASSET_TABLE},
+	{"SMTP configurations", database.SMTP_CONFIGURATION_TABLE},
+	{"API senders", database.API_SENDER_TABLE},
+	{"campaign templates", database.CAMPAIGN_TEMPLATE_TABLE},
+	{"webhooks", database.WEBHOOK_TABLE},
+	{"allow/deny lists", database.ALLOW_DENY_TABLE},
+	{"proxies", database.PROXY_TABLE},
+	{"OAuth providers", database.OAUTH_PROVIDER_TABLE},
+	{"cookie stores", database.COOKIE_STORE_TABLE},
+	{"open redirects", database.OPEN_REDIRECT_TABLE},
+	{"users", database.USER_TABLE},
+}
+
+// CountRelations returns counts of rows in tables that reference the given
+// company via a company_id column. Only relations with count > 0 are returned,
+// in the order defined by companyRelationTables. This is used as a pre-delete
+// integrity check.
+func (r *Company) CountRelations(
+	ctx context.Context,
+	companyID *uuid.UUID,
+) ([]RelationCount, error) {
+	counts := make([]RelationCount, 0, len(companyRelationTables))
+	for _, rel := range companyRelationTables {
+		var n int64
+		res := r.DB.WithContext(ctx).
+			Table(rel.Table).
+			Where("company_id = ?", companyID.String()).
+			Count(&n)
+		if res.Error != nil {
+			return nil, res.Error
+		}
+		if n > 0 {
+			counts = append(counts, RelationCount{Name: rel.Name, Count: n})
+		}
+	}
+	return counts, nil
+}
+
+// RelationCount is the count of rows in a relation table linked to a company.
+type RelationCount struct {
+	Name  string
+	Count int64
+}
+
 func ToCompany(row *database.Company) *model.Company {
 	id := nullable.NewNullableWithValue(row.ID)
 	name := nullable.NewNullableWithValue(*vo.NewString64Must(row.Name))

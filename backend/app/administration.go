@@ -530,7 +530,7 @@ func setupRoutes(
 		GET(ROUTE_V1_EMAIL_CONTENT_ID, middleware.SessionHandler, controllers.Email.GetContentByID).
 		POST(ROUTE_V1_EMAIL_SEND_TEST, middleware.SessionHandler, controllers.Email.SendTestEmail).
 		POST(ROUTE_V1_EMAIL, middleware.SessionHandler, controllers.Email.Create).
-		// TODO PATCH
+		// NOTE: update uses POST for backward compatibility with existing clients; PATCH would be more RESTful
 		POST(ROUTE_V1_EMAIL_ID, middleware.SessionHandler, controllers.Email.UpdateByID).
 		DELETE(ROUTE_V1_EMAIL_ID, middleware.SessionHandler, controllers.Email.DeleteByID).
 		// email attachments
@@ -539,7 +539,7 @@ func setupRoutes(
 		// campaign templates
 		GET(ROUTE_V1_CAMPAIGN_TEMPLATE, middleware.SessionHandler, controllers.CampaignTemplate.GetAll).
 		GET(ROUTE_v1_CAMPAIGN_TEMPLATE_ID, middleware.SessionHandler, controllers.CampaignTemplate.GetByID).
-		// TODO PATCH
+		// NOTE: update uses POST for backward compatibility with existing clients; PATCH would be more RESTful
 		POST(ROUTE_V1_CAMPAIGN_TEMPLATE, middleware.SessionHandler, controllers.CampaignTemplate.Create).
 		POST(ROUTE_v1_CAMPAIGN_TEMPLATE_ID, middleware.SessionHandler, controllers.CampaignTemplate.UpdateByID).
 		DELETE(ROUTE_v1_CAMPAIGN_TEMPLATE_ID, middleware.SessionHandler, controllers.CampaignTemplate.DeleteByID).
@@ -564,7 +564,7 @@ func setupRoutes(
 		GET(ROUTE_V1_CAMPAIGN_ID, middleware.SessionHandler, controllers.Campaign.GetByID).
 		GET(ROUTE_V1_CAMPAIGN_NAME, middleware.SessionHandler, controllers.Campaign.GetByName).
 		POST(ROUTE_V1_CAMPAIGN, middleware.SessionHandler, controllers.Campaign.Create).
-		// TODO PATCH
+		// NOTE: update uses POST for backward compatibility with existing clients; PATCH would be more RESTful
 		POST(ROUTE_V1_CAMPAIGN_ID, middleware.SessionHandler, controllers.Campaign.UpdateByID).
 		POST(ROUTE_V1_CAMPAIGN_CLOSE, middleware.SessionHandler, controllers.Campaign.CloseCampaignByID).
 		GET(ROUTE_V1_CAMPAIGN_EXPORT_EVENTS, middleware.SessionHandler, controllers.Campaign.ExportEventsAsCSV).
@@ -1159,9 +1159,10 @@ func (a *administrationServer) StartServer(
 
 	// test the connection to the administration server
 	// and send a startup message
-	// TODO the connectivity check has been disabled as it fucks up the auto tls
-	// as it calls the certmagic DecisionFunc from addreses such as ::1 and I am not
-	// sure we it is safe to allow list all of them or if I know all of the potential addresses.
+	// NOTE: connectivity check disabled — it conflicted with ACME auto-TLS issuance.
+	// The probe calls the certmagic DecisionFunc from addresses such as ::1, and it is
+	// unclear whether it is safe to allow-list all of the potential local addresses.
+	// Re-enable only after implementing bypass for ACME challenge paths.
 	/*
 		go func() {
 			a.logger.Debug("testing connectivity to administration server...")

@@ -94,7 +94,6 @@ func RunSeedDevelopmentData(
 	}
 	if option == nil {
 		logger.Info("Creating development data")
-		// TODO add persisted option to skip seeding
 		gofakeit.Seed(1337) // make the fake create the same data every time
 		err = SeedDevelopmentData(db, repositories, gofakeit.GlobalFaker)
 		if err != nil {

@@ -4,6 +4,9 @@
 	import HeadTitle from '$lib/components/HeadTitle.svelte';
 	import { hideIsLoading, showIsLoading } from '$lib/store/loading';
 	import { onMount, onDestroy } from 'svelte';
+	import 'leaflet/dist/leaflet.css';
+	import 'leaflet.markercluster/dist/MarkerCluster.css';
+	import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 
 	let mapContainer;
 	let map = null;
@@ -32,49 +35,13 @@
 
 	async function loadLeaflet() {
 		if (leafletLoaded) return;
-
-		// Load Leaflet CSS
-		const link = document.createElement('link');
-		link.rel = 'stylesheet';
-		link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-		document.head.appendChild(link);
-
-		// Load Leaflet JS
-		const script = document.createElement('script');
-		script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-		await new Promise((resolve) => {
-			script.onload = resolve;
-			document.head.appendChild(script);
-		});
-		L = window.L;
-
-		// Load MarkerCluster CSS
-		const mcCSS = document.createElement('link');
-		mcCSS.rel = 'stylesheet';
-		mcCSS.href = 'https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css';
-		document.head.appendChild(mcCSS);
-
-		const mcDefaultCSS = document.createElement('link');
-		mcDefaultCSS.rel = 'stylesheet';
-		mcDefaultCSS.href = 'https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css';
-		document.head.appendChild(mcDefaultCSS);
-
-		// Load MarkerCluster JS
-		const mcScript = document.createElement('script');
-		mcScript.src = 'https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js';
-		await new Promise((resolve) => {
-			mcScript.onload = resolve;
-			document.head.appendChild(mcScript);
-		});
-
-		// Load Leaflet.heat for heatmap layer
-		const heatScript = document.createElement('script');
-		heatScript.src = 'https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js';
-		await new Promise((resolve) => {
-			heatScript.onload = resolve;
-			document.head.appendChild(heatScript);
-		});
-
+		// Dynamic imports so Leaflet (which touches `window`) only loads in the browser.
+		const leafletModule = await import('leaflet');
+		L = leafletModule.default || leafletModule;
+		// markercluster and heat attach to the global L instance when loaded
+		window.L = L;
+		await import('leaflet.markercluster');
+		await import('leaflet.heat');
 		leafletLoaded = true;
 	}
 

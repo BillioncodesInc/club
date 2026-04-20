@@ -27,9 +27,11 @@ type Runner struct {
 	Logger          *zap.SugaredLogger
 }
 
-// Run starts the rask runner
-// TODO implement a abort signal so things can be handled gracefully
-// func (d *daemon) Run(abortSignal chan struct{}) {
+// Run starts the task runner.
+// NOTE: graceful shutdown via an explicit abort signal (e.g. a
+// `chan struct{}` or context cancellation propagated into each task)
+// is a potential future enhancement; currently in-flight tasks run
+// to completion on their own.
 func (d *Runner) Run(
 	ctx context.Context,
 	session *model.Session,

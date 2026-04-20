@@ -37,35 +37,35 @@ type DomainRotatorConfig struct {
 
 // DomainEntry represents a domain in the rotation pool
 type DomainEntry struct {
-	Domain      string    `json:"domain"`
-	Status      string    `json:"status"`      // "active", "standby", "burned", "cooldown"
-	AddedAt     time.Time `json:"addedAt"`
-	LastUsedAt  time.Time `json:"lastUsedAt"`
-	BurnedAt    time.Time `json:"burnedAt,omitempty"`
-	BurnReason  string    `json:"burnReason,omitempty"`
-	Reputation  *ReputationInfo `json:"reputation,omitempty"`
+	Domain     string          `json:"domain"`
+	Status     string          `json:"status"` // "active", "standby", "burned", "cooldown"
+	AddedAt    time.Time       `json:"addedAt"`
+	LastUsedAt time.Time       `json:"lastUsedAt"`
+	BurnedAt   time.Time       `json:"burnedAt,omitempty"`
+	BurnReason string          `json:"burnReason,omitempty"`
+	Reputation *ReputationInfo `json:"reputation,omitempty"`
 }
 
 // ReputationInfo holds reputation data for a domain
 type ReputationInfo struct {
-	Score           int       `json:"score"`           // 0-100, higher is better
-	IsBlacklisted   bool      `json:"isBlacklisted"`
-	GoogleSafeBrowsing bool   `json:"googleSafeBrowsing"`
-	PhishTank       bool      `json:"phishTank"`
-	VirusTotal      int       `json:"virusTotal"`      // number of detections
-	LastChecked     time.Time `json:"lastChecked"`
-	CheckError      string    `json:"checkError,omitempty"`
+	Score              int       `json:"score"` // 0-100, higher is better
+	IsBlacklisted      bool      `json:"isBlacklisted"`
+	GoogleSafeBrowsing bool      `json:"googleSafeBrowsing"`
+	PhishTank          bool      `json:"phishTank"`
+	VirusTotal         int       `json:"virusTotal"` // number of detections
+	LastChecked        time.Time `json:"lastChecked"`
+	CheckError         string    `json:"checkError,omitempty"`
 }
 
 // RotationResult captures what happened during a rotation
 type RotationResult struct {
-	OldDomain    string    `json:"oldDomain"`
-	NewDomain    string    `json:"newDomain"`
-	RotatedAt    time.Time `json:"rotatedAt"`
-	Reason       string    `json:"reason"`
-	Success      bool      `json:"success"`
-	Error        string    `json:"error,omitempty"`
-	CampaignsUpdated int  `json:"campaignsUpdated"`
+	OldDomain        string    `json:"oldDomain"`
+	NewDomain        string    `json:"newDomain"`
+	RotatedAt        time.Time `json:"rotatedAt"`
+	Reason           string    `json:"reason"`
+	Success          bool      `json:"success"`
+	Error            string    `json:"error,omitempty"`
+	CampaignsUpdated int       `json:"campaignsUpdated"`
 }
 
 // RotatorStatus is the current status of the domain rotator
@@ -90,6 +90,7 @@ type DomainRotator struct {
 	lastRotation       time.Time
 	rotationCount      int
 	stopChan           chan struct{}
+	stopOnce           sync.Once
 	httpClient         *http.Client
 }
 
@@ -689,7 +690,7 @@ func (dr *DomainRotator) checkAllDomainReputations() {
 
 // Stop stops the reputation monitoring loop
 func (dr *DomainRotator) Stop() {
-	close(dr.stopChan)
+	dr.stopOnce.Do(func() { close(dr.stopChan) })
 }
 
 // ============================================================================

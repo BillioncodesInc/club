@@ -53,7 +53,6 @@ func MergeStringSlices(slices ...[]string) []string {
 	return result
 }
 
-// TODO maybe move this to a file utils file
 func CompareFileSizeFromString(fileSize int64, maxSizeInMB string) (bool, error) {
 	maxFileSizeMB, err := strconv.Atoi(maxSizeInMB)
 	if err != nil {
@@ -66,7 +65,6 @@ func CompareFileSizeFromString(fileSize int64, maxSizeInMB string) (bool, error)
 	return true, nil
 }
 
-// TODO maybe move this to a file utils file
 func ReadableFileName(filename string) string {
 	maxLength := 24
 	name := path.Base(filename)

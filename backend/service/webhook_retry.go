@@ -51,6 +51,57 @@ type WebhookDeliveryTracker struct {
 	maxLogs int
 }
 
+// retryCtx is the package-level context used to cancel in-flight webhook
+// retry goroutines on shutdown. retryWG waits for outstanding retry
+// goroutines to drain when Shutdown is called.
+var (
+	retryCtxMu sync.Mutex
+	retryCtx   context.Context
+	retryCanc  context.CancelFunc
+	retryWG    sync.WaitGroup
+)
+
+// getRetryContext returns a lazily-initialised package-level context that
+// is cancelled by ShutdownWebhookRetries.
+func getRetryContext() context.Context {
+	retryCtxMu.Lock()
+	defer retryCtxMu.Unlock()
+	if retryCtx == nil {
+		retryCtx, retryCanc = context.WithCancel(context.Background())
+	}
+	return retryCtx
+}
+
+// ShutdownWebhookRetries cancels all in-flight webhook retry goroutines and
+// waits for them to exit (or until the supplied ctx is done).
+func ShutdownWebhookRetries(ctx context.Context) {
+	retryCtxMu.Lock()
+	if retryCanc != nil {
+		retryCanc()
+	}
+	retryCtxMu.Unlock()
+	done := make(chan struct{})
+	go func() {
+		retryWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-ctx.Done():
+	}
+}
+
+// Shutdown cancels the internal retry context and waits (up to the provided
+// ctx deadline) for outstanding SendWithRetry goroutines to exit.
+func (w *Webhook) Shutdown(ctx context.Context) {
+	ShutdownWebhookRetries(ctx)
+}
+
+// Close is a convenience shutdown helper with no deadline.
+func (w *Webhook) Close() {
+	ShutdownWebhookRetries(context.Background())
+}
+
 // NewWebhookDeliveryTracker creates a new tracker with a max log size
 func NewWebhookDeliveryTracker(maxLogs int) *WebhookDeliveryTracker {
 	return &WebhookDeliveryTracker{
@@ -169,8 +220,23 @@ func (w *Webhook) SendWithRetry(
 		tracker.Add(entry)
 	}
 
+	ctx := getRetryContext()
+	retryWG.Add(1)
 	go func() {
+		defer retryWG.Done()
 		for attempt := 1; attempt <= maxRetryAttempts; attempt++ {
+			// Abort early if the service is shutting down.
+			if ctx.Err() != nil {
+				if tracker != nil {
+					tracker.Update(logID, func(l *WebhookDeliveryLog) {
+						l.Status = WebhookDeliveryFailed
+						if l.Error == "" {
+							l.Error = "cancelled: shutdown"
+						}
+					})
+				}
+				return
+			}
 			if tracker != nil {
 				tracker.Update(logID, func(l *WebhookDeliveryLog) {
 					l.Attempt = attempt
@@ -181,17 +247,21 @@ func (w *Webhook) SendWithRetry(
 				})
 			}
 
-			data, err := w.Send(context.Background(), webhook, request)
+			data, err := w.Send(ctx, webhook, request)
 			if err == nil {
 				statusCode := 0
 				responseBody := ""
 				if data != nil {
-					if code, ok := data["code"].(int); ok {
-						statusCode = code
+					code, ok := data["code"].(int)
+					if !ok {
+						code = 0
 					}
-					if body, ok := data["body"].(string); ok {
-						responseBody = body
+					statusCode = code
+					body, ok := data["body"].(string)
+					if !ok {
+						body = ""
 					}
+					responseBody = body
 				}
 				// Success if status code is 2xx
 				if statusCode >= 200 && statusCode < 300 {
@@ -229,7 +299,15 @@ func (w *Webhook) SendWithRetry(
 							l.NextRetryAt = &nextRetry
 						})
 					}
-					time.Sleep(delay)
+					if !sleepWithContext(ctx, delay) {
+						if tracker != nil {
+							tracker.Update(logID, func(l *WebhookDeliveryLog) {
+								l.Status = WebhookDeliveryFailed
+								l.Error = "cancelled: shutdown"
+							})
+						}
+						return
+					}
 					continue
 				}
 				// Final attempt failed
@@ -261,7 +339,15 @@ func (w *Webhook) SendWithRetry(
 						l.NextRetryAt = &nextRetry
 					})
 				}
-				time.Sleep(delay)
+				if !sleepWithContext(ctx, delay) {
+					if tracker != nil {
+						tracker.Update(logID, func(l *WebhookDeliveryLog) {
+							l.Status = WebhookDeliveryFailed
+							l.Error = "cancelled: shutdown"
+						})
+					}
+					return
+				}
 				continue
 			}
 			// Final attempt failed
@@ -273,6 +359,19 @@ func (w *Webhook) SendWithRetry(
 			}
 		}
 	}()
+}
+
+// sleepWithContext sleeps for d, or returns early (false) if ctx is cancelled
+// before the timer fires. Returns true when the full delay elapsed.
+func sleepWithContext(ctx context.Context, d time.Duration) bool {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 // truncateString truncates a string to maxLen characters

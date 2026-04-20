@@ -1,10 +1,14 @@
 package controller
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/go-errors/errors"
@@ -184,7 +188,7 @@ func (in *Install) Install(g *gin.Context) {
 // username, password, email, name and company name
 func (in *Install) install(g *gin.Context, tx *gorm.DB) bool {
 	// handle session
-	_, user, ok := in.handleSession(g)
+	session, user, ok := in.handleSession(g)
 	if !ok {
 		return false
 	}
@@ -196,7 +200,9 @@ func (in *Install) install(g *gin.Context, tx *gorm.DB) bool {
 	}
 	if !role.IsSuperAdministrator() {
 		in.Logger.Info("failed to install - not super admin")
-		// TODO add audit log
+		ae := service.NewAuditEvent("Install.Install", session)
+		ae.Authorized = false
+		in.Logger.Infow("audit", ae.LogFields()...)
 		in.Response.Forbidden(g)
 		return false
 	}
@@ -432,11 +438,44 @@ func (in *Install) InstallTemplates(g *gin.Context) {
 		return
 	}
 
-	// use the first asset (should be the templates zip)
-	templatesURL := release.Assets[0].BrowserDownloadURL
+	// locate the templates zip and (optionally) a matching checksum asset
+	// we accept common checksum naming conventions: <zip>.sha256, sha256sums.txt,
+	// checksums.txt
+	var templatesAsset struct {
+		URL  string
+		Name string
+	}
+	var checksumAsset struct {
+		URL  string
+		Name string
+	}
+	for _, a := range release.Assets {
+		lower := strings.ToLower(a.Name)
+		switch {
+		case strings.HasSuffix(lower, ".sha256") ||
+			lower == "sha256sums.txt" ||
+			lower == "checksums.txt":
+			if checksumAsset.URL == "" {
+				checksumAsset.URL = a.BrowserDownloadURL
+				checksumAsset.Name = a.Name
+			}
+		case strings.HasSuffix(lower, ".zip"):
+			if templatesAsset.URL == "" {
+				templatesAsset.URL = a.BrowserDownloadURL
+				templatesAsset.Name = a.Name
+			}
+		}
+	}
+	// fall back to the first asset if we didn't identify a zip explicitly
+	if templatesAsset.URL == "" {
+		templatesAsset.URL = release.Assets[0].BrowserDownloadURL
+		templatesAsset.Name = release.Assets[0].Name
+	}
+
+	templatesURL := templatesAsset.URL
 	in.Logger.Infow("downloading templates from latest release",
 		"url", templatesURL,
-		"asset", release.Assets[0].Name,
+		"asset", templatesAsset.Name,
 	)
 
 	// download the templates
@@ -470,6 +509,59 @@ func (in *Install) InstallTemplates(g *gin.Context) {
 		return
 	}
 
+	// verify integrity of the downloaded zip before importing
+	// security: remote content is untrusted - require a checksum match or an
+	// explicit opt-in via the TRUST_REMOTE_TEMPLATES env flag (defaults to false)
+	trustRemote := strings.EqualFold(os.Getenv("TRUST_REMOTE_TEMPLATES"), "true") ||
+		os.Getenv("TRUST_REMOTE_TEMPLATES") == "1"
+	if checksumAsset.URL != "" {
+		expected, err := fetchAndParseSHA256(client, checksumAsset.URL, templatesAsset.Name)
+		if err != nil {
+			in.Logger.Errorw("failed to fetch release checksum",
+				"url", checksumAsset.URL,
+				"error", err,
+			)
+			in.Response.ServerErrorMessage(g, "Failed to fetch release checksum for template verification")
+			return
+		}
+		if expected == "" {
+			in.Logger.Errorw("checksum asset does not contain a hash for the templates zip",
+				"asset", checksumAsset.Name,
+				"zip", templatesAsset.Name,
+			)
+			in.Response.ServerErrorMessage(g, "Template checksum not found in release metadata")
+			return
+		}
+		sum := sha256.Sum256(body)
+		got := hex.EncodeToString(sum[:])
+		if !strings.EqualFold(got, expected) {
+			in.Logger.Errorw("template checksum mismatch - refusing to import",
+				"asset", templatesAsset.Name,
+				"expected", expected,
+				"got", got,
+			)
+			in.Response.ServerErrorMessage(g, "Template checksum verification failed")
+			return
+		}
+		in.Logger.Infow("template checksum verified",
+			"asset", templatesAsset.Name,
+			"sha256", got,
+		)
+	} else if !trustRemote {
+		in.Logger.Warnw("release does not publish a checksum and TRUST_REMOTE_TEMPLATES is not set; refusing to import",
+			"asset", templatesAsset.Name,
+		)
+		in.Response.ServerErrorMessage(
+			g,
+			"Remote template release has no checksum. Set TRUST_REMOTE_TEMPLATES=true to opt-in to unverified downloads.",
+		)
+		return
+	} else {
+		in.Logger.Warnw("importing remote templates without checksum verification (TRUST_REMOTE_TEMPLATES is enabled)",
+			"asset", templatesAsset.Name,
+		)
+	}
+
 	// import the templates from raw bytes (for global use, not company-specific)
 	summary, err := in.ImportService.ImportFromBytes(g, session, body, false, nil)
 	if err != nil {
@@ -487,4 +579,76 @@ func (in *Install) InstallTemplates(g *gin.Context) {
 	)
 
 	in.Response.OK(g, summary)
+}
+
+// fetchAndParseSHA256 downloads a checksum asset and extracts the sha256 hex
+// digest for the specified filename. It supports three layouts:
+//   - a raw single-line .sha256 file containing just the hash
+//   - a single-line file containing "<hash>  <filename>" (sha256sum format)
+//   - a multi-line file where each line is "<hash>  <filename>" (checksums.txt)
+//
+// Returns an empty string (and no error) if the file is parsed but contains no
+// hash for the requested filename.
+func fetchAndParseSHA256(client *http.Client, url string, filename string) (string, error) {
+	resp, err := client.Get(url)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("checksum download returned HTTP %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	content := strings.TrimSpace(string(data))
+	if content == "" {
+		return "", nil
+	}
+	// single-line file with only the hash
+	if !strings.ContainsAny(content, "\n\r") {
+		fields := strings.Fields(content)
+		if len(fields) == 1 && looksLikeSHA256(fields[0]) {
+			return strings.ToLower(fields[0]), nil
+		}
+		if len(fields) >= 2 && looksLikeSHA256(fields[0]) {
+			name := strings.TrimPrefix(fields[len(fields)-1], "*")
+			if name == filename {
+				return strings.ToLower(fields[0]), nil
+			}
+			// if there is exactly one entry and the filename doesn't match but
+			// the hash looks right, assume it's for the zip
+			return strings.ToLower(fields[0]), nil
+		}
+	}
+	// multi-line: find matching filename
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 || !looksLikeSHA256(fields[0]) {
+			continue
+		}
+		name := strings.TrimPrefix(fields[len(fields)-1], "*")
+		if name == filename {
+			return strings.ToLower(fields[0]), nil
+		}
+	}
+	return "", nil
+}
+
+// looksLikeSHA256 returns true if s is a 64 char hex string
+func looksLikeSHA256(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for _, r := range s {
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+			return false
+		}
+	}
+	return true
 }

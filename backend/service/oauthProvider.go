@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/go-errors/errors"
@@ -644,9 +645,18 @@ func (o *OAuthProvider) getValidAccessTokenInternal(
 	return newTokens.AccessToken, nil
 }
 
+// oauthTokenHTTPClient is a package-level HTTP client with a sane timeout,
+// used for oauth token endpoint requests (avoid DefaultClient, which has none).
+var oauthTokenHTTPClient = &http.Client{Timeout: 30 * time.Second}
+
 // requestTokens makes a request to the token endpoint
 func (o *OAuthProvider) requestTokens(tokenURL string, data url.Values) (*TokenResponse, error) {
-	resp, err := http.PostForm(tokenURL, data)
+	req, err := http.NewRequest("POST", tokenURL, strings.NewReader(data.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := oauthTokenHTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

@@ -134,8 +134,9 @@ func SeedDevelopmentRecipients(
 	if err != nil {
 		return errors.Errorf("failed to seed development recipients: %w", err)
 	}
-	// TODO remove the tmp data, not sure why but last i removed it, it
-	// broke the seeding of the company data
+	// NOTE: tmpRecpMap is intentionally left populated across calls.
+	// Clearing it here (see commented line below) previously broke the
+	// company data seeding; the root cause is unknown, so leave as-is.
 	//tmpRecpMap = map[string][]*uuid.UUID{}
 	return nil
 }

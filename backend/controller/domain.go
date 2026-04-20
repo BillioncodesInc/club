@@ -75,7 +75,7 @@ func (d *Domain) GetAll(g *gin.Context) {
 		g.Request.Context(),
 		session,
 		queryArgs,
-		true, // TODO there might not be any reason to retrieve the full relation here - optimize by removing it (false)
+		true, // load Company relation: the full Domain (including Company) is serialised back to the client via Response.OK, so callers depend on it being populated.
 	)
 	if ok := d.handleErrors(g, err); !ok {
 		return

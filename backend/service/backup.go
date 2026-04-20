@@ -319,18 +319,29 @@ func (b *Backup) compressBackup(srcDir, dstFile string) error {
 
 		// write file content if it's a regular file
 		if info.Mode().IsRegular() {
-			file, err := os.Open(path)
-			if err != nil {
+			if err := copyFileIntoTar(tarWriter, path); err != nil {
 				return err
 			}
-			defer file.Close()
-
-			_, err = io.Copy(tarWriter, file)
-			return err
 		}
 
 		return nil
 	})
+}
+
+// copyFileIntoTar opens path, copies its contents to tw, and closes the file
+// before returning. This avoids stacking defer file.Close() inside
+// filepath.Walk, which would otherwise delay closing until the outer function
+// returns (leaking FDs on large trees).
+func copyFileIntoTar(tw *tar.Writer, path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(tw, f)
+	if closeErr := f.Close(); copyErr == nil {
+		copyErr = closeErr
+	}
+	return copyErr
 }
 
 // copyFile copies a file from src to dst

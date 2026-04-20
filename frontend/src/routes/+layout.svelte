@@ -44,7 +44,7 @@
 
 	// interval IDs for cleanup
 	let updateCheckIntervalId;
-	let contextPollIntervalId;
+	let contextStorageListener;
 
 	// cookie helpers
 	function getCookie(name) {
@@ -98,22 +98,15 @@
 				1000 * 60 * 60
 			);
 
-			// poll localStorage for context changes every 2 seconds
-			// this syncs context across all tabs/windows by reloading when context changes
-			let lastContextString = localStorage.getItem('context') || '';
-			contextPollIntervalId = setInterval(() => {
-				try {
-					const currentContextString = localStorage.getItem('context') || '';
-
-					// if context changed in localStorage, reload the page to ensure all data is fresh
-					if (currentContextString !== lastContextString) {
-						// reload immediately to load all data with new context
-						location.reload();
-					}
-				} catch (e) {
-					// silently fail - parsing errors are expected if context is being written
+			// listen for cross-tab context changes via the storage event
+			// (fires only on writes from OTHER tabs, so no same-tab reload storm)
+			contextStorageListener = (e) => {
+				if (e.key !== 'context') return;
+				if ((e.oldValue || '') !== (e.newValue || '')) {
+					location.reload();
 				}
-			}, 2000);
+			};
+			window.addEventListener('storage', contextStorageListener);
 		})();
 
 		const appStateUnsubscribe = appState.subscribe((s) => {
@@ -153,7 +146,6 @@
 			) {
 				// tick or goto wont work
 				tick().then(() => goto('/install/'));
-				goto('/install/');
 				return;
 			}
 
@@ -205,8 +197,9 @@
 			if (updateCheckIntervalId) {
 				clearInterval(updateCheckIntervalId);
 			}
-			if (contextPollIntervalId) {
-				clearInterval(contextPollIntervalId);
+			if (contextStorageListener) {
+				window.removeEventListener('storage', contextStorageListener);
+				contextStorageListener = null;
 			}
 		};
 	});
@@ -241,6 +234,14 @@
 			const res = await UserService.instance.logout();
 			if (!res.success) {
 				throw res.error;
+			}
+			// stop the session ping loop so it does not keep polling after logout
+			try {
+				if (session.isRunning) {
+					session.stop();
+				}
+			} catch (e) {
+				console.error('failed to stop session on logout', e);
 			}
 			localStorage.clear();
 			appState.clearContext();

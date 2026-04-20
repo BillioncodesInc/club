@@ -127,7 +127,8 @@ func NewMailEnvelopeFrom(mailFrom string) (*MailEnvelopeFrom, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid envelope from: %w", err)
 	}
-	// TODO figure if this is required to be in <> or not
+	// NOTE: stored as the bare "user@domain.tld"; callers that need the
+	// RFC 5321 reverse-path format wrap it in angle brackets themselves.
 	return &MailEnvelopeFrom{
 		inner: email.String(),
 	}, nil

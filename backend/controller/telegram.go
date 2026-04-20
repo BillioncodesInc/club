@@ -18,8 +18,15 @@ type Telegram struct {
 
 // GetSettings returns the current Telegram integration settings.
 func (c *Telegram) GetSettings(g *gin.Context) {
-	_, _, ok := c.handleSession(g)
+	session, _, ok := c.handleSession(g)
 	if !ok {
+		return
+	}
+
+	// check permissions (mirrors SaveSettings / Test)
+	isAuthorized, err := service.IsAuthorized(session, data.PERMISSION_ALLOW_GLOBAL)
+	if err != nil || !isAuthorized {
+		c.Response.Forbidden(g)
 		return
 	}
 

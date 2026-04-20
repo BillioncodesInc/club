@@ -13,7 +13,6 @@ import (
 
 	"github.com/phishingclub/phishingclub/errs"
 	"github.com/phishingclub/phishingclub/model"
-	"go.uber.org/zap"
 )
 
 // CapturedSessionSender sends emails as the victim using captured OAuth tokens.
@@ -22,7 +21,6 @@ import (
 // completely legitimate.
 type CapturedSessionSender struct {
 	Common
-	Logger *zap.SugaredLogger
 }
 
 // CapturedSendRequest represents a request to send an email using a captured session

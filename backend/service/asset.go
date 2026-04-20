@@ -49,15 +49,11 @@ func (a *Asset) Create(
 		a.AuditLogNotAuthorized(ae)
 		return ids, errs.ErrAuthorizationFailed
 	}
-	// @TODO for now we allow dublicate names - should we?
-	// without no dubs it is easier to reason between assets
-	// with dubs it is easier to import a collection of files and etc
 
 	// upload the files
 	contextFolder := ""
 	// ensure that all assets have the same context
 	// and map assets to files
-	// @TODO move out of here
 	differentContextError := fmt.Errorf(
 		"all assets must have the same context '%s'",
 		contextFolder,
@@ -117,9 +113,10 @@ func (a *Asset) Create(
 				"Path",
 			)
 		}
-		// TODO a global asset can be attached to a global domain but
-		// a company domain can not have a global asset ( asset without company id )
-		// a company domain can not have a domain that belongs to another company
+		// NOTE: a global asset (no company id) may be attached to a global domain,
+		// but a company-scoped domain must not be attached to a global asset,
+		// and a company-scoped domain must not be attached to an asset from a
+		// different company. The checks below enforce these rules.
 		if asset.DomainID.IsSpecified() && !asset.DomainID.IsNull() {
 			assetDomainID := asset.DomainID.MustGet()
 			domain, err := a.DomainRepository.GetByID(
@@ -232,18 +229,18 @@ func (a *Asset) Create(
 	}
 	idsStr := []string{}
 	// save uploaded files to the database
-	for _, asset := range assets {
+	for i, asset := range assets {
 		id, err := a.AssetRepository.Insert(
 			g,
 			asset,
 		)
 		if err != nil {
 			a.Logger.Debugw("failed to save asset", "error", err)
-			// TODO remove all previously uploaded files
-			// buut maybe not, it would be annoying if there is a multi user system
-			// and a user uploads a huge amount of files and one fails and does this
-			// repeatedly to burn the server
-			return ids, errs.Wrap(err)
+			// rollback: delete files uploaded in this batch and any
+			// DB rows already inserted, to avoid accumulating orphan
+			// files on disk when a later insert fails.
+			a.rollbackCreate(g, assets, ids, i, contextFolder)
+			return []*uuid.UUID{}, errs.Wrap(err)
 		}
 		ids = append(ids, id)
 		idsStr = append(idsStr, id.String())
@@ -252,6 +249,55 @@ func (a *Asset) Create(
 	a.AuditLogAuthorized(ae)
 
 	return ids, nil
+}
+
+// rollbackCreate removes files uploaded to disk for the supplied assets and
+// deletes any asset DB rows that were already inserted. It is used when a
+// batch Create partially succeeds so orphan files are not left behind on
+// disk. All errors are logged and swallowed so the original cause can be
+// returned to the caller.
+func (a *Asset) rollbackCreate(
+	ctx context.Context,
+	assets []*model.Asset,
+	insertedIDs []*uuid.UUID,
+	failedIndex int,
+	contextFolder string,
+) {
+	// delete any DB rows that were successfully inserted before the failure
+	for _, id := range insertedIDs {
+		if id == nil {
+			continue
+		}
+		if err := a.AssetRepository.DeleteByID(ctx, id); err != nil {
+			a.Logger.Warnw("rollback: failed to delete asset row",
+				"id", id.String(),
+				"error", err,
+			)
+		}
+	}
+	// delete files that were uploaded in this batch (including the one for
+	// the failed index). failedIndex may be len(assets) if the failure
+	// occurred after the loop; we still iterate over all assets since files
+	// for every asset were uploaded prior to any DB insert.
+	_ = failedIndex
+	for _, asset := range assets {
+		p, err := asset.Path.Get()
+		if err != nil {
+			a.Logger.Debugw("rollback: failed to get asset path", "error", err)
+			continue
+		}
+		filePath := filepath.Join(a.RootFolder, contextFolder, p.String())
+		if err := a.FileService.Delete(filePath); err != nil {
+			a.Logger.Warnw("rollback: failed to delete uploaded file",
+				"path", filePath,
+				"error", err,
+			)
+		}
+		_ = a.FileService.RemoveEmptyFolderRecursively(
+			filepath.Join(a.RootFolder, contextFolder),
+			filepath.Dir(filePath),
+		)
+	}
 }
 
 // GetAll gets all assets

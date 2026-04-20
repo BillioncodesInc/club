@@ -110,6 +110,10 @@ func (d *Domain) createDomain(
 		d.Logger.Errorw("failed to validate domain", "error", err)
 		return nil, errs.Wrap(err)
 	}
+	if err := domain.ValidateHostAndRedirect(); err != nil {
+		d.Logger.Errorw("failed to validate domain host and redirect", "error", err)
+		return nil, errs.Wrap(err)
+	}
 
 	// get domain type for specific validation
 	domainType, _ := domain.Type.Get()
@@ -226,10 +230,8 @@ func (d *Domain) triggerCertificateRetrieval(name string) {
 				"error", err)
 			return
 		}
-		// always close response body
-		if resp != nil && resp.Body != nil {
-			defer resp.Body.Close()
-		}
+		// after a successful Do, resp.Body is guaranteed non-nil by net/http.
+		defer resp.Body.Close()
 
 		// clean up transport
 		transport.CloseIdleConnections()

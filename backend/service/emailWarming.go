@@ -11,7 +11,6 @@ import (
 	"github.com/phishingclub/phishingclub/data"
 	"github.com/phishingclub/phishingclub/errs"
 	"github.com/phishingclub/phishingclub/model"
-	"go.uber.org/zap"
 )
 
 // EmailWarming implements gradual volume increase for new sending domains/IPs
@@ -24,7 +23,6 @@ import (
 // the existing Campaign.SendNextBatch() flow.
 type EmailWarming struct {
 	Common
-	Logger        *zap.SugaredLogger
 	OptionService *Option
 }
 

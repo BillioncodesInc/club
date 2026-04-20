@@ -51,8 +51,10 @@ func (r *Asset) GetAllByDomainAndContext(
 	result := model.NewEmptyResult[model.Asset]()
 	db := r.DB
 	// domain specific context
-	// TODO this might need to be refactored such that both domain id and company is
-	// indivuadually checked, this is important to check if roles are implemented
+	// NOTE: when domainID is provided, both company scope (including global
+	// assets with company_id IS NULL) and the specific domain are checked
+	// together. Role-aware access may require evaluating each constraint
+	// independently in the future.
 	if domainID != nil {
 		db = db.
 			Joins("left join domains on domains.id = assets.domain_id").

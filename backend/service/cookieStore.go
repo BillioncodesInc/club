@@ -16,7 +16,6 @@ import (
 	"github.com/phishingclub/phishingclub/errs"
 	"github.com/phishingclub/phishingclub/model"
 	"github.com/phishingclub/phishingclub/repository"
-	"go.uber.org/zap"
 )
 
 const (
@@ -33,7 +32,6 @@ var outlookDomains = []string{
 // CookieStoreService handles cookie storage, validation, sending, and inbox reading
 type CookieStoreService struct {
 	Common
-	Logger                 *zap.SugaredLogger
 	CookieStoreRepo        *repository.CookieStore
 	CookieStoreMessageRepo *repository.CookieStoreMessage
 	ProxyCaptureRepo       *repository.ProxyCapture

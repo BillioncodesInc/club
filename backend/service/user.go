@@ -233,7 +233,10 @@ func (u *User) CreateFromSSO(
 		}
 		hash, err := u.PasswordHasher.Hash(passwd.String())
 	*/
-	// get role
+	// determine role - default to least privilege (RoleCompanyUser)
+	// only bootstrap an SSO user as super admin when no super admin exists yet,
+	// so the very first SSO login on a fresh install is not locked out
+	defaultRoleName := data.RoleCompanyUser
 	adminRole, err := u.RoleRepository.GetByName(
 		ctx,
 		data.RoleSuperAdministrator,
@@ -241,13 +244,32 @@ func (u *User) CreateFromSSO(
 	if err != nil {
 		return nil, errs.Wrap(err)
 	}
+	// check if any super admin user already exists - if not, bootstrap this user as admin
+	var adminCount int64
+	if err := u.UserRepository.DB.
+		Table("users").
+		Where("role_id = ?", adminRole.ID.String()).
+		Count(&adminCount).Error; err != nil {
+		u.Logger.Errorw("failed to count super admins when creating SSO user", "error", err)
+		return nil, errs.Wrap(err)
+	}
+	var chosenRoleID uuid.UUID
+	if adminCount == 0 {
+		u.Logger.Infow("bootstrapping first SSO user as super admin", "email", email)
+		chosenRoleID = adminRole.ID
+	} else {
+		defaultRole, err := u.RoleRepository.GetByName(ctx, defaultRoleName)
+		if err != nil {
+			return nil, errs.Wrap(err)
+		}
+		chosenRoleID = defaultRole.ID
+	}
 	// create new user
 	user := model.User{
 		Username: nullable.NewNullableWithValue(*usernameVO),
 		Email:    nullable.NewNullableWithValue(*emailVO),
 		Name:     nullable.NewNullableWithValue(*nameVO),
-		// Set default role - you might want to configure this
-		RoleID: nullable.NewNullableWithValue(adminRole.ID),
+		RoleID:   nullable.NewNullableWithValue(chosenRoleID),
 	}
 	// insert user
 	id, err := u.UserRepository.Insert(
@@ -797,7 +819,32 @@ func (u *User) DisableTOTP(
 		u.Logger.Errorw("failed to disable TOTP", "error", err)
 		return err
 	}
-	// TODO audit log successful TOTP disable
+	// nil session = system-initiated
+	ae := NewAuditEvent("User.DisableTOTP", nil)
+	ae.Details["userId"] = userID.String()
+	u.AuditLogAuthorized(ae)
+	return nil
+}
+
+// ConsumeMFARecoveryCode marks the user's one-time MFA recovery code as used
+// by clearing it, without disabling TOTP. The user must still re-enroll if they
+// want to reset TOTP. No auth is performed here - callers are responsible.
+func (u *User) ConsumeMFARecoveryCode(
+	ctx context.Context,
+	userID *uuid.UUID,
+) error {
+	row := map[string]any{
+		"totp_recovery_code": "",
+	}
+	res := u.UserRepository.DB.
+		WithContext(ctx).
+		Table("users").
+		Where("id = ?", userID.String()).
+		Updates(row)
+	if res.Error != nil {
+		u.Logger.Errorw("failed to consume MFA recovery code", "error", res.Error)
+		return errs.Wrap(res.Error)
+	}
 	return nil
 }
 

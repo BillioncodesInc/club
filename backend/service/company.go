@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/go-errors/errors"
 
@@ -248,6 +249,40 @@ func (s *Company) UpdateByID(
 	}
 	s.AuditLogAuthorized(ae)
 	return nil
+}
+
+// HasRelations checks whether the given company has any referencing rows in
+// related tables. Returns true with a human-readable summary (for use in error
+// messages) when at least one relation exists. This is a pre-delete check used
+// to preserve referential integrity without cascading destructive operations.
+func (s *Company) HasRelations(
+	ctx context.Context,
+	session *model.Session,
+	companyID *uuid.UUID,
+) (bool, []string, error) {
+	// permission gate mirrors DeleteByID so this is safe to call from the
+	// controller prior to delete
+	isAuthorized, err := IsAuthorized(session, data.PERMISSION_ALLOW_GLOBAL)
+	if err != nil && !errors.Is(err, errs.ErrAuthorizationFailed) {
+		s.LogAuthError(err)
+		return false, nil, errs.Wrap(err)
+	}
+	if !isAuthorized {
+		return false, nil, errs.ErrAuthorizationFailed
+	}
+	relations, err := s.CompanyRepository.CountRelations(ctx, companyID)
+	if err != nil {
+		s.Logger.Errorw("failed to count company relations", "error", err)
+		return false, nil, errs.Wrap(err)
+	}
+	if len(relations) == 0 {
+		return false, nil, nil
+	}
+	summaries := make([]string, 0, len(relations))
+	for _, rel := range relations {
+		summaries = append(summaries, fmt.Sprintf("%d %s", rel.Count, rel.Name))
+	}
+	return true, summaries, nil
 }
 
 // DeleteByID deletes a company by ID

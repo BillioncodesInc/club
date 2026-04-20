@@ -88,6 +88,9 @@ func (m *OpenRedirect) ToDBMap() map[string]any {
 			dbMap["param_name"] = paramName.String()
 		}
 	}
+	// IsVerified: when non-nil, persist the pointed value (true/false). When nil,
+	// leave the column untouched so partial updates don't clobber a previous
+	// verification result. The DB column is nullable — nil=unknown, false=tested-not-working.
 	if m.IsVerified != nil {
 		dbMap["is_verified"] = *m.IsVerified
 	}

@@ -161,7 +161,6 @@ func (a *APISender) ToDBMap() map[string]interface{} {
 	return m
 }
 
-// TODO should the rest of the code be moved to value object
 type HTTPHeader struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`

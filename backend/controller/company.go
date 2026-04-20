@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/csv"
 	"fmt"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -531,9 +532,26 @@ func (c *Company) DeleteByID(g *gin.Context) {
 	if !ok {
 		return
 	}
-	// TODO company delete should FAIL if it has any relations to anything
+	// pre-delete integrity check: a company must not be removed while any
+	// referencing rows still exist. This is intentionally NOT a cascade — the
+	// caller is expected to remove relations explicitly first.
+	ctx := g.Request.Context()
+	hasRelations, summaries, err := c.CompanyService.HasRelations(ctx, session, id)
+	if ok := c.handleErrors(g, err); !ok {
+		return
+	}
+	if hasRelations {
+		c.Response.BadRequestMessage(
+			g,
+			fmt.Sprintf(
+				"cannot delete company: has %s (must be removed first)",
+				strings.Join(summaries, ", "),
+			),
+		)
+		return
+	}
 	// delete company
-	_, err := c.CompanyService.DeleteByID(g, session, id)
+	_, err = c.CompanyService.DeleteByID(g, session, id)
 	// handle response
 	if ok := c.handleErrors(g, err); !ok {
 		return

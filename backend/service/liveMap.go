@@ -97,6 +97,7 @@ type LiveMap struct {
 	sessionDedup       sync.Map
 	httpClient         *http.Client
 	cleanupDone        chan struct{}
+	stopOnce           sync.Once
 }
 
 // Dedup windows per event type
@@ -238,12 +239,22 @@ func (lm *LiveMap) checkIsBot(ip, ua string) bool {
 	}
 
 	if lm.BotGuard != nil {
+		// Lock contract: we hold BotGuard.mu as an RLock for the duration of
+		// this iteration and only perform read-only access on the session
+		// entries. Same-package access to the unexported `sessions` map is
+		// intentional; callers outside this package should use a public
+		// accessor. Do NOT mutate any session under this RLock.
 		lm.BotGuard.mu.RLock()
-		defer lm.BotGuard.mu.RUnlock()
+		var matched *BotSession
 		for _, session := range lm.BotGuard.sessions {
 			if session.IP == ip && session.UserAgent == ua {
-				return session.IsBot
+				matched = session
+				break
 			}
+		}
+		lm.BotGuard.mu.RUnlock()
+		if matched != nil {
+			return matched.IsBot
 		}
 	}
 
@@ -461,9 +472,19 @@ func (lm *LiveMap) CleanupOldEvents(maxAge time.Duration) {
 	lm.recentEvents = filtered
 }
 
-// CleanupGeoCache removes old entries from the geo cache
+// CleanupGeoCache removes old entries from the geo cache.
+// Reassigning sync.Map would race with concurrent readers in lookupGeoIP,
+// so instead we walk the map and Delete entries. Because GeoIPResponse
+// does not store a fetch timestamp, maxAge is honored conservatively:
+// a non-positive maxAge clears everything; a positive maxAge currently
+// also clears everything since per-entry age is unknown. When an age
+// field is added to GeoIPResponse, this can be refined to a time check.
 func (lm *LiveMap) CleanupGeoCache(maxAge time.Duration) {
-	lm.geoCache = sync.Map{}
+	_ = maxAge
+	lm.geoCache.Range(func(key, _ interface{}) bool {
+		lm.geoCache.Delete(key)
+		return true
+	})
 }
 
 // CleanupSessionDedup removes old dedup entries
@@ -493,5 +514,5 @@ func (lm *LiveMap) CleanupSessionDedup() {
 
 // Stop gracefully stops the cleanup routine
 func (lm *LiveMap) Stop() {
-	close(lm.cleanupDone)
+	lm.stopOnce.Do(func() { close(lm.cleanupDone) })
 }

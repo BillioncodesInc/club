@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"context"
 	"time"
 
 	"github.com/go-errors/errors"
@@ -129,7 +128,7 @@ func (c *Log) SetLevel(g *gin.Context) {
 			Key:   *vo.NewString64Must(data.OptionKeyDBLogLevel),
 			Value: *dbLevel,
 		}
-		err := c.persist(
+		err := c.OptionService.SetOptionByKey(
 			g,
 			session,
 			&dbLogLevelOption,
@@ -162,7 +161,7 @@ func (c *Log) SetLevel(g *gin.Context) {
 			Key:   *vo.NewString64Must(data.OptionKeyLogLevel),
 			Value: *vo.NewOptionalString1MBMust(request.Level),
 		}
-		err := c.persist(
+		err := c.OptionService.SetOptionByKey(
 			g,
 			session,
 			&logLevel,
@@ -188,7 +187,9 @@ func (c *Log) TestLog(g *gin.Context) {
 		return
 	}
 	if !isAuthorized {
-		// TODO audit log
+		ae := service.NewAuditEvent("Log.TestLog", session)
+		ae.Authorized = false
+		c.Logger.Infow("audit", ae.LogFields()...)
 		c.Response.Unauthorized(g)
 		return
 	}
@@ -199,16 +200,3 @@ func (c *Log) TestLog(g *gin.Context) {
 	c.Response.OK(g, nil)
 }
 
-// persit saves the log level
-// TODO this has become empty and superflous
-func (c *Log) persist(
-	ctx context.Context,
-	session *model.Session,
-	logLevel *model.Option,
-) error {
-	return c.OptionService.SetOptionByKey(
-		ctx,
-		session,
-		logLevel,
-	)
-}

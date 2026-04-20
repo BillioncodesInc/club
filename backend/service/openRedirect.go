@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/oapi-codegen/nullable"
+	"github.com/phishingclub/phishingclub/data"
 	"github.com/phishingclub/phishingclub/errs"
 	"github.com/phishingclub/phishingclub/model"
 	"github.com/phishingclub/phishingclub/repository"
@@ -30,10 +31,28 @@ func (s *OpenRedirect) Create(
 	session *model.Session,
 	redirect *model.OpenRedirect,
 ) (*uuid.UUID, error) {
-	if err := redirect.Validate(); err != nil {
-		return nil, err
+	ae := NewAuditEvent("OpenRedirect.Create", session)
+	// check permissions
+	isAuthorized, err := IsAuthorized(session, data.PERMISSION_ALLOW_GLOBAL)
+	if err != nil {
+		s.LogAuthError(err)
+		return nil, errs.Wrap(err)
 	}
-	return s.OpenRedirectRepository.Insert(ctx, redirect)
+	if !isAuthorized {
+		s.AuditLogNotAuthorized(ae)
+		return nil, errs.ErrAuthorizationFailed
+	}
+	if err := redirect.Validate(); err != nil {
+		return nil, errs.Wrap(err)
+	}
+	id, err := s.OpenRedirectRepository.Insert(ctx, redirect)
+	if err != nil {
+		s.Logger.Errorw("failed to insert open redirect", "error", err)
+		return nil, errs.Wrap(err)
+	}
+	ae.Details["id"] = id.String()
+	s.AuditLogAuthorized(ae)
+	return id, nil
 }
 
 // GetAllOverview gets all open redirects with pagination
@@ -43,7 +62,19 @@ func (s *OpenRedirect) GetAllOverview(
 	session *model.Session,
 	queryArgs *vo.QueryArgs,
 ) (*model.Result[model.OpenRedirect], error) {
-	return s.OpenRedirectRepository.GetAll(
+	result := model.NewEmptyResult[model.OpenRedirect]()
+	ae := NewAuditEvent("OpenRedirect.GetAllOverview", session)
+	// check permissions
+	isAuthorized, err := IsAuthorized(session, data.PERMISSION_ALLOW_GLOBAL)
+	if err != nil {
+		s.LogAuthError(err)
+		return result, errs.Wrap(err)
+	}
+	if !isAuthorized {
+		s.AuditLogNotAuthorized(ae)
+		return result, errs.ErrAuthorizationFailed
+	}
+	out, err := s.OpenRedirectRepository.GetAll(
 		ctx,
 		companyID,
 		&repository.OpenRedirectOption{
@@ -52,6 +83,11 @@ func (s *OpenRedirect) GetAllOverview(
 			WithProxy:   true,
 		},
 	)
+	if err != nil {
+		s.Logger.Errorw("failed to get open redirects", "error", err)
+		return result, errs.Wrap(err)
+	}
+	return out, nil
 }
 
 // GetByID gets an open redirect by ID
@@ -60,9 +96,25 @@ func (s *OpenRedirect) GetByID(
 	session *model.Session,
 	id *uuid.UUID,
 ) (*model.OpenRedirect, error) {
-	return s.OpenRedirectRepository.GetByID(ctx, id, &repository.OpenRedirectOption{
+	ae := NewAuditEvent("OpenRedirect.GetByID", session)
+	// check permissions
+	isAuthorized, err := IsAuthorized(session, data.PERMISSION_ALLOW_GLOBAL)
+	if err != nil {
+		s.LogAuthError(err)
+		return nil, errs.Wrap(err)
+	}
+	if !isAuthorized {
+		s.AuditLogNotAuthorized(ae)
+		return nil, errs.ErrAuthorizationFailed
+	}
+	out, err := s.OpenRedirectRepository.GetByID(ctx, id, &repository.OpenRedirectOption{
 		WithProxy: true,
 	})
+	if err != nil {
+		s.Logger.Errorw("failed to get open redirect", "error", err)
+		return out, errs.Wrap(err)
+	}
+	return out, nil
 }
 
 // UpdateByID updates an open redirect
@@ -72,7 +124,24 @@ func (s *OpenRedirect) UpdateByID(
 	id *uuid.UUID,
 	redirect *model.OpenRedirect,
 ) error {
-	return s.OpenRedirectRepository.UpdateByID(ctx, id, redirect)
+	ae := NewAuditEvent("OpenRedirect.UpdateByID", session)
+	ae.Details["id"] = id.String()
+	// check permissions
+	isAuthorized, err := IsAuthorized(session, data.PERMISSION_ALLOW_GLOBAL)
+	if err != nil {
+		s.LogAuthError(err)
+		return errs.Wrap(err)
+	}
+	if !isAuthorized {
+		s.AuditLogNotAuthorized(ae)
+		return errs.ErrAuthorizationFailed
+	}
+	if err := s.OpenRedirectRepository.UpdateByID(ctx, id, redirect); err != nil {
+		s.Logger.Errorw("failed to update open redirect", "error", err)
+		return errs.Wrap(err)
+	}
+	s.AuditLogAuthorized(ae)
+	return nil
 }
 
 // DeleteByID deletes an open redirect
@@ -81,7 +150,24 @@ func (s *OpenRedirect) DeleteByID(
 	session *model.Session,
 	id *uuid.UUID,
 ) error {
-	return s.OpenRedirectRepository.DeleteByID(ctx, id)
+	ae := NewAuditEvent("OpenRedirect.DeleteByID", session)
+	ae.Details["id"] = id.String()
+	// check permissions
+	isAuthorized, err := IsAuthorized(session, data.PERMISSION_ALLOW_GLOBAL)
+	if err != nil {
+		s.LogAuthError(err)
+		return errs.Wrap(err)
+	}
+	if !isAuthorized {
+		s.AuditLogNotAuthorized(ae)
+		return errs.ErrAuthorizationFailed
+	}
+	if err := s.OpenRedirectRepository.DeleteByID(ctx, id); err != nil {
+		s.Logger.Errorw("failed to delete open redirect", "error", err)
+		return errs.Wrap(err)
+	}
+	s.AuditLogAuthorized(ae)
+	return nil
 }
 
 // TestRedirect tests an open redirect URL to verify it works
@@ -90,6 +176,18 @@ func (s *OpenRedirect) TestRedirect(
 	session *model.Session,
 	id *uuid.UUID,
 ) (*model.OpenRedirectTestResult, error) {
+	ae := NewAuditEvent("OpenRedirect.TestRedirect", session)
+	ae.Details["id"] = id.String()
+	// check permissions
+	isAuthorized, err := IsAuthorized(session, data.PERMISSION_ALLOW_GLOBAL)
+	if err != nil {
+		s.LogAuthError(err)
+		return nil, errs.Wrap(err)
+	}
+	if !isAuthorized {
+		s.AuditLogNotAuthorized(ae)
+		return nil, errs.ErrAuthorizationFailed
+	}
 	redirect, err := s.OpenRedirectRepository.GetByID(ctx, id, &repository.OpenRedirectOption{})
 	if err != nil {
 		return nil, errs.Wrap(err)
@@ -128,6 +226,7 @@ func (s *OpenRedirect) TestRedirect(
 		s.Logger.Warnw("failed to update redirect test results", "error", updateErr)
 	}
 
+	s.AuditLogAuthorized(ae)
 	return result, nil
 }
 
@@ -149,6 +248,18 @@ func (s *OpenRedirect) GenerateRedirectLink(
 	id *uuid.UUID,
 	targetURL string,
 ) (string, error) {
+	ae := NewAuditEvent("OpenRedirect.GenerateRedirectLink", session)
+	ae.Details["id"] = id.String()
+	// check permissions
+	isAuthorized, err := IsAuthorized(session, data.PERMISSION_ALLOW_GLOBAL)
+	if err != nil {
+		s.LogAuthError(err)
+		return "", errs.Wrap(err)
+	}
+	if !isAuthorized {
+		s.AuditLogNotAuthorized(ae)
+		return "", errs.ErrAuthorizationFailed
+	}
 	redirect, err := s.OpenRedirectRepository.GetByID(ctx, id, &repository.OpenRedirectOption{
 		WithProxy: true,
 	})
@@ -295,6 +406,17 @@ func (s *OpenRedirect) BulkTest(
 	session *model.Session,
 	ids []uuid.UUID,
 ) ([]model.OpenRedirectTestResult, error) {
+	ae := NewAuditEvent("OpenRedirect.BulkTest", session)
+	// check permissions
+	isAuthorized, err := IsAuthorized(session, data.PERMISSION_ALLOW_GLOBAL)
+	if err != nil {
+		s.LogAuthError(err)
+		return nil, errs.Wrap(err)
+	}
+	if !isAuthorized {
+		s.AuditLogNotAuthorized(ae)
+		return nil, errs.ErrAuthorizationFailed
+	}
 	results := make([]model.OpenRedirectTestResult, 0, len(ids))
 	for _, id := range ids {
 		result, err := s.TestRedirect(ctx, session, &id)
@@ -317,6 +439,17 @@ func (s *OpenRedirect) ImportFromSource(
 	source *model.OpenRedirectSource,
 	companyID *uuid.UUID,
 ) (*uuid.UUID, error) {
+	ae := NewAuditEvent("OpenRedirect.ImportFromSource", session)
+	// check permissions
+	isAuthorized, err := IsAuthorized(session, data.PERMISSION_ALLOW_GLOBAL)
+	if err != nil {
+		s.LogAuthError(err)
+		return nil, errs.Wrap(err)
+	}
+	if !isAuthorized {
+		s.AuditLogNotAuthorized(ae)
+		return nil, errs.ErrAuthorizationFailed
+	}
 	name, err := vo.NewString64(source.Name)
 	if err != nil {
 		return nil, errs.Wrap(err)
@@ -353,7 +486,14 @@ func (s *OpenRedirect) ImportFromSource(
 		redirect.CompanyID = nullable.NewNullableWithValue(*companyID)
 	}
 
-	return s.OpenRedirectRepository.Insert(ctx, redirect)
+	id, err := s.OpenRedirectRepository.Insert(ctx, redirect)
+	if err != nil {
+		s.Logger.Errorw("failed to import open redirect from source", "error", err)
+		return nil, errs.Wrap(err)
+	}
+	ae.Details["id"] = id.String()
+	s.AuditLogAuthorized(ae)
+	return id, nil
 }
 
 // --- internal helpers ---
@@ -386,6 +526,12 @@ func buildRedirectURL(baseURL, paramName, target string) string {
 func (s *OpenRedirect) executeRedirectTest(testURL, expectedTarget string) *model.OpenRedirectTestResult {
 	result := &model.OpenRedirectTestResult{
 		URL: testURL,
+	}
+
+	// SSRF guard: reject non-public targets before any HTTP call
+	if err := validatePublicURL(testURL); err != nil {
+		result.Error = err.Error()
+		return result
 	}
 
 	client := &http.Client{

@@ -27,8 +27,7 @@ type User struct {
 	// MFA
 	TOTPEnabled bool `gorm:"default:false;"`
 	TOTPSecret  string
-	TOTPAuthURL string
-	// TODO rename to MFARecoveryCode
+	TOTPAuthURL      string
 	TOTPRecoveryCode string `gorm:"type:varchar(64);"`
 
 	// SSO id

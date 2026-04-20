@@ -6,14 +6,12 @@ import (
 
 	"github.com/phishingclub/phishingclub/errs"
 	"github.com/phishingclub/phishingclub/model"
-	"go.uber.org/zap"
 )
 
 // WebServerRulesGenerator generates ready-to-use redirect and filtering rules
 // for Apache, Nginx, Caddy, and Traefik web servers.
 type WebServerRulesGenerator struct {
 	Common
-	Logger *zap.SugaredLogger
 }
 
 // RulesConfig is the configuration for generating web server rules

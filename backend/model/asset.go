@@ -50,7 +50,9 @@ func (a *Asset) ToDBMap() map[string]any {
 			m["domain_name"] = domainName.String()
 		}
 	}
-	// TODO is a global asset attached to a domain? if not then this should be possible to set to null like company ID
+	// NOTE: DomainID cannot be explicitly set to null here (unlike CompanyID).
+	// Global assets are treated as not attached to any domain; the column
+	// is simply left unset in the update map when no domain is provided.
 	if a.DomainID.IsSpecified() {
 		m["domain_id"] = nil
 		if domainID, err := a.DomainID.Get(); err == nil {

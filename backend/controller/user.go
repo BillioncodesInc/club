@@ -2,6 +2,9 @@ package controller
 
 import (
 	"net/http"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/go-errors/errors"
 
@@ -15,6 +18,130 @@ import (
 	"github.com/phishingclub/phishingclub/service"
 	"github.com/phishingclub/phishingclub/vo"
 	"gorm.io/gorm"
+)
+
+// loginLockoutEntry tracks failed login attempts for a single username
+type loginLockoutEntry struct {
+	mu        sync.Mutex
+	failures  int
+	firstFail time.Time
+	lockedTil time.Time
+}
+
+// loginLockout provides a per-username lockout after N consecutive failed
+// attempts within a window. It sits on top of the IP-based rate limiter
+// middleware to stop credential stuffing that rotates source IPs.
+type loginLockout struct {
+	entries       sync.Map // username -> *loginLockoutEntry
+	maxFailures   int
+	failureWindow time.Duration
+	lockoutFor    time.Duration
+	cleanupOnce   sync.Once
+}
+
+func newLoginLockout(max int, window, lockedFor time.Duration) *loginLockout {
+	l := &loginLockout{
+		maxFailures:   max,
+		failureWindow: window,
+		lockoutFor:    lockedFor,
+	}
+	l.cleanupOnce.Do(func() { go l.cleanup() })
+	return l
+}
+
+func (l *loginLockout) cleanup() {
+	interval := l.lockoutFor
+	if interval < time.Minute {
+		interval = time.Minute
+	}
+	for range time.Tick(interval) {
+		cutoff := time.Now().Add(-l.lockoutFor - l.failureWindow)
+		l.entries.Range(func(k, v interface{}) bool {
+			entry, ok := v.(*loginLockoutEntry)
+			if !ok {
+				l.entries.Delete(k)
+				return true
+			}
+			entry.mu.Lock()
+			idle := entry.firstFail.Before(cutoff) && entry.lockedTil.Before(cutoff)
+			entry.mu.Unlock()
+			if idle {
+				l.entries.Delete(k)
+			}
+			return true
+		})
+	}
+}
+
+func (l *loginLockout) normalizeKey(key string) string {
+	return strings.ToLower(strings.TrimSpace(key))
+}
+
+func (l *loginLockout) getEntry(key string) *loginLockoutEntry {
+	e := &loginLockoutEntry{}
+	actual, _ := l.entries.LoadOrStore(key, e)
+	return actual.(*loginLockoutEntry)
+}
+
+// IsLocked reports whether the username is currently locked out.
+func (l *loginLockout) IsLocked(key string) bool {
+	key = l.normalizeKey(key)
+	if key == "" {
+		return false
+	}
+	v, ok := l.entries.Load(key)
+	if !ok {
+		return false
+	}
+	entry := v.(*loginLockoutEntry)
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+	return time.Now().Before(entry.lockedTil)
+}
+
+// RecordFailure records a failed attempt and locks the key if threshold is hit.
+func (l *loginLockout) RecordFailure(key string) {
+	key = l.normalizeKey(key)
+	if key == "" {
+		return
+	}
+	entry := l.getEntry(key)
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+	now := time.Now()
+	if entry.firstFail.IsZero() || now.Sub(entry.firstFail) > l.failureWindow {
+		entry.firstFail = now
+		entry.failures = 0
+	}
+	entry.failures++
+	if entry.failures >= l.maxFailures {
+		entry.lockedTil = now.Add(l.lockoutFor)
+	}
+}
+
+// RecordSuccess clears the failure counter for the key.
+func (l *loginLockout) RecordSuccess(key string) {
+	key = l.normalizeKey(key)
+	if key == "" {
+		return
+	}
+	if v, ok := l.entries.Load(key); ok {
+		entry := v.(*loginLockoutEntry)
+		entry.mu.Lock()
+		entry.failures = 0
+		entry.firstFail = time.Time{}
+		entry.lockedTil = time.Time{}
+		entry.mu.Unlock()
+	}
+}
+
+// userLoginLockout tracks per-username failed login attempts on top of the
+// existing IP based rate limiter. Threshold: 5 consecutive failures within
+// 15 minutes → locked for 15 minutes.
+var userLoginLockout = newLoginLockout(
+	5,
+	15*time.Minute,
+	15*time.Minute,
 )
 
 var SessionColumnsMap = map[string]string{
@@ -474,23 +601,34 @@ func (c *User) Login(g *gin.Context) {
 	if ok := c.handleParseRequest(g, &req); !ok {
 		return
 	}
+	// per-username lockout on top of the existing IP rate limiter
+	if userLoginLockout.IsLocked(req.Username) {
+		c.Logger.Infow("login rejected - username is locked out",
+			"username", req.Username, "ip", g.ClientIP())
+		c.Response.BadRequestMessage(
+			g,
+			"Account temporarily locked due to too many failed attempts, try again later",
+		)
+		return
+	}
 	user, err := c.UserService.AuthenticateUsernameWithPassword(
 		g,
 		req.Username,
 		req.Password,
 		g.ClientIP(),
 	)
-	if errors.Is(err, errs.ErrUserWrongPasword) {
-		c.Response.BadRequestMessage(g, "Invalid password")
-		return
-	}
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	// return a generic message for both "user not found" and "wrong password"
+	// to prevent username enumeration via error text / status differences
+	if errors.Is(err, errs.ErrUserWrongPasword) || errors.Is(err, gorm.ErrRecordNotFound) {
+		userLoginLockout.RecordFailure(req.Username)
 		c.Response.BadRequestMessage(g, "Invalid credentials")
 		return
 	}
 	if ok := c.handleErrors(g, err); !ok {
 		return
 	}
+	// password ok - clear any tracked failures so the account is not unnecessarily locked
+	userLoginLockout.RecordSuccess(req.Username)
 	// if the user has MFA enabled then we check the MFA flow
 	// if the user has MFA enabled, we must check if there is a
 	// valid MFA or a valid recovery code
@@ -582,9 +720,15 @@ func (c *User) Login(g *gin.Context) {
 				c.Response.BadRequestMessage(g, "Invalid recovery code")
 				return
 			}
-			// as the recovery code is valid, we can now disable MFA
-			err = c.UserService.DisableTOTP(g, &userID)
-			if ok := c.handleErrors(g, err); !ok {
+			// recovery code authenticates the user only - it does NOT disable TOTP
+			// the user is expected to re-enroll explicitly if they need to reset TOTP
+			// mark the one-time recovery code as consumed so it cannot be reused
+			err = c.UserService.ConsumeMFARecoveryCode(g, &userID)
+			if err != nil {
+				c.Logger.Errorw("failed to consume recovery code", "error", err)
+				if ok := c.handleErrors(g, err); !ok {
+					return
+				}
 				return
 			}
 		}

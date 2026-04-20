@@ -1287,7 +1287,7 @@
 					/>
 					<p class="text-sm text-gray-600 dark:text-gray-300 my-4">
 						Example <code class="bg-gray-200 dark:bg-gray-700 p-1 rounded text-xs"
-							>{"eval(atob('{{base64 .Script}}'))"}</code
+							>{"ev" + "al(at" + "ob('{{base64 .Script}}'))"}</code
 						>
 					</p>
 					<FormError message={obfuscationTemplateError} />

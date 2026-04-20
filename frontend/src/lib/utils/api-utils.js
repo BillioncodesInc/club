@@ -34,8 +34,10 @@ export const defaultOptions = {
 };
 
 export const fetchAllRows = async (fetchFn2, options = defaultOptions) => {
+	// clone so we don't mutate the caller's (or module-level defaultOptions) object
+	const opts = { ...options };
 	let items = [];
-	let res = await fetchFn2(options);
+	let res = await fetchFn2(opts);
 
 	// Add initial rows
 	if (res.data?.rows) {
@@ -43,10 +45,10 @@ export const fetchAllRows = async (fetchFn2, options = defaultOptions) => {
 	}
 
 	while (res.data?.hasNextPage) {
-		// Update the page number
-		options.currentPage += 1;
+		// Update the page number on our local copy
+		opts.currentPage += 1;
 		// Fetch next page
-		res = await fetchFn2({ ...options });
+		res = await fetchFn2({ ...opts });
 		// Add new rows
 		if (res.data?.rows) {
 			items = items.concat(res.data.rows);

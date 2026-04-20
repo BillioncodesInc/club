@@ -156,7 +156,8 @@ func (a *Attachment) GetAllForContext(g *gin.Context) {
 		return
 	}
 	if !isAuthorized {
-		// TODO audit log
+		// audit logging for reads is intentionally skipped in the service layer
+		// (see service.Attachment.GetAll: "no audit on read"); nothing to emit here.
 		_ = handleAuthorizationError(g, a.Response, errs.ErrAuthorizationFailed)
 		return
 	}
@@ -231,6 +232,38 @@ func (a *Attachment) Create(g *gin.Context) {
 		}
 		companyID.Set(cid)
 	}
+	// multi-user authorization: the session must either be a super admin
+	// (PERMISSION_ALLOW_GLOBAL) or the request's companyID must match the
+	// session user's companyID. A missing companyID in the request means a
+	// shared/global attachment which is only permitted for super admins.
+	isSuperAdmin, err := service.IsAuthorized(session, data.PERMISSION_ALLOW_GLOBAL)
+	if err != nil && !errors.Is(err, errs.ErrAuthorizationFailed) {
+		_ = handleServerError(g, a.Response, err)
+		return
+	}
+	if !isSuperAdmin {
+		// non super-admins must supply a companyID and it must match their own
+		if len(companyIDParam) == 0 {
+			a.Response.Forbidden(g)
+			return
+		}
+		requestedCompanyID, err := uuid.Parse(companyIDParam)
+		if err != nil {
+			a.Response.ValidationFailed(g, "companyID", err)
+			return
+		}
+		if session.User == nil ||
+			!session.User.CompanyID.IsSpecified() ||
+			session.User.CompanyID.IsNull() {
+			a.Response.Forbidden(g)
+			return
+		}
+		sessionCompanyID := session.User.CompanyID.MustGet()
+		if sessionCompanyID != requestedCompanyID {
+			a.Response.Forbidden(g)
+			return
+		}
+	}
 	nameParam, err := vo.NewOptionalString127(g.PostForm("name"))
 	if err != nil {
 		a.Logger.Debugw("failed to parse name",
@@ -257,7 +290,7 @@ func (a *Attachment) Create(g *gin.Context) {
 	}
 	attachments := []*model.Attachment{}
 	for _, file := range multipartData.File["files"] {
-		// TODO multi user validate that the company id is the same as the session company id or that the session is a super admin
+		// company-id authz is validated once above before the loop
 		// check max file size
 		maxFile, err := a.OptionService.GetOption(g, session, data.OptionKeyMaxFileUploadSizeMB)
 		if ok := a.handleErrors(g, err); !ok {

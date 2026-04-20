@@ -74,8 +74,12 @@ func (a *Asset) GetContentByID(g *gin.Context) {
 	}
 	// if the target is the global folder, use the global folder
 	if domain.String() == data.ASSET_GLOBAL_FOLDER {
-		// TODO this shold require special permissions or be prefixed with a special path
-		// such as the company name or something that is prefixed
+		// NOTE: access to the global asset folder is gated by the
+		// PERMISSION_ALLOW_GLOBAL check performed above. A future
+		// improvement would be to route global assets under a dedicated
+		// path prefix (e.g. /system/*) so they are clearly separated from
+		// per-domain assets; that change must be made at the router
+		// level, not from this controller.
 		_ = data.ASSET_GLOBAL_FOLDER
 	}
 	// create root filesystem for secure asset access
@@ -304,6 +308,39 @@ func (a *Asset) Create(g *gin.Context) {
 	} else {
 		a.Logger.Debug("uploading shared assets")
 	}
+	// multi-user authorization: the session must either be a super admin
+	// (PERMISSION_ALLOW_GLOBAL) or the request's companyID must match the
+	// session user's companyID. A missing companyID in the request means a
+	// shared/global asset which is only permitted for super admins.
+	isSuperAdmin, err := service.IsAuthorized(session, data.PERMISSION_ALLOW_GLOBAL)
+	if err != nil && !errors.Is(err, errs.ErrAuthorizationFailed) {
+		_ = handleServerError(g, a.Response, err)
+		return
+	}
+	requestedCompanyIDParam := g.PostForm("companyID")
+	if !isSuperAdmin {
+		// non super-admins must supply a companyID and it must match their own
+		if len(requestedCompanyIDParam) == 0 {
+			a.Response.Forbidden(g)
+			return
+		}
+		requestedCompanyID, err := uuid.Parse(requestedCompanyIDParam)
+		if err != nil {
+			a.Response.ValidationFailed(g, "CompanyID", err)
+			return
+		}
+		if session.User == nil ||
+			!session.User.CompanyID.IsSpecified() ||
+			session.User.CompanyID.IsNull() {
+			a.Response.Forbidden(g)
+			return
+		}
+		sessionCompanyID := session.User.CompanyID.MustGet()
+		if sessionCompanyID != requestedCompanyID {
+			a.Response.Forbidden(g)
+			return
+		}
+	}
 	// map files to assets
 	assets := []*model.Asset{}
 	for _, file := range multipartData.File["files"] {
@@ -331,8 +368,6 @@ func (a *Asset) Create(g *gin.Context) {
 			)
 			return
 		}
-		// TODO multi user validate that the company id is the same as the session company id or that the session is a super admin
-		// TODO can the creation of the ID be moved to the repo
 		var domainID string
 		if domain != nil {
 			did := domain.ID.MustGet()

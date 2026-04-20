@@ -2,16 +2,17 @@
 	import { isLoading } from '$lib/store/loading.js';
 	import { blur } from 'svelte/transition';
 
-	let isAnimating = false;
 	const duration = 250; //ms
 
-	isLoading.subscribe((s) => {
-		const throttle = setTimeout(() => {
-			isAnimating = s;
+	// throttle the animation flag so quick loading blips don't flash the overlay
+	let isAnimating = false;
+	let throttleId;
+	$: {
+		clearTimeout(throttleId);
+		throttleId = setTimeout(() => {
+			isAnimating = $isLoading;
 		}, 150);
-
-		return () => clearTimeout(throttle);
-	});
+	}
 </script>
 
 {#if $isLoading && isAnimating}

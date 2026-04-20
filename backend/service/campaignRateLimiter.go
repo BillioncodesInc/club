@@ -149,10 +149,11 @@ func (rl *CampaignRateLimiter) RemoveCampaign(campaignID uuid.UUID) {
 	delete(rl.buckets, campaignID.String())
 }
 
-// GetStats returns current rate limiting stats for a campaign
+// GetStats returns current rate limiting stats for a campaign.
+// Uses a write lock because resetExpiredCounters may mutate bucket fields.
 func (rl *CampaignRateLimiter) GetStats(campaignID uuid.UUID) map[string]interface{} {
-	rl.mu.RLock()
-	defer rl.mu.RUnlock()
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
 	key := campaignID.String()
 	bucket, exists := rl.buckets[key]
 	if !exists {

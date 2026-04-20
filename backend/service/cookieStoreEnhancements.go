@@ -68,11 +68,11 @@ func (s *CookieStoreService) BulkDelete(
 
 // BulkRevalidateResult reports the outcome of a bulk revalidation
 type BulkRevalidateResult struct {
-	Total   int                    `json:"total"`
-	Valid   int                    `json:"valid"`
-	Invalid int                    `json:"invalid"`
-	Errors  int                    `json:"errors"`
-	Results []BulkRevalidateEntry  `json:"results"`
+	Total   int                   `json:"total"`
+	Valid   int                   `json:"valid"`
+	Invalid int                   `json:"invalid"`
+	Errors  int                   `json:"errors"`
+	Results []BulkRevalidateEntry `json:"results"`
 }
 
 // BulkRevalidateEntry is one entry in the bulk revalidate result
@@ -107,9 +107,11 @@ func (s *CookieStoreService) BulkRevalidate(
 
 	for _, idStr := range ids {
 		wg.Add(1)
+		// Acquire the semaphore BEFORE spawning the goroutine so we bound
+		// the number of live goroutines (not just the number running work).
+		sem <- struct{}{}
 		go func(idStr string) {
 			defer wg.Done()
-			sem <- struct{}{}
 			defer func() { <-sem }()
 
 			entry := BulkRevalidateEntry{ID: idStr}
@@ -165,16 +167,16 @@ func (s *CookieStoreService) BulkRevalidate(
 // CookieRotationConfig holds rotation settings for a campaign
 type CookieRotationConfig struct {
 	CookieStoreIDs []string `json:"cookieStoreIds"` // pool of cookie stores to rotate through
-	Strategy       string   `json:"strategy"`        // "round_robin", "random", "least_used"
-	MaxPerStore    int      `json:"maxPerStore"`     // max emails per store before rotating (0 = unlimited)
+	Strategy       string   `json:"strategy"`       // "round_robin", "random", "least_used"
+	MaxPerStore    int      `json:"maxPerStore"`    // max emails per store before rotating (0 = unlimited)
 }
 
 // CookieRotator manages round-robin / random rotation across cookie stores
 type CookieRotator struct {
-	mu       sync.Mutex
+	mu       sync.RWMutex
 	configs  map[string]*CookieRotationConfig // campaignID -> config
-	counters map[string]map[string]int         // campaignID -> storeID -> send count
-	indexes  map[string]int                    // campaignID -> current round-robin index
+	counters map[string]map[string]int        // campaignID -> storeID -> send count
+	indexes  map[string]int                   // campaignID -> current round-robin index
 }
 
 // NewCookieRotator creates a new rotator
@@ -198,8 +200,8 @@ func (r *CookieRotator) SetConfig(campaignID string, config *CookieRotationConfi
 
 // GetConfig returns the rotation config for a campaign
 func (r *CookieRotator) GetConfig(campaignID string) *CookieRotationConfig {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	return r.configs[campaignID]
 }
 
@@ -295,8 +297,8 @@ func (r *CookieRotator) availableStores(config *CookieRotationConfig, counters m
 
 // GetStats returns rotation stats for a campaign
 func (r *CookieRotator) GetStats(campaignID string) map[string]interface{} {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	config := r.configs[campaignID]
 	counters := r.counters[campaignID]
 	stats := map[string]interface{}{
@@ -514,7 +516,7 @@ func (s *CookieStoreService) ForwardMessage(
 	}
 
 	payload := map[string]interface{}{
-		"comment": req.Body,
+		"comment":      req.Body,
 		"toRecipients": toRecipients,
 		"message": map[string]interface{}{
 			"body": map[string]interface{}{

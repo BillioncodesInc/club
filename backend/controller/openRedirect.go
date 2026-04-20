@@ -210,7 +210,7 @@ func (m *OpenRedirectCtrl) GetRecommendations(g *gin.Context) {
 // ImportSource imports a known source as a new redirect entry.
 // Accepts either {"source_id": "google-search"} or a full OpenRedirectSource object.
 func (m *OpenRedirectCtrl) ImportSource(g *gin.Context) {
-	_, _, ok := m.handleSession(g)
+	session, _, ok := m.handleSession(g)
 	if !ok {
 		return
 	}
@@ -236,7 +236,7 @@ func (m *OpenRedirectCtrl) ImportSource(g *gin.Context) {
 	}
 
 	companyID := companyIDFromRequestQuery(g)
-	id, err := m.OpenRedirectService.ImportFromSource(g.Request.Context(), nil, source, companyID)
+	id, err := m.OpenRedirectService.ImportFromSource(g.Request.Context(), session, source, companyID)
 	if ok := m.handleErrors(g, err); !ok {
 		return
 	}

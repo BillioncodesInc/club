@@ -101,3 +101,7 @@ func (r *KeyRateLimiter) GetLimiter(key string) *rate.Limiter {
 
 	return entry.limiter
 }
+
+// Note: a per-username login lockout on top of this IP-based limiter lives in
+// controller/user.go (loginLockout) to avoid an import cycle with the
+// controller package that middleware already depends on.

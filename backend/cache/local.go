@@ -31,10 +31,8 @@ func IsUpdateAvailable() bool {
 	return isUpdateAvailable.Load()
 }
 
-// TODO all priority event functions should be in utils or something, and the priority in the data package.
-// var CampaignEventPriority = map[]
-// Add priority rankings (higher number = higher priority)
-// readonly
+// CampaignEventPriority maps campaign event names to their notability priority.
+// Higher number = higher priority. Treat as read-only.
 var CampaignEventPriority = map[string]int{
 	// campaign recipient events
 	data.EVENT_CAMPAIGN_RECIPIENT_REPORTED:             90,

@@ -46,15 +46,11 @@ func (a *Attachment) Create(
 		a.AuditLogNotAuthorized(ae)
 		return createdIDs, errs.ErrAuthorizationFailed
 	}
-	// @TODO for now we allow dublicate names - should we?
-	// without no dubs it is easier to reason between attachments
-	// with dubs it is easier to import a collection of files and etc
 
 	// upload the files
 	contextFolder := ""
 	// ensure that all attachments have the same context
 	// and map attachments to files
-	// @TODO move out of here
 	differentContextError := fmt.Errorf(
 		"all attachments must have the same context '%s'",
 		contextFolder,
@@ -149,10 +145,10 @@ func (a *Attachment) Create(
 		)
 		if err != nil {
 			a.Logger.Debugw("failed to save attachment", "error", err)
-			// TODO remove all previously uploaded files
-			// buut maybe not, it would be annoying if there is a multi user system
-			// and a user uploads a huge amount of files and one fails and does this
-			// repeatedly to burn the server
+			// NOTE: previously uploaded files are intentionally not cleaned up here.
+			// Automatic cleanup on DB-insert failure would be a DoS vector in a
+			// multi-user system: a caller could repeatedly force partial failures to
+			// burn disk IO. Orphaned files should be reconciled out-of-band.
 			return createdIDs, errs.Wrap(err)
 		}
 	}

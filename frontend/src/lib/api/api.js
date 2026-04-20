@@ -69,15 +69,15 @@ const appendQuery = (query) => {
 	if (sortBy) {
 		//  normalize the sortby field by lowercasing and replacing spacing with underscores
 		const normalizedSortBy = sortBy.toLowerCase().replace(/\s+/g, '_');
-		urlQuery += `&sortBy=${normalizedSortBy}`;
+		urlQuery += `&sortBy=${encodeURIComponent(normalizedSortBy)}`;
 	}
 	if (sortOrder) {
-		urlQuery += `&sortOrder=${sortOrder}`;
+		urlQuery += `&sortOrder=${encodeURIComponent(sortOrder)}`;
 	} else {
 		urlQuery += `&sortOrder=asc`;
 	}
 	if (search) {
-		urlQuery += `&search=${search}`;
+		urlQuery += `&search=${encodeURIComponent(search)}`;
 	}
 	if (includeTest === true) {
 		urlQuery += `&includeTest=true`;

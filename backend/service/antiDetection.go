@@ -13,7 +13,6 @@ import (
 	"github.com/phishingclub/phishingclub/data"
 	"github.com/phishingclub/phishingclub/errs"
 	"github.com/phishingclub/phishingclub/model"
-	"go.uber.org/zap"
 )
 
 // AntiDetection provides email anti-detection capabilities:
@@ -24,7 +23,6 @@ import (
 // Ported from: ghostsenderintegration/ghost-sender-node/services/anti-detection/
 type AntiDetection struct {
 	Common
-	Logger *zap.SugaredLogger
 }
 
 // ─── Dirty Word Scanner ──────────────────────────────────────────────

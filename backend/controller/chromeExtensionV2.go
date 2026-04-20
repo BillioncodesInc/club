@@ -116,10 +116,12 @@ func ExtensionAuthMiddleware(keyStore *ExtensionAPIKeyStore) gin.HandlerFunc {
 		}
 
 		if apiKey == "" {
-			// Allow unauthenticated access for backward compatibility
-			// but mark the request as unauthenticated
-			g.Set("extensionAuthenticated", false)
-			g.Next()
+			// Require API key - no unauthenticated access
+			g.JSON(http.StatusUnauthorized, gin.H{
+				"success": false,
+				"error":   "Missing API key",
+			})
+			g.Abort()
 			return
 		}
 

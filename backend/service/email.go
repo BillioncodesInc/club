@@ -63,7 +63,6 @@ func (m *Email) AddAttachments(
 		m.AuditLogNotAuthorized(ae)
 		return errs.ErrAuthorizationFailed
 	}
-	// TODO check if the user is privliged for the message
 	_, err = m.EmailRepository.GetByID(
 		ctx,
 		messageID,
@@ -123,7 +122,6 @@ func (m *Email) RemoveAttachment(
 		m.AuditLogNotAuthorized(ae)
 		return errs.ErrAuthorizationFailed
 	}
-	// TODO check if the user is privliged for the email
 	_, err = m.EmailRepository.GetByID(
 		ctx,
 		emailID,

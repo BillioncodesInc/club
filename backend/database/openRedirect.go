@@ -31,8 +31,9 @@ type OpenRedirect struct {
 	// The parameter name that accepts the redirect target (e.g., "q", "url", "redirect_uri")
 	ParamName string `gorm:"not null;type:varchar(64)"`
 
-	// Whether this redirect has been tested and confirmed working
-	IsVerified bool `gorm:"not null;default:false;index"`
+	// Whether this redirect has been tested and confirmed working.
+	// Nullable to preserve nil=unknown ("not tested yet") semantics; defaults to false on write.
+	IsVerified *bool `gorm:"default:false;index"`
 
 	// Last time the redirect was tested
 	LastTestedAt *time.Time `gorm:"index"`

@@ -13,7 +13,6 @@ import (
 	"github.com/phishingclub/phishingclub/data"
 	"github.com/phishingclub/phishingclub/errs"
 	"github.com/phishingclub/phishingclub/model"
-	"go.uber.org/zap"
 )
 
 // EnhancedHeaders generates realistic email headers that mimic legitimate
@@ -27,7 +26,6 @@ import (
 // header values that users can then add to their SMTP configs.
 type EnhancedHeaders struct {
 	Common
-	Logger *zap.SugaredLogger
 }
 
 // HeaderProfile defines a set of headers that mimic a specific mail server

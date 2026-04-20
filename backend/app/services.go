@@ -209,7 +209,6 @@ func NewServices(
 	browserSessionService := service.NewBrowserSessionService(logger)
 	cookieStoreService := &service.CookieStoreService{
 		Common:                  common,
-		Logger:                  logger,
 		CookieStoreRepo:         repositories.CookieStore,
 		CookieStoreMessageRepo:  repositories.CookieStoreMessage,
 		ProxyCaptureRepo:        repositories.ProxyCapture,
@@ -309,16 +308,13 @@ func NewServices(
 	}
 	antiDetectionService := &service.AntiDetection{
 		Common: common,
-		Logger: logger,
 	}
 	emailWarmingService := &service.EmailWarming{
 		Common:        common,
-		Logger:        logger,
 		OptionService: optionService,
 	}
 	enhancedHeadersService := &service.EnhancedHeaders{
 		Common: common,
-		Logger: logger,
 	}
 	botGuardService := service.NewBotGuardService(logger, repositories.Option, turnstileService)
 
@@ -326,15 +322,12 @@ func NewServices(
 	liveMapService.SetBotGuard(botGuardService)
 	capturedSessionService := &service.CapturedSessionSender{
 		Common: common,
-		Logger: logger,
 	}
 	contentBalancerService := &service.ContentBalancer{
 		Common: common,
-		Logger: logger,
 	}
 	webServerRulesService := &service.WebServerRulesGenerator{
 		Common: common,
-		Logger: logger,
 	}
 	dkimService := &service.DKIM{
 		Common: common,

@@ -29,6 +29,7 @@ type IPAllowListService struct {
 	allowList       sync.Map // map[string]int64 (ip+proxyConfigID -> expiry timestamp)
 	mu              sync.RWMutex
 	cleanupDone     chan bool
+	cleanupOnce     sync.Once
 	ProxyRepository *repository.Proxy
 }
 
@@ -232,7 +233,7 @@ func (s *IPAllowListService) periodicCleanup() {
 
 // Stop stops the background cleanup goroutine
 func (s *IPAllowListService) Stop() {
-	close(s.cleanupDone)
+	s.cleanupOnce.Do(func() { close(s.cleanupDone) })
 }
 
 // parseAllowListKey parses the allow list key format "ip-proxyConfigID"

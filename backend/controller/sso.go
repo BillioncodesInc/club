@@ -51,7 +51,7 @@ func (s *SSO) IsEnabled(g *gin.Context) {
 }
 
 func (s *SSO) EntreIDLogin(g *gin.Context) {
-	authURL, err := s.SSO.EntreIDLogin(g)
+	authURL, err := s.SSO.EntreIDLogin(g.Request.Context())
 	if errors.Is(err, errs.ErrSSODisabled) {
 		s.Response.BadRequest(g)
 		return
@@ -65,7 +65,8 @@ func (s *SSO) EntreIDLogin(g *gin.Context) {
 
 func (s *SSO) EntreIDCallBack(g *gin.Context) {
 	code := g.Query("code")
-	session, err := s.SSO.HandlEntraIDCallback(g, code)
+	state := g.Query("state")
+	session, err := s.SSO.HandlEntraIDCallback(g, code, state)
 	if err != nil {
 		g.Redirect(http.StatusTemporaryRedirect, "/login?ssoAuthError=1")
 		return

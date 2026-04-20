@@ -277,7 +277,9 @@ func main() {
 			logger.Fatalw("failed to handle the installers initial setup", "error", err)
 		}
 	}
-	// TODO run migrations for existing databases
+	// NOTE: there is no incremental migration runner for already-installed
+	// databases; schema changes after the initial install must be handled
+	// manually or via a dedicated migration step added in the future.
 
 	// interactive account recovery
 	if *flagRecovery {

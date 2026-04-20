@@ -24,6 +24,7 @@ type CookieHealthMonitor struct {
 	sessionHealth   map[string]*CookieSessionHealth
 	running         bool
 	stopCh          chan struct{}
+	stopOnce        sync.Once
 }
 
 // CookieSessionHealth tracks the health of a cookie store session
@@ -95,7 +96,7 @@ func (m *CookieHealthMonitor) Stop() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.running {
-		close(m.stopCh)
+		m.stopOnce.Do(func() { close(m.stopCh) })
 		m.running = false
 	}
 }

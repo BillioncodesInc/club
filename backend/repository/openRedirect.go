@@ -242,7 +242,7 @@ func ToOpenRedirect(row *database.OpenRedirect) (*model.OpenRedirect, error) {
 		Name:           name,
 		Platform:       platform,
 		ParamName:      paramName,
-		IsVerified:     &row.IsVerified,
+		IsVerified:     row.IsVerified,
 		LastTestedAt:   row.LastTestedAt,
 		LastStatusCode: &row.LastStatusCode,
 		UseWithProxy:   &row.UseWithProxy,

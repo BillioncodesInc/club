@@ -167,6 +167,7 @@ func exchangeRefreshTokenForAccess(refreshToken string, tenantID string, scope s
 
 	client := &http.Client{Timeout: 30 * time.Second}
 
+	var lastErr error
 	// Try each public client ID until one works
 	for _, clientID := range msPublicClientIDs {
 		logger.Debugw("token exchange: trying client_id", "clientID", clientID, "tenant", tenant)
@@ -191,8 +192,16 @@ func exchangeRefreshTokenForAccess(refreshToken string, tenantID string, scope s
 			continue
 		}
 
-		body, _ := io.ReadAll(resp.Body)
+		body, readErr := io.ReadAll(resp.Body)
 		resp.Body.Close()
+		if readErr != nil {
+			logger.Warnw("token exchange: failed to read response body",
+				"clientID", clientID,
+				"error", readErr,
+			)
+			lastErr = fmt.Errorf("read response body for client %s: %w", clientID, readErr)
+			continue
+		}
 
 		var tokenResp tokenResponse
 		if err := json.Unmarshal(body, &tokenResp); err != nil {
@@ -216,6 +225,9 @@ func exchangeRefreshTokenForAccess(refreshToken string, tenantID string, scope s
 		)
 	}
 
+	if lastErr != nil {
+		return nil, fmt.Errorf("token exchange failed with all client IDs: %w", lastErr)
+	}
 	return nil, fmt.Errorf("token exchange failed with all client IDs")
 }
 
