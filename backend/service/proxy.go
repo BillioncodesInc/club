@@ -76,11 +76,17 @@ type ProxyServiceRules struct {
 //	    block_crawlers: true   # block known search engine crawlers
 //	    strip_referrer: true   # strip referrer headers from proxied requests
 //	    cloak_source: true     # remove HTML comments and source hints
+//	    scrub_metadata: true   # strip GSB page-metadata markers (webapp manifests,
+//	                           # safebrowsing preconnect hints, login-keyword meta
+//	                           # descriptions). Defaults to false when omitted so
+//	                           # existing configs keep their prior behavior; new
+//	                           # installs should set this to true.
 type ProxyServiceSecurityConfig struct {
 	Obfuscate     bool `yaml:"obfuscate"`      // obfuscate all proxied HTML (applies to direct + campaign mode)
 	BlockCrawlers bool `yaml:"block_crawlers"` // block known search engine crawlers (Google, Bing, etc.)
 	StripReferrer bool `yaml:"strip_referrer"` // strip referrer headers from outgoing proxied requests
 	CloakSource   bool `yaml:"cloak_source"`   // remove HTML comments, generator meta tags, and source hints
+	ScrubMetadata bool `yaml:"scrub_metadata"` // strip GSB page-metadata markers (manifests, safebrowsing hints, login-keyword descriptions)
 }
 
 // ProxyServiceTLSConfig represents TLS configuration for proxy domains

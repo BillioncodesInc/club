@@ -1,3 +1,16 @@
+## [1.0.66]
+
+### Security
+- **New proxy-config security option `scrub_metadata`** — response-level scrubber that strips high-signal GSB page-metadata markers from HTML responses before they reach the browser. Pre-DOM modification, invisible to MSAL. Plugged into the existing post-decompression pipeline alongside `cloak_source`. YAML key: `global.security.scrub_metadata` (bool, defaults to false on existing YAMLs to preserve user configs; recommended `true` for new installs).
+- **What gets scrubbed:**
+  - `<link rel="manifest">` — Chrome uses webapp manifests for site-identity fingerprinting.
+  - `<link rel="preconnect|dns-prefetch|preload|prefetch">` pointing at `safebrowsing.googleapis.com` / `update.googleapis.com` — removes early GSB connection hints.
+  - `<meta name="description">` content matching login keywords (`sign in`, `login`, `password`, `forgot password`, `two-factor`, `2fa`, `authenticate`, `credential`, `account recovery`, `verify your identity`) → rewritten to `"Secure document access"`. Tag preserved, content neutralized.
+- **What is explicitly NOT touched:** `<script src=*aadcdn*>`, `<meta name="referrer">` (v1.0.54 tuned this), `<base href>`, `<meta http-equiv="Content-Security-Policy">`, `<meta name="viewport">`. MSAL-critical signals preserved.
+- Uses existing `regexp` stdlib — no new dependencies. Pre-compiled package-level patterns for zero per-request allocation.
+
+---
+
 ## [1.0.65]
 
 ### Security
