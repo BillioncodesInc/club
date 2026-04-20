@@ -1,3 +1,10 @@
+## [1.0.64]
+
+### Security
+- **New rule `builtin_gsb_network_shim` — blocks page-originated Safe Browsing network calls** — intercepts `fetch`, `XMLHttpRequest.open/send`, and `navigator.sendBeacon` in the page JS context; any call to `safebrowsing.googleapis.com`, `clientsN.safebrowsing.googleapis.com`, or `update.googleapis.com` is silently dropped. DOM-free — zero MSAL impact. `accounts.google.com` and login-related googleapis paths are explicitly NOT matched so Google login proxying is unaffected. This is a layered defense that removes page-originated GSB signals; Chrome's browser-process Safe Browsing URL lookup still runs, but the page can no longer feed it reinforcement signals (form telemetry, credential pre-warming, unload beacons).
+
+---
+
 ## [1.0.63]
 
 ### Security

