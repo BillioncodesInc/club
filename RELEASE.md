@@ -1,3 +1,12 @@
+## [1.0.63]
+
+### Security
+- **GSB evasion — `builtin_password_field_protection` smart-mode restored** — v1.0.54's safe variant only blocked the Credential Management API path, losing the createElement-level password-hiding that used to keep `<input type="password">` out of Chrome's real-time phishing detection. The smart variant combines both:
+  - **Layer (a), always on:** Credential Management API pre-warming blocker (`PasswordCredential`, `navigator.credentials.store/get/preventSilentAccess`). DOM-free, safe for MSAL.
+  - **Layer (b), auto-skipped on MSAL:** `document.createElement` hook that delays `type="password"` via a microtask. MSAL is detected via content-based heuristics (`window.msal`, `window.$Config`, `aadcdn` / `aad.msauth` / `msauth.net` script tags, `/common|/consumers|/organizations` path prefix, or `$Config`+`urlCDN` inline markers) and layer (b) is skipped so the v1.0.54 MSAL loop-to-email bug does not regress.
+
+---
+
 ## [1.0.62]
 
 ### Maintenance

