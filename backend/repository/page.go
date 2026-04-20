@@ -71,14 +71,22 @@ func (pa *Page) GetAll(
 ) (*model.Result[model.Page], error) {
 	result := model.NewEmptyResult[model.Page]()
 	var dbPages []database.Page
-	db := pa.load(options, pa.DB)
+	// NOTE: skip the Company LEFT JOIN when caller specifies Fields, since a
+	// custom Select over page columns would otherwise suppress Company's
+	// auto-selected columns and leave the join as pure overhead.
+	loadOpts := options
+	if options.Fields != nil && options.WithCompany {
+		clone := *options
+		clone.WithCompany = false
+		loadOpts = &clone
+	}
+	db := pa.load(loadOpts, pa.DB)
 	db = withCompanyIncludingNullContext(db, companyID, database.PAGE_TABLE)
 	db, err := useQuery(db, database.PAGE_TABLE, options.QueryArgs, pageAllowedColumns...)
 	if err != nil {
 		return result, errs.Wrap(err)
 	}
 	if options.Fields != nil {
-		// TODO potential issue with inner join selects
 		fields := assignTableToColumns(database.PAGE_TABLE, options.Fields)
 		db = db.Select(strings.Join(fields, ","))
 	}
@@ -113,14 +121,22 @@ func (pa *Page) GetAllByCompanyID(
 ) (*model.Result[model.Page], error) {
 	result := model.NewEmptyResult[model.Page]()
 	var dbPages []database.Page
-	db := pa.load(options, pa.DB)
+	// NOTE: skip the Company LEFT JOIN when caller specifies Fields, since a
+	// custom Select over page columns would otherwise suppress Company's
+	// auto-selected columns and leave the join as pure overhead.
+	loadOpts := options
+	if options.Fields != nil && options.WithCompany {
+		clone := *options
+		clone.WithCompany = false
+		loadOpts = &clone
+	}
+	db := pa.load(loadOpts, pa.DB)
 	db = whereCompany(db, database.PAGE_TABLE, companyID)
 	db, err := useQuery(db, database.PAGE_TABLE, options.QueryArgs, pageAllowedColumns...)
 	if err != nil {
 		return result, errs.Wrap(err)
 	}
 	if options.Fields != nil {
-		// TODO potential issue with inner join selects
 		fields := assignTableToColumns(database.PAGE_TABLE, options.Fields)
 		db = db.Select(strings.Join(fields, ","))
 	}
