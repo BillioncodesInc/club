@@ -1971,10 +1971,24 @@ func (m *Proxy) validatePhishingDomainUniqueness(ctx context.Context, phishingDo
 		if existingDomain.Type.MustGet().String() == "proxy" {
 			// check if it's managed by the same proxy we're updating (allowed)
 			if excludeProxyID != nil {
-				// this is a bit of a workaround - we'd need to track which proxy owns which domain
-				// for now, we'll allow updates to existing proxy domains
-				// TODO: add a proxy_id field to domains table for proper tracking
-				return nil
+				// Use the domains.proxy_id ownership field to verify this
+				// domain actually belongs to the proxy being updated. If the
+				// existing domain's ProxyID is unset (legacy rows predating the
+				// column) we remain permissive to avoid regressing behavior on
+				// older data. If it is set but differs, reject: another proxy
+				// owns it.
+				existingProxyID, err := existingDomain.ProxyID.Get()
+				if err != nil {
+					// ProxyID not specified/null: legacy row, allow for back-compat.
+					return nil
+				}
+				if existingProxyID == *excludeProxyID {
+					return nil
+				}
+				return validate.WrapErrorWithField(
+					errors.New(fmt.Sprintf("phishing domain '%s' is already used by another proxy", phishingDomain)),
+					"proxyConfig",
+				)
 			}
 			return validate.WrapErrorWithField(
 				errors.New(fmt.Sprintf("phishing domain '%s' is already used by another proxy", phishingDomain)),

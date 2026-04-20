@@ -137,7 +137,10 @@ func (u *User) CreateFromSSO(
 	email string,
 	externalID string,
 ) (*uuid.UUID, error) {
-	ae := NewAuditEvent("User.SSOCreate", nil) // TODO could be a system session
+	// SSO-triggered user creation is system-initiated (no authenticated user
+	// session), so we tag the audit event with the system session sentinel.
+	systemSession, _ := model.NewSystemSession()
+	ae := NewAuditEvent("User.SSOCreate", systemSession)
 	// check if user already exists by email
 	emailVO, err := vo.NewEmail(email)
 	if err != nil {

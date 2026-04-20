@@ -598,7 +598,6 @@ func sortRecipients(recipients []*model.Recipient, sortOrder, sortField string) 
 		})
 	case "desc":
 		sort.Slice(recipients, func(a, b int) bool {
-			// TODO implements the rest of the fields
 			switch sortField {
 			case "email":
 				if v, err := recipients[a].Email.Get(); err == nil {

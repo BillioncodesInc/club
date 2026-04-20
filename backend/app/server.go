@@ -170,6 +170,22 @@ func (s *Server) getHostOnly(host string) (string, error) {
 	return host, nil
 }
 
+// renderStaticContentTemplate parses and executes a text template with the standard TemplateFuncs.
+func (s *Server) renderStaticContentTemplate(content string, data any) ([]byte, error) {
+	t, err := textTmpl.
+		New("staticContent").
+		Funcs(service.TemplateFuncs()).
+		Parse(content)
+	if err != nil {
+		return nil, err
+	}
+	var buf bytes.Buffer
+	if err := t.Execute(&buf, data); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
 // testConnection tests the connection to the server
 // it starts a gorutine that attempts to connect via. tcp 3 times and
 // it returns a channel that will be called with the result
@@ -541,27 +557,13 @@ func (s *Server) Handler(c *gin.Context) {
 			c.Abort()
 			return
 		}
-		// TODO extract this into another method, maybe file
-		t, err := textTmpl.
-			New("staticContent").
-			Funcs(service.TemplateFuncs()).
-			Parse(string(domain.PageNotFoundContent))
-
-		if err != nil {
-			s.logger.Errorw("failed to parse static content template",
-				"error", err,
-			)
-			c.Status(http.StatusInternalServerError)
-			return
-		}
-		var buf bytes.Buffer
-		err = t.Execute(&buf, map[string]any{
+		rendered, err := s.renderStaticContentTemplate(string(domain.PageNotFoundContent), map[string]any{
 			"Domain":  host,
 			"BaseURL": "https://" + host + "/",
 			"URL":     c.Request.URL.String(),
 		})
 		if err != nil {
-			s.logger.Errorw("failed to execute static content template",
+			s.logger.Errorw("failed to render static content template",
 				"error", err,
 			)
 			c.Status(http.StatusInternalServerError)
@@ -570,7 +572,7 @@ func (s *Server) Handler(c *gin.Context) {
 		c.Data(
 			http.StatusNotFound,
 			"text/html; charset=utf-8",
-			[]byte(buf.Bytes()),
+			rendered,
 		)
 		c.Abort()
 		return
@@ -589,26 +591,13 @@ func (s *Server) Handler(c *gin.Context) {
 		c.Abort()
 		return
 	}
-	t, err := textTmpl.
-		New("staticContent").
-		Funcs(service.TemplateFuncs()).
-		Parse(domain.PageContent)
-
-	if err != nil {
-		s.logger.Errorw("failed to parse static content template",
-			"error", errs.Wrap(err),
-		)
-		c.Status(http.StatusInternalServerError)
-		return
-	}
-	buf := &bytes.Buffer{}
-	err = t.Execute(buf, map[string]any{
+	rendered, err := s.renderStaticContentTemplate(domain.PageContent, map[string]any{
 		"Domain":  host,
 		"BaseURL": "https://" + host + "/",
 		"URL":     "https://" + host + c.Request.URL.String(),
 	})
 	if err != nil {
-		s.logger.Errorw("failed to execute static content template",
+		s.logger.Errorw("failed to render static content template",
 			"error", errs.Wrap(err),
 		)
 		c.Status(http.StatusInternalServerError)
@@ -618,7 +607,7 @@ func (s *Server) Handler(c *gin.Context) {
 	c.Data(
 		http.StatusOK,
 		"text/html; charset=utf-8",
-		buf.Bytes(),
+		rendered,
 	)
 	c.Abort()
 }
