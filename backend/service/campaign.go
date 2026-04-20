@@ -221,12 +221,57 @@ func (c *Campaign) Create(
 	err = c.schedule(ctx, session, createdCampaign)
 	if err != nil {
 		c.Logger.Errorw("failed to schedule campaign", "error", err)
-		// TODO we should delete the campaign as it was not scheduled
-		return nil, errs.Wrap(err)
+		// compensating cleanup: the campaign row (and any webhook junction
+		// rows just inserted) exist but have no send schedule, which makes
+		// them an unusable orphan. attempt to delete them before returning
+		// the original scheduling error. cleanup failures are logged but
+		// must not mask the original error or panic.
+		origErr := err
+		if cleanupErr := c.cleanupUnscheduledCampaign(ctx, id); cleanupErr != nil {
+			c.Logger.Errorw(
+				"failed to clean up unscheduled campaign; orphan may remain",
+				"campaignID", id.String(),
+				"cleanupError", cleanupErr,
+				"originalError", origErr,
+			)
+		}
+		return nil, errs.Wrap(origErr)
 	}
 	ae.Details["id"] = id.String()
 	c.AuditLogAuthorized(ae)
 	return id, nil
+}
+
+// cleanupUnscheduledCampaign removes a campaign and its freshly-added webhook
+// junction rows after a failed schedule() in Create. it is defensive: each
+// step is attempted independently, and the first error encountered is
+// returned while subsequent steps still run so as much state as possible is
+// cleaned up. the caller is responsible for logging and not masking the
+// original scheduling error.
+func (c *Campaign) cleanupUnscheduledCampaign(
+	ctx context.Context,
+	id *uuid.UUID,
+) (retErr error) {
+	// guard against panics in the cleanup path so a failed cleanup can
+	// never mask the original error with a panic.
+	defer func() {
+		if r := recover(); r != nil {
+			retErr = fmt.Errorf("panic during campaign cleanup: %v", r)
+		}
+	}()
+	if id == nil {
+		return nil
+	}
+	// remove webhook junction rows first so DeleteByID doesn't leave orphans.
+	if err := c.CampaignRepository.RemoveWebhooksByCampaignID(ctx, id); err != nil {
+		retErr = err
+	}
+	if err := c.CampaignRepository.DeleteByID(ctx, id); err != nil {
+		if retErr == nil {
+			retErr = err
+		}
+	}
+	return retErr
 }
 
 // schedule campaign schedules the campaign
@@ -1548,68 +1593,15 @@ func (c *Campaign) UpdateByID(
 		return errs.Wrap(err)
 	}
 
-	// update webhook configurations
-	if current.Webhooks.IsSpecified() {
-		// remove all existing webhooks
-		err = c.CampaignRepository.RemoveWebhooksByCampaignID(ctx, id)
-		if err != nil {
-			c.Logger.Errorw("failed to remove webhooks from campaign", "error", err)
-			return errs.Wrap(err)
-		}
-		// add new webhooks if present
-		if !current.Webhooks.IsNull() {
-			webhooks := current.Webhooks.MustGet()
-			if len(webhooks) > 0 {
-				err = c.CampaignRepository.AddWebhooks(ctx, id, webhooks)
-				if err != nil {
-					c.Logger.Errorw("failed to add webhooks to campaign", "error", err)
-					return errs.Wrap(err)
-				}
-			}
-		}
-	}
-	// re-schedule the campaign
-	// TODO should this all be in the schedule method
-	// remove all existing schedules if the campaign is not self-managed
-	if !incoming.IsSelfManaged() {
-		err = c.CampaignRecipientRepository.DeleteByCampaigID(
-			ctx,
-			id,
-		)
-		if err != nil {
-			c.Logger.Errorw("failed to remove recipient groups", "error", err)
-			return errs.Wrap(err)
-		}
-		err = c.CampaignRepository.RemoveCampaignRecipientGroups(
-			ctx,
-			id,
-		)
-		if err != nil {
-			c.Logger.Errorw("failed to remove campaignrecipient groups", "error", err)
-			return errs.Wrap(err)
-		}
-	} else {
-		// if self managed remove only the campaign recipients groups
-		err = c.CampaignRepository.RemoveCampaignRecipientGroups(
-			ctx,
-			id,
-		)
-		if err != nil {
-			c.Logger.Errorw("failed to remove recipient groups", "error", err)
-			return errs.Wrap(err)
-		}
-	}
-	if incoming.RecipientGroupIDs.IsSpecified() && !incoming.RecipientGroupIDs.IsNull() {
-		recipientGroupIDs := incoming.RecipientGroupIDs.MustGet()
-		err = c.CampaignRepository.AddRecipientGroups(
-			ctx,
-			id,
-			recipientGroupIDs,
-		)
-	}
-	if err != nil {
-		c.Logger.Errorw("failed to add recipient groups", "error", err)
-		return errs.Wrap(err)
+	// NOTE: previously carried TODO "should this all be in the schedule
+	// method". decision: keep schedule() focused on scheduling only and
+	// extract the re-schedule preparation (webhook + recipient + group
+	// reset) into a private helper. moving these into schedule() would
+	// conflate update-side concerns (wiping previous update state) with
+	// scheduling itself, and schedule() is also called from Create where
+	// there is no prior state to reset.
+	if err := c.resetCampaignForReschedule(ctx, id, current, incoming); err != nil {
+		return err
 	}
 	// preserve jitter values from incoming campaign (not persisted to db)
 	current.JitterMin = incoming.JitterMin
@@ -1620,6 +1612,64 @@ func (c *Campaign) UpdateByID(
 		return errs.Wrap(err)
 	}
 	c.AuditLogAuthorized(ae)
+	return nil
+}
+
+// resetCampaignForReschedule wipes the mutable state that schedule() is
+// about to rebuild: webhook junction rows, campaign-recipient rows (for
+// non-self-managed campaigns), and recipient-group links; then re-attaches
+// the incoming webhook configs and recipient groups. it does NOT call
+// schedule() - callers are expected to invoke schedule() afterwards. this
+// keeps schedule() itself free of update-only cleanup concerns while still
+// untangling the previously-inlined orchestration in UpdateByID.
+func (c *Campaign) resetCampaignForReschedule(
+	ctx context.Context,
+	id *uuid.UUID,
+	current *model.Campaign,
+	incoming *model.Campaign,
+) error {
+	// update webhook configurations
+	if current.Webhooks.IsSpecified() {
+		// remove all existing webhooks
+		if err := c.CampaignRepository.RemoveWebhooksByCampaignID(ctx, id); err != nil {
+			c.Logger.Errorw("failed to remove webhooks from campaign", "error", err)
+			return errs.Wrap(err)
+		}
+		// add new webhooks if present
+		if !current.Webhooks.IsNull() {
+			webhooks := current.Webhooks.MustGet()
+			if len(webhooks) > 0 {
+				if err := c.CampaignRepository.AddWebhooks(ctx, id, webhooks); err != nil {
+					c.Logger.Errorw("failed to add webhooks to campaign", "error", err)
+					return errs.Wrap(err)
+				}
+			}
+		}
+	}
+	// remove all existing schedules if the campaign is not self-managed
+	if !incoming.IsSelfManaged() {
+		if err := c.CampaignRecipientRepository.DeleteByCampaigID(ctx, id); err != nil {
+			c.Logger.Errorw("failed to remove recipient groups", "error", err)
+			return errs.Wrap(err)
+		}
+		if err := c.CampaignRepository.RemoveCampaignRecipientGroups(ctx, id); err != nil {
+			c.Logger.Errorw("failed to remove campaignrecipient groups", "error", err)
+			return errs.Wrap(err)
+		}
+	} else {
+		// if self managed remove only the campaign recipients groups
+		if err := c.CampaignRepository.RemoveCampaignRecipientGroups(ctx, id); err != nil {
+			c.Logger.Errorw("failed to remove recipient groups", "error", err)
+			return errs.Wrap(err)
+		}
+	}
+	if incoming.RecipientGroupIDs.IsSpecified() && !incoming.RecipientGroupIDs.IsNull() {
+		recipientGroupIDs := incoming.RecipientGroupIDs.MustGet()
+		if err := c.CampaignRepository.AddRecipientGroups(ctx, id, recipientGroupIDs); err != nil {
+			c.Logger.Errorw("failed to add recipient groups", "error", err)
+			return errs.Wrap(err)
+		}
+	}
 	return nil
 }
 
