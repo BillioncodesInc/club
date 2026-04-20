@@ -531,7 +531,15 @@ func (c *Campaign) schedule(
 		}
 		//  interval is the minutes between each recipient schedule
 		//interval := int(campaignDuration.Minutes()) / (recipientsCount - 1) // -1 as the first send it placed at the start time
+		// recipientsCount == 1 is handled above with an early return, so the
+		// divisor is >= 1 here. Round down to whole-minute granularity so sends
+		// aren't fired at odd sub-second offsets, with a 1-minute minimum to
+		// avoid a zero-interval inner loop.
 		interval := time.Duration(campaignDuration.Nanoseconds() / int64(recipientsCount-1))
+		interval = interval.Truncate(time.Minute)
+		if interval < time.Minute {
+			interval = time.Minute
+		}
 		dayStartTime := campaign.ConstraintStartTime.MustGet()
 		dayEndTime := campaign.ConstraintEndTime.MustGet()
 		// schedule each recipient
@@ -596,9 +604,18 @@ func (c *Campaign) schedule(
 	// handle basic delivery schedule
 	// it is when there is no constraints, equal distribution between start and end datetime
 	campaignDuration := endAt.Sub(startAt)
-	// Calculate interval between emails
-	// TODO make this work in minutes
+	// Calculate interval between emails. recipientsCount == 1 is handled above
+	// with an early return, and SendEndAt is validated to be after SendStartAt
+	// at the model level, so the divisor is >= 1 and campaignDuration >= 0 here.
 	interval := time.Duration(campaignDuration.Nanoseconds() / int64(recipientsCount-1))
+	// Round down to whole-minute granularity so sends aren't fired at odd
+	// sub-second offsets (the send loop ticks on a coarser cadence anyway).
+	// Enforce a 1-minute minimum in case duration/recipients collapses interval
+	// below a minute, which would otherwise schedule everything at startAt.
+	interval = interval.Truncate(time.Minute)
+	if interval < time.Minute {
+		interval = time.Minute
+	}
 	for i, recipient := range recipients {
 		// calculate base time from original schedule, not previous jittered time
 		baseTime := startAt.Add(time.Duration(i) * interval)
