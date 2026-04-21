@@ -136,7 +136,7 @@
 		<!-- Sender Variants (optional) -->
 		<div class="bg-white dark:bg-gray-800 rounded-lg shadow-md dark:shadow-none border border-gray-200 dark:border-gray-700 p-4 transition-colors duration-200">
 			<div class="flex justify-between items-center mb-3">
-				<h2 class="font-semibold text-gray-700 dark:text-gray-200">Sender Variants <span class="text-xs text-gray-400">(optional)</span></h2>
+				<h2 class="font-semibold text-gray-700 dark:text-gray-200">Sender Variants <span class="text-xs text-gray-600 dark:text-gray-400">(optional)</span></h2>
 				<button on:click={addSenderVariant} class="text-sm text-cta-blue hover:underline">+ Add Sender</button>
 			</div>
 

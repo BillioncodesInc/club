@@ -1,3 +1,27 @@
+## [1.0.71]
+
+### Admin UI — design system, accessibility, responsive
+
+**Button variant system**
+`Button.svelte` rewritten as a unified primitive. New `variant` prop (`primary|secondary|danger|ghost|outline`, default `primary`) + `size` prop (`sm|md|lg`, default `md`). Tailwind variant/size class maps with dark-mode parity, focus ring, disabled state. Legacy `backgroundColor` / `css` / `small|medium|large` aliases still accepted as escape hatches so existing call sites render byte-identical. `BigButton` / `CTAbutton` / `FormButton` left alongside for incremental migration.
+
+**Icon-button accessibility + keyboard normalization**
+New `$lib/utils/a11y.js` exports `buttonRoleKeydown(e, handler)` that fires on both `Enter` and `Space` (previous code handled Enter only). Applied to: all four Toast role-buttons + dismiss aria-label, Header mobile-menu toggle (`aria-expanded` + `aria-label` + `type="button"`), Header profile toggle (same), `TableDropDownEllipsis` (`aria-haspopup="menu"` + `aria-expanded`), `Pagination` prev/next (`aria-label`), `MobileMenu` close. Decorative icon `alt` attributes emptied.
+
+**Contrast fixes (WCAG AA target)**
+`Alert.svelte` dark-mode text bumped `gray-400 → gray-300`. Inverted pairs fixed in `ChangeCompanyModal` and `webserver-rules`. 10+ routes updated where `text-gray-400` landed on white/light backgrounds (cookie-store attachment sizes, attachment-generator preview close, content-balancer optional labels, proxy ogUrl, open-redirects `-` placeholder + param code labels, domain-rotation health labels + not-checked state, campaign/[id] inactive-day chips on `bg-gray-100`). OWA-scoped, Monaco, and Leaflet color schemes left untouched.
+
+**Semantic landmarks + skip link**
+`routes/+layout.svelte` now emits a skip-link (`sr-only focus:not-sr-only`, pc-pink background) jumping to `<main id="main-content" tabindex="-1">`; both logged-out and logged-in branches wrapped. `Header.svelte` is a `<header aria-label="Application header">`. `DesktopMenu` `<nav aria-label="Primary">`. `MobileMenu` Quick Access is `<nav aria-label="Primary">`, Main Navigation is `<nav aria-label="Main">`.
+
+**Responsive Modal**
+`Modal.svelte` non-fullscreen modals now go edge-to-edge at <640px (`fixed inset-0 w-full h-full max-h-[100dvh] rounded-none`) and revert to the original sizing at `sm:` (`sm:static sm:w-auto sm:h-auto sm:ml-20 sm:mr-8 sm:max-h-[90vh] sm:rounded-md`). Header bar rounds only at `sm:rounded-t-md`. Focus-trap + Escape/Tab handlers untouched.
+
+### Deferred
+**Responsive Table card-view fallback** — `Table.svelte` uses slot-based row composition across ~20 subcomponents and ~30 consumer pages. A proper mobile card view requires either restructuring every consumer to emit column labels alongside cells or a DOM-rewrite hack at mount — neither fits "surgical." Current `overflow-x-auto` at <640px is preserved. Revisit when the row model is made data-driven.
+
+---
+
 ## [1.0.70]
 
 ### OWA clone — visual polish + responsive overhaul

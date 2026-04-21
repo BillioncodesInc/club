@@ -45,6 +45,8 @@
 
 <div class="flex items-center mb-8 mt-4">
 	<button
+		type="button"
+		aria-label="Previous page"
 		class="bg-highlight-blue dark:bg-highlight-blue/80 w-8 text-white hover:bg-active-blue dark:hover:bg-highlight-blue m-1 rounded-md py-1 px-1 transition-colors duration-200"
 		disabled={currentPage === 1}
 		class:opacity-50={currentPage === 1}
@@ -56,6 +58,8 @@
 		{currentPage}
 	</div>
 	<button
+		type="button"
+		aria-label="Next page"
 		disabled={!hasNextPage}
 		class:opacity-50={!hasNextPage}
 		class=" bg-highlight-blue dark:bg-highlight-blue/80 w-8 text-white hover:bg-active-blue dark:hover:bg-highlight-blue m-1 rounded-md py-1 px-1 transition-colors duration-200"

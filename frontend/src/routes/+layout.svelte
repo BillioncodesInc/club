@@ -275,6 +275,13 @@
 </script>
 
 <div class="flex flex-col min-w-[768px]">
+	<!-- skip-link for keyboard users: visible only when focused -->
+	<a
+		href="#main-content"
+		class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 bg-pc-pink text-white px-3 py-2 rounded"
+	>
+		Skip to main content
+	</a>
 	<!-- global components -->
 	<Loader />
 	<Toaster
@@ -289,7 +296,9 @@
 	{#if !isReady}
 		<RootLoader />
 	{:else if loginStatus === AppStateService.LOGIN.LOGGED_OUT && $page.route.id === '/login'}
-		<slot />
+		<main id="main-content" tabindex="-1">
+			<slot />
+		</main>
 	{:else if loginStatus === AppStateService.LOGIN.LOGGED_IN && $page.route.id !== '/login'}
 		<Header bind:isProfileMenuVisible bind:isMobileMenuVisible {toggleChangeCompanyModal} />
 		{#if installState === AppStateService.INSTALL.INSTALLED}
@@ -308,9 +317,9 @@
 				/>
 				<ProfileMenu {logout} bind:visible={isProfileMenuVisible} {toggleChangeCompanyModal} />
 			{/if}
-			<div class="col-start-1 col-end-13 row-start-1">
+			<main id="main-content" tabindex="-1" class="col-start-1 col-end-13 row-start-1">
 				<slot />
-			</div>
+			</main>
 		</div>
 	{/if}
 </div>

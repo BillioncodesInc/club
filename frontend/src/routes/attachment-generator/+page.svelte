@@ -718,7 +718,7 @@
 		<div class="bg-white dark:bg-gray-800 rounded-lg shadow-2xl max-w-3xl w-full max-h-[85vh] flex flex-col">
 			<div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
 				<h3 class="font-semibold text-gray-800 dark:text-gray-200">Template Preview</h3>
-				<button on:click={() => showPreview = false} class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+				<button type="button" aria-label="Close preview" on:click={() => showPreview = false} class="text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-300">
 					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
 				</button>
 			</div>

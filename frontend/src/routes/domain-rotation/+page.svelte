@@ -265,10 +265,10 @@
 											<span class="{getHealthColor(domain.reputation.score)} font-medium">
 												{domain.reputation.score}/100
 											</span>
-											<span class="text-gray-400 text-xs">({getHealthLabel(domain.reputation.score)})</span>
+											<span class="text-gray-600 dark:text-gray-400 text-xs">({getHealthLabel(domain.reputation.score)})</span>
 										</span>
 									{:else}
-										<span class="text-gray-400 text-xs">Not checked</span>
+										<span class="text-gray-600 dark:text-gray-400 text-xs">Not checked</span>
 									{/if}
 								</td>
 								<td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">

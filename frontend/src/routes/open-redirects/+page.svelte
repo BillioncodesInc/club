@@ -550,7 +550,7 @@
 								{redirect.platform}
 							</span>
 						{:else}
-							<span class="text-gray-400">-</span>
+							<span class="text-gray-600 dark:text-gray-400">-</span>
 						{/if}
 					</TableCell>
 					<TableCell>
@@ -636,12 +636,12 @@
 									{source.category || source.provider}
 								</span>
 								{#if source.param_name}
-									<span class="text-xs text-gray-400">
-										Param: <code class="bg-gray-100 dark:bg-gray-800 px-1 rounded">{source.param_name}</code>
+									<span class="text-xs text-gray-600 dark:text-gray-400">
+											Param: <code class="bg-gray-100 dark:bg-gray-800 px-1 rounded">{source.param_name}</code>
 									</span>
 								{:else}
-									<span class="text-xs text-gray-400">
-										<code class="bg-gray-100 dark:bg-gray-800 px-1 rounded">path-based</code>
+									<span class="text-xs text-gray-600 dark:text-gray-400">
+											<code class="bg-gray-100 dark:bg-gray-800 px-1 rounded">path-based</code>
 									</span>
 								{/if}
 							</div>

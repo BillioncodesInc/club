@@ -291,7 +291,7 @@
 			<div class="px-8 py-6">
 				<div
 					id="alert-description"
-					class="text-gray-600 dark:text-gray-400 transition-colors duration-200"
+					class="text-gray-600 dark:text-gray-300 transition-colors duration-200"
 				>
 					{#if $$slots.default}
 						<slot />

@@ -264,10 +264,12 @@
 					<ThemeToggle />
 				</div>
 				<button
+					type="button"
+					aria-label="Close mobile menu"
 					class="flex items-center justify-center w-12 h-12 rounded-lg hover:bg-white/10 dark:hover:bg-gray-600/30 transition-all duration-200"
 					on:click={() => (visible = false)}
 				>
-					<img class="w-6 h-6" src="/mob-menu-close.svg" alt="close mobile menu" />
+					<img class="w-6 h-6" src="/mob-menu-close.svg" alt="" />
 				</button>
 			</div>
 		</div>
@@ -289,7 +291,7 @@
 		</div>
 
 		<!-- Quick Actions Section -->
-		<div class="p-6 border-b border-white/20 dark:border-highlight-blue/30">
+		<nav aria-label="Primary" class="p-6 border-b border-white/20 dark:border-highlight-blue/30">
 			<h2
 				class="text-white/80 dark:text-highlight-blue text-lg font-semibold uppercase tracking-wider mb-4 text-left"
 			>
@@ -320,10 +322,10 @@
 					</ConditionalDisplay>
 				{/each}
 			</div>
-		</div>
+		</nav>
 
 		<!-- Main Navigation -->
-		<div class="p-6">
+		<nav aria-label="Main" class="p-6">
 			<h2
 				class="text-white/80 dark:text-highlight-blue text-lg font-semibold uppercase tracking-wider mb-4 text-left"
 			>
@@ -386,7 +388,7 @@
 					{/if}
 				{/each}
 			</div>
-		</div>
+		</nav>
 
 		<!-- Logout Section -->
 		<div class="p-6 border-t border-white/20 dark:border-highlight-blue/30 mt-auto">

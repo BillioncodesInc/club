@@ -145,6 +145,10 @@
 <div class="">
 	<button
 		bind:this={buttonRef}
+		type="button"
+		aria-label="Row actions"
+		aria-haspopup="menu"
+		aria-expanded={isMenuVisible}
 		class="w-full h-full py-3 flex items-center justify-center"
 		on:click|stopPropagation|preventDefault={toggle}
 		on:keydown={handleKeydown}

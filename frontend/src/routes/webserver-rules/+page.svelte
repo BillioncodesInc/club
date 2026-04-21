@@ -212,8 +212,8 @@
 				</div>
 			{:else}
 				<div class="bg-gray-50 dark:bg-gray-800 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 p-12 text-center">
-					<div class="text-gray-400 dark:text-gray-500 text-lg mb-2">No rules generated yet</div>
-					<p class="text-gray-400 dark:text-gray-500 text-sm">Configure the options on the left and click Generate.</p>
+					<div class="text-gray-600 dark:text-gray-400 text-lg mb-2">No rules generated yet</div>
+					<p class="text-gray-600 dark:text-gray-400 text-sm">Configure the options on the left and click Generate.</p>
 				</div>
 			{/if}
 		</div>

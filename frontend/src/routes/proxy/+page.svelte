@@ -1095,7 +1095,7 @@ portal.example.com:
 							{/if}
 							<div class="p-3">
 								{#if ogValues.ogUrl}
-									<p class="text-xs text-gray-400 uppercase">{ogValues.ogUrl}</p>
+									<p class="text-xs text-gray-600 dark:text-gray-400 uppercase">{ogValues.ogUrl}</p>
 								{/if}
 								{#if ogValues.ogTitle}
 									<p class="font-semibold text-sm text-gray-900 dark:text-gray-100 mt-1">{ogValues.ogTitle}</p>

@@ -126,7 +126,7 @@
 					<div class="text-gray-500 dark:text-gray-500 mb-4 transition-colors duration-200">
 						No companies found.
 					</div>
-					<div class="text-sm text-gray-400 dark:text-gray-600 mb-4 transition-colors duration-200">
+					<div class="text-sm text-gray-600 dark:text-gray-400 mb-4 transition-colors duration-200">
 						You need to create a company first before you can switch to it.
 					</div>
 					<a

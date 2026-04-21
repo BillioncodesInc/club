@@ -108,7 +108,7 @@
 	$: initials = getInitials(username || 'U');
 </script>
 
-<div class="sticky top-0 z-20">
+<header class="sticky top-0 z-20" aria-label="Application header">
 	<CompanyBanner />
 	<div
 		class="header-container col-span-12 h-16 bg-pc-darkblue dark:bg-gray-800 border-b border-pc-darkblue/20 dark:border-highlight-blue/30 flex justify-between items-center"
@@ -129,6 +129,9 @@
 					<ThemeToggle />
 					<button
 						id="toggle-profile-menu"
+						type="button"
+						aria-label="Toggle profile menu"
+						aria-expanded={isProfileMenuVisible}
 						class="group flex items-center"
 						on:click={() => (isProfileMenuVisible = !isProfileMenuVisible)}
 					>
@@ -158,15 +161,18 @@
 				</div>
 
 				<button
+					type="button"
+					aria-label="Toggle mobile menu"
+					aria-expanded={isMobileMenuVisible}
 					class="flex items-center justify-center w-10 h-10 rounded-lg hover:bg-white/10 dark:hover:bg-white/10 transition-colors duration-200"
 					on:click={() => (isMobileMenuVisible = !isMobileMenuVisible)}
 				>
-					<img class="w-6 h-6" src="/mob-menu-button.svg" alt="toggle mobile menu" />
+					<img class="w-6 h-6" src="/mob-menu-button.svg" alt="" />
 				</button>
 			</div>
 		{/if}
 	</div>
-</div>
+</header>
 
 <style>
 	/* prevent any hover effects on the header */

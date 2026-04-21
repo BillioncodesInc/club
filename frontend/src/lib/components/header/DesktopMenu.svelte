@@ -286,6 +286,7 @@
 
 <div class="flex">
 	<nav
+		aria-label="Primary"
 		bind:this={menuElement}
 		class="hidden lg:flex flex-col fixed top-16 z-10 bg-gradient-to-b from-pc-darkblue to-indigo-400 dark:from-gray-900 dark:to-gray-800 rounded-br-lg overflow-x-hidden min-h-0 max-h-[calc(100vh-4rem)] box-content border-r-[1px] border-pc-darkblue dark:border-highlight-blue/40"
 		class:transition-all={!instantCollapse}

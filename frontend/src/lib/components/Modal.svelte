@@ -325,15 +325,15 @@
 		>
 			<section
 				bind:this={modalElement}
-				class="shadow-xl dark:shadow-gray-900/70 bg-white dark:bg-gray-800 opacity-100 rounded-md flex flex-col transition-all duration-200
+				class="shadow-xl dark:shadow-gray-900/70 bg-white dark:bg-gray-800 opacity-100 flex flex-col transition-all duration-200
 					{fullscreen
 					? 'fixed inset-0 w-full h-full max-w-none max-h-none rounded-none'
-					: 'w-auto ml-20 mr-8 max-h-[90vh]'}"
+					: 'fixed inset-0 w-full h-full max-h-[100dvh] rounded-none sm:static sm:inset-auto sm:w-auto sm:h-auto sm:ml-20 sm:mr-8 sm:max-h-[90vh] sm:rounded-md'}"
 			>
 				<div
 					class:opacity-20={isSubmitting}
 					class="bg-cta-blue dark:bg-blue-800 text-white py-4 px-8 flex justify-between flex-shrink-0 transition-colors duration-200
-						{fullscreen ? '' : 'rounded-t-md'}"
+						{fullscreen ? '' : 'sm:rounded-t-md'}"
 				>
 					<div class="flex-1">
 						<h1 id="modal-title" class="uppercase mr-8 font-semibold text-2xl">{headerText}</h1>

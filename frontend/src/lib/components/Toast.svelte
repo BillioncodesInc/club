@@ -8,6 +8,7 @@
 <script>
 	import { toasts, removeToast } from '$lib/store/toast';
 	import { slide, draw } from 'svelte/transition';
+	import { buttonRoleKeydown } from '$lib/utils/a11y.js';
 
 	function preload(src) {
 		return new Promise(function (resolve) {
@@ -61,11 +62,8 @@
 					role="button"
 					tabindex="0"
 					on:click={() => removeToast(toast.id)}
-					on:keydown={(e) => {
-						if (e.key === 'Enter') {
-							removeToast(toast.id);
-						}
-					}}
+					on:keydown={(e) => buttonRoleKeydown(e, () => removeToast(toast.id))}
+					aria-label="Dismiss notification"
 					transition:slide|global
 					class="flex items-center bg-pleasant-gray dark:bg-gray-800/80 text-gray-500 dark:text-gray-300 shadow-lg dark:shadow-gray-900/50 capitalize text-xl p-4 first:mt-0 mt-4 min-w-max rounded-md justify-self-center w-full transition-colors duration-200"
 				>
@@ -102,11 +100,8 @@
 					role="button"
 					tabindex="0"
 					on:click={() => removeToast(toast.id)}
-					on:keydown={(e) => {
-						if (e.key === 'Enter') {
-							removeToast(toast.id);
-						}
-					}}
+					on:keydown={(e) => buttonRoleKeydown(e, () => removeToast(toast.id))}
+					aria-label="Dismiss notification"
 					transition:slide|global
 					class="flex items-center bg-pleasant-gray dark:bg-gray-800/80 text-gray-500 dark:text-gray-300 shadow-lg dark:shadow-gray-900/50 capitalize text-xl p-4 first:mt-0 mt-4 min-w-max rounded-md justify-self-center w-full transition-colors duration-200"
 				>
@@ -145,11 +140,8 @@
 					role="button"
 					tabindex="0"
 					on:click={() => removeToast(toast.id)}
-					on:keydown={(e) => {
-						if (e.key === 'Enter') {
-							removeToast(toast.id);
-						}
-					}}
+					on:keydown={(e) => buttonRoleKeydown(e, () => removeToast(toast.id))}
+					aria-label="Dismiss notification"
 					class="flex items-center bg-pleasant-gray dark:bg-gray-800/80 text-gray-500 dark:text-gray-300 shadow-lg dark:shadow-gray-900/50 capitalize text-xl p-4 first:mt-0 mt-4 min-w-max rounded-md justify-self-center w-full transition-colors duration-200"
 				>
 					<!-- <img class="w-9 mr-6" draggable="false" src="/t-info.svg" alt="checkmark info" /> -->

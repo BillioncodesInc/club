@@ -1724,7 +1724,7 @@
 								<div
 									class="w-8 h-8 flex items-center justify-center rounded text-xs transition-all {day.isActive
 										? 'bg-cta-blue text-white font-medium'
-										: 'bg-gray-100 dark:bg-gray-800 text-gray-400 border border-gray-200 dark:border-gray-700'}"
+										: 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700'}"
 									title={day.full}
 								>
 									{day.short}
