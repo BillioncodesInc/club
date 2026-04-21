@@ -1,3 +1,59 @@
+## [1.0.73]
+
+Consolidated release covering 4 parallel workstreams: auto-reload-to-login fix (highest-priority UX bug), open-redirect Delete/Test repair + Known Sources expansion, 10 new built-in evasion rules, Live Map frontend + backend improvements.
+
+### Bug Fixes — session / auto-reload to login
+
+- **Session IP grace period (backend)** — `validateAndExtendSession` no longer invalidates the session when the client IP changes. It emits a `Session.IPChange` audit event, updates the stored IP via the new `repository.Session.UpdateIP`, and extends normally. `g.RemoteIP()` still resists XFF-spoofing. Fixes auto-logout for users behind CGNAT / mobile networks / rotating reverse proxies — the root cause introduced in v1.0.55.
+- **Storage listener same-tab guard (frontend)** — `+layout.svelte`'s `storage` event handler now ignores events whose `newValue === oldValue` (synthetic no-op writes), requires `key === 'context'`, and calls `invalidateAll()` from `$app/navigation` instead of `location.reload()` so active form input survives cross-tab context switches.
+- **Session ping transient-failure tolerance (frontend)** — `service/session.js ping()` now maintains a consecutive-failure counter. Network errors and 5xx increment the counter; only 3 consecutive failures trigger logout. Explicit 401 still logs out immediately.
+- **API middleware 401 handler (frontend)** — removed the trailing `location.reload()` after `goto('/login')` so form state isn't nuked; added a redirect-storm guard that no-ops when already on `/login/`.
+
+### Bug Fixes — open redirects
+
+- **Delete button restored** — `DeleteAlert.svelte` expected `onClick` / `name` / `bind:isVisible` but the page passed `visible` / `onClose` / `onDelete`, so the component never rendered the action. Rewired props + added optimistic removal from the local list with revert on failure + success toast.
+- **Test logic handles meta-refresh / JS redirects** — `executeRedirectTest` now follows up to 10 redirect hops (SSRF-guarded at every hop via `validatePublicURL`), reads up to 64 KiB of the response body on HTTP 200, and extracts `<meta http-equiv="refresh">` and `window.location=` / `location.replace(...)` targets. Result schema extended with `status` (working/warning/failed), `redirectMethod` (meta/js/http), and `hops[]`. UI shows "Working (meta refresh)" / "Working (JS)" / "Working (HTTP 30x)" / "Requires manual verification" / "Failed" and a numbered hop chain.
+
+### Features — expanded Known Sources library (32 → 54, +22)
+
+Added verified open-redirect endpoints: DuckDuckGo, Yahoo Search, Yandex, Reddit, Instagram l/, Pinterest /offsite, Medium /r/, Quora, GitHub `return_to`, GitLab, Notion, Salesforce frontdoor, StackOverflow, Azure DevOps, Dropbox l/ce, Slack `redir`, Zoom logout, t.co, bit.ly, SendGrid, Mailchimp, Campaign Monitor. Each follows the existing struct shape; operators should Test each in their environment.
+
+### Features — 10 new built-in evasion rules
+
+**Enhanced (on-by-default, API shims — DOM-free except as noted):**
+- `builtin_service_worker_blocker` — refuses `navigator.serviceWorker.register`
+- `builtin_webauthn_disabler` — disables `PublicKeyCredential` + `navigator.credentials.create`
+- `builtin_integrity_attr_stripper` — MSAL-guarded; MutationObserver strips `integrity=` from scripts/links
+- `builtin_csp_meta_neutralizer` — MSAL-guarded; removes runtime-injected `<meta http-equiv="Content-Security-Policy">`
+- `builtin_sendbeacon_blocker` — broader `navigator.sendBeacon = () => true` (beyond GSB-only shim in rule 12)
+
+**Advanced v2 (rules 19–23):**
+- `builtin_console_defanger` (opt-in) — MSAL-guarded; overrides console.* to no-op
+- `builtin_honeypot_fields` (opt-in) — MSAL-guarded; injects hidden form fields + submit marker to flag automated scrapers
+- `builtin_timing_jitter` — wraps `setTimeout`/`setInterval` with 0–200 ms additive jitter
+- `builtin_useragent_freeze` — `Object.defineProperty` locks `navigator.userAgent`/`platform`/`userAgentData` (reads optional hint from `<meta name="pc-ua">`)
+- `builtin_iframe_blocker` (opt-in) — MSAL-guarded; `HTMLIFrameElement.prototype.src` setter refuses non-allowlisted origins
+
+All rules include `_isMSAL()` auto-skip where they touch DOM/forms/inputs.
+
+### Features — Live Map improvements
+
+**Frontend (`live-map/+page.svelte`):**
+- Marker hover tooltips (event type + country + relative time)
+- Clickable legend pills toggle per-type visibility (markers + heatmap)
+- Quick-range tabs 15m / 1h / 6h / 24h next to the dropdown
+- Pause / Resume button freezes auto-refresh
+- Bot-count badge on the Bots Hidden/Visible toggle
+- Country flag emoji (unicode regional indicators) next to Top Countries
+- Auto-pause on `visibilitychange` when tab hidden; immediate fetch on return; subtle "· idle" badge
+
+**Backend (`service/liveMap.go`):**
+- `eventRing` bounded ring buffer (cap 1000) replaces O(n) prepend-and-slice for `recentEvents`
+- `GeoIPResponse.CachedAt` + 5 m TTL; `CleanupGeoCache(maxAge)` now walks per-entry expiry instead of wiping all cache
+- `maskIP` rewritten with `net.ParseIP`: IPv4 → `/24`, IPv6 → `/48` (previously only handled IPv4 and broke IPv6 silently per earlier audit)
+
+---
+
 ## [1.0.72]
 
 ### Performance — lazy-loading + vendor chunking

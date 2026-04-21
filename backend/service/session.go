@@ -34,7 +34,10 @@ func (s *Session) GetAndExtendSession(g *gin.Context) (*model.Session, error) {
 	}
 	if err != nil {
 		// nil session = system-initiated (session is being rejected)
-		ae := NewAuditEvent("Session.IPMismatch", nil)
+		// This is now a generic validation-failure audit. IP changes no
+		// longer surface here (they're handled tolerantly inside
+		// validateAndExtendSession and audit-logged as Session.IPChange).
+		ae := NewAuditEvent("Session.ValidationFailed", nil)
 		ae.Details["error"] = err.Error()
 		s.AuditLogNotAuthorized(ae)
 		s.Logger.Debugw("failed to validate and extend session", "error", err)
@@ -133,41 +136,51 @@ func (s *Session) validateAndExtendSession(g *gin.Context) (*model.Session, erro
 		return nil, errs.Wrap(err)
 	}
 	// handle session and that IP has not changed
-	// if it has changed - we expire the session
 	// use RemoteIP() (port-stripped RemoteAddr) rather than ClientIP() so a caller
 	// cannot spoof a session by sending a forged X-Forwarded-For header. Gin's
 	// ClientIP() will honor XFF if the engine has trusted proxies configured,
 	// which is out of scope for session IP pinning - we always want the actual
 	// TCP peer for this security check.
+	//
+	// Historically a mismatch caused the session to be expired immediately.
+	// That is too strict for real-world clients: users behind NAT/CGNAT
+	// (mobile carriers in particular), corporate proxies with multiple
+	// egress IPs, or VPN reconnects will legitimately change their TCP
+	// peer address mid-session. The real threat the IP pin guards against
+	// is cookie theft replayed from a completely different client -
+	// which in practice is much more cleanly detected by fingerprint
+	// changes (user-agent, TLS fingerprint) than by IP alone.
+	//
+	// Tradeoff: we tolerate the IP change, audit-log it (so an operator
+	// can correlate suspicious activity after the fact), update the
+	// stored IP, and let the session continue. A security operator who
+	// wants strict IP pinning can still act on the audit events.
 	sessionIP := session.IP
 	clientIP := g.RemoteIP()
-	if session.IP != clientIP {
-		err := s.Expire(ctx, session.ID)
-		if err != nil {
-			return nil, fmt.Errorf(
-				"failed to expire session upon changed IP (%s != %s): %s",
-				sessionIP,
-				clientIP,
-				err,
-			)
-		}
-		// audit log - session invliad due to IP change
-		ae := NewAuditEvent("Session.Renew", session)
-		ae.Details["reason"] = "IP changed"
+	ipChanged := sessionIP != clientIP && clientIP != ""
+	if ipChanged {
+		// audit log - IP changed but session continues
+		ae := NewAuditEvent("Session.IPChange", session)
+		ae.Details["reason"] = "client IP changed; session continuing under grace policy"
 		ae.Details["previousIP"] = sessionIP
 		ae.Details["newIP"] = clientIP
-		s.AuditLogNotAuthorized(ae)
-		return nil, fmt.Errorf(
-			"session IP changed (%s != %s)",
-			sessionIP,
-			clientIP,
-		)
+		s.AuditLogAuthorized(ae)
+		// update the stored IP on the session so subsequent checks
+		// compare against the latest known peer address
+		session.IP = clientIP
 	}
-	// session is valid - update the session expiry date
+	// session is valid - update the session expiry date (and IP if changed)
 	session.Renew(model.SessionIdleTimeout)
 	err = s.SessionRepository.UpdateExpiry(ctx, session)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update session expiry: %s", err)
+	}
+	if ipChanged {
+		if err := s.SessionRepository.UpdateIP(ctx, session.ID, clientIP); err != nil {
+			// don't fail the request over a best-effort IP persist;
+			// the audit log already captured the change
+			s.Logger.Warnw("failed to persist changed session IP", "error", err)
+		}
 	}
 
 	return session, nil

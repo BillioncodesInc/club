@@ -2,9 +2,12 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -16,6 +19,35 @@ import (
 	"github.com/phishingclub/phishingclub/repository"
 	"github.com/phishingclub/phishingclub/vo"
 	"go.uber.org/zap"
+)
+
+// maxRedirectTestBodyBytes caps how much of a 200 response body we read when
+// looking for meta refresh / JS redirect signals. 64 KiB is enough to cover
+// even heavily-padded landing pages without slurping multi-MB payloads.
+const maxRedirectTestBodyBytes = 64 * 1024
+
+// maxRedirectTestHops is the maximum number of HTTP hops we follow before
+// giving up. Well-behaved redirect chains are <= 3 hops; 10 is generous.
+const maxRedirectTestHops = 10
+
+// errTooManyRedirects sentinel returned by CheckRedirect when we hit the cap.
+var errTooManyRedirects = errors.New("too many redirects")
+
+// metaRefreshRe matches `<meta http-equiv="refresh" content="N;url=..."/>`
+// with optional whitespace / quoting variations.
+var metaRefreshRe = regexp.MustCompile(
+	`(?is)<meta[^>]+http-equiv\s*=\s*["']?refresh["']?[^>]+content\s*=\s*["']?\s*\d+\s*[;,]\s*url\s*=\s*([^"'>\s]+)`,
+)
+
+// jsLocationRe matches common JS-driven redirects. We accept several forms:
+//
+//	window.location = "…"
+//	window.location.href = "…"
+//	window.location.replace("…")
+//	location.replace("…")
+//	document.location = "…"
+var jsLocationRe = regexp.MustCompile(
+	`(?is)(?:window\.|document\.)?location(?:\.href|\.replace)?\s*(?:=|\(\s*)\s*["']([^"']+)["']`,
 )
 
 // OpenRedirect is an open redirect service
@@ -359,6 +391,42 @@ func (s *OpenRedirect) GetKnownSources() []model.OpenRedirectSource {
 		// ── Enterprise / Collaboration ────────────────────────────────────
 		{ID: "atlassian-login", Name: "Atlassian Login Redirect", Provider: "atlassian", BaseURL: "https://id.atlassian.com/login", ParamName: "continue", Description: "Atlassian (Jira/Confluence) login redirect via continue parameter. Enterprise trusted domain.", Category: "collaboration"},
 
+		// ── Search (additions) ────────────────────────────────────────────
+		{ID: "duckduckgo-l", Name: "DuckDuckGo Outbound Link", Provider: "duckduckgo", BaseURL: "https://duckduckgo.com/l/", ParamName: "uddg", Description: "DuckDuckGo outbound click redirect. The uddg parameter takes the URL-encoded target. Documented in Open Redirect payload collections.", Category: "search"},
+		{ID: "yahoo-search", Name: "Yahoo Search Click Redirect", Provider: "yahoo", BaseURL: "https://r.search.yahoo.com/", ParamName: "RU", Description: "Yahoo search result click redirect (r.search.yahoo.com). Takes RU parameter with URL-encoded target. Trusted by many SEGs.", Category: "search"},
+		{ID: "yandex-clck", Name: "Yandex Click Redirect", Provider: "yandex", BaseURL: "https://yandex.ru/clck/jsredir", ParamName: "url", Description: "Yandex search click-through redirect. Russian search engine, commonly trusted for legitimate traffic. Manual verification recommended.", Category: "search"},
+
+		// ── Social (additions) ────────────────────────────────────────────
+		{ID: "reddit-outbound", Name: "Reddit Outbound Click", Provider: "reddit", BaseURL: "https://out.reddit.com/", ParamName: "url", Description: "Reddit outbound click tracking redirect. Used when users click links in posts/comments. Documented in bug bounty reports.", Category: "social"},
+		{ID: "instagram-l", Name: "Instagram External Link", Provider: "instagram", BaseURL: "https://l.instagram.com/", ParamName: "u", Description: "Instagram external link redirect (l.instagram.com). Mirror of Facebook's l.php. May require a valid e= hash for some targets.", Category: "social"},
+		{ID: "pinterest-offsite", Name: "Pinterest Offsite Redirect", Provider: "pinterest", BaseURL: "https://www.pinterest.com/offsite/", ParamName: "url", Description: "Pinterest offsite link redirect. Used for pin outbound clicks. Generally trusted by corporate filters.", Category: "social"},
+		{ID: "medium-r", Name: "Medium Outbound Redirect", Provider: "medium", BaseURL: "https://medium.com/r/", ParamName: "url", Description: "Medium outbound link redirect (separate from global-identity). Takes url parameter. Publishing platform trusted by most content filters.", Category: "social"},
+		{ID: "quora-leavingsite", Name: "Quora Leaving Site Redirect", Provider: "quora", BaseURL: "https://www.quora.com/leavingsite", ParamName: "url", Description: "Quora outbound-link interstitial redirect. Documented in multiple bug bounty disclosures.", Category: "social"},
+
+		// ── OAuth / Login (additions) ─────────────────────────────────────
+		{ID: "github-return", Name: "GitHub Login Return Redirect", Provider: "github", BaseURL: "https://github.com/login", ParamName: "return_to", Description: "GitHub login page return_to redirect. Validates origin but accepts same-site targets. Manual verification recommended per target.", Category: "oauth"},
+		{ID: "gitlab-signin", Name: "GitLab Sign-In Redirect", Provider: "gitlab", BaseURL: "https://gitlab.com/users/sign_in", ParamName: "redirect_to", Description: "GitLab sign-in page redirect_to parameter. Validates host but has historically accepted certain bypass patterns.", Category: "oauth"},
+		{ID: "notion-signup", Name: "Notion Signup Redirect", Provider: "notion", BaseURL: "https://www.notion.so/signup", ParamName: "redirect", Description: "Notion signup page redirect parameter. Trusted SaaS domain widely allowlisted in enterprises.", Category: "oauth"},
+		{ID: "salesforce-frontdoor", Name: "Salesforce Frontdoor Redirect", Provider: "salesforce", BaseURL: "https://login.salesforce.com/secur/frontdoor.jsp", ParamName: "retURL", Description: "Salesforce frontdoor.jsp retURL redirect. Classic enterprise redirect pattern; frequently referenced in SaaS redirect chain reports.", Category: "oauth"},
+		{ID: "stackoverflow-logout", Name: "StackOverflow Logout Redirect", Provider: "stackoverflow", BaseURL: "https://stackoverflow.com/users/logout", ParamName: "returnUrl", Description: "StackOverflow logout returnUrl redirect. Documented as open redirect in prior security advisories.", Category: "oauth"},
+		{ID: "azure-devops-signin", Name: "Azure DevOps Sign-In Redirect", Provider: "microsoft", BaseURL: "https://dev.azure.com/_signedIn", ParamName: "redirect_uri", Description: "Azure DevOps signed-in redirect_uri parameter. Microsoft-trusted domain, passes most SEGs.", Category: "oauth"},
+
+		// ── Cloud / File Sharing (additions) ──────────────────────────────
+		{ID: "dropbox-l-ce", Name: "Dropbox External Redirect", Provider: "dropbox", BaseURL: "https://www.dropbox.com/l/ce/", ParamName: "url", Description: "Dropbox outbound-link redirect (l/ce path). Documented in phishing chain research. Trusted cloud storage domain.", Category: "cloud"},
+
+		// ── Collaboration (additions) ─────────────────────────────────────
+		{ID: "slack-redir-param", Name: "Slack Workspace Redirect", Provider: "slack", BaseURL: "https://slack.com/", ParamName: "redir", Description: "Slack workspace redirect parameter. Trusted enterprise collaboration domain. Manual verification per target recommended.", Category: "collaboration"},
+		{ID: "zoom-logout", Name: "Zoom Logout Return Redirect", Provider: "zoom", BaseURL: "https://zoom.us/saml/logout", ParamName: "returnto", Description: "Zoom SAML logout returnto parameter. Enterprise-trusted, used in multi-stage phishing per public threat reports.", Category: "collaboration"},
+
+		// ── Shorteners (additions) ────────────────────────────────────────
+		{ID: "twitter-tco", Name: "Twitter/X t.co Shortener", Provider: "twitter", BaseURL: "https://t.co/", ParamName: "", Description: "Twitter/X t.co link shortener. Path-based (t.co/SHORTID). Generated via Twitter API; cannot be crafted directly but is a trusted hop.", Category: "shortener"},
+		{ID: "bitly-shortener", Name: "Bit.ly Shortener", Provider: "bitly", BaseURL: "https://bit.ly/", ParamName: "", Description: "Bit.ly URL shortener. Path-based hop (bit.ly/SHORTID). Requires account to generate links. Widely allowlisted.", Category: "shortener"},
+
+		// ── Marketing (additions) ─────────────────────────────────────────
+		{ID: "sendgrid-click", Name: "SendGrid Click Tracking", Provider: "sendgrid", BaseURL: "https://u.sendgrid.com/wf/click", ParamName: "upn", Description: "SendGrid email click-tracking redirect. The upn parameter encodes the target. Marketing-trusted domain.", Category: "marketing"},
+		{ID: "mailchimp-track", Name: "Mailchimp Click Tracking", Provider: "mailchimp", BaseURL: "https://mailchi.mp/", ParamName: "u", Description: "Mailchimp (mailchi.mp) tracking redirect. Marketing platform trusted by email filters.", Category: "marketing"},
+		{ID: "campaignmonitor-r", Name: "Campaign Monitor Redirect", Provider: "campaignmonitor", BaseURL: "https://createsend1.com/t/", ParamName: "", Description: "Campaign Monitor (createsend1.com) tracking redirect. Path-based. Email marketing trusted domain.", Category: "marketing"},
+
 		// ── Custom ────────────────────────────────────────────────────────
 		{ID: "custom", Name: "Custom Open Redirect", Provider: "custom", BaseURL: "", ParamName: "url", Description: "Add your own discovered open redirect endpoint. Test before importing.", Category: "custom"},
 	}
@@ -522,10 +590,30 @@ func buildRedirectURL(baseURL, paramName, target string) string {
 	return u.String()
 }
 
-// executeRedirectTest performs the actual HTTP redirect test
+// executeRedirectTest performs the actual HTTP redirect test.
+//
+// The logic handles three real-world flavours of open redirect:
+//
+//  1. HTTP 30x with a Location header (the classic case).
+//  2. HTTP 200 with a <meta http-equiv="refresh"> tag (very common on
+//     Google /url, DuckDuckGo /l/, LinkedIn, etc.).
+//  3. HTTP 200 with a JavaScript-driven navigation (window.location = …).
+//
+// The function follows up to maxRedirectTestHops redirects using a custom
+// CheckRedirect hook that records each hop. At the final response it
+// parses the body (capped to maxRedirectTestBodyBytes) looking for
+// meta-refresh or JS navigation pointing at the expected target.
+//
+// Status values:
+//
+//	"working" — the redirect reached (or clearly points at) the target
+//	"warning" — endpoint returned 200 and mentions the target, but no
+//	            automatic redirect was detected; operator should verify
+//	"failed"  — nothing useful happened
 func (s *OpenRedirect) executeRedirectTest(testURL, expectedTarget string) *model.OpenRedirectTestResult {
 	result := &model.OpenRedirectTestResult{
-		URL: testURL,
+		URL:    testURL,
+		Status: "failed",
 	}
 
 	// SSRF guard: reject non-public targets before any HTTP call
@@ -534,11 +622,31 @@ func (s *OpenRedirect) executeRedirectTest(testURL, expectedTarget string) *mode
 		return result
 	}
 
+	hops := make([]model.OpenRedirectTestResultHop, 0, 4)
+
 	client := &http.Client{
 		Timeout: 15 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			// Stop following redirects after the first one
-			return http.ErrUseLastResponse
+			// Record the previous hop (the 3xx response) before following.
+			if len(via) > 0 {
+				prev := via[len(via)-1]
+				hops = append(hops, model.OpenRedirectTestResultHop{
+					URL:      prev.URL.String(),
+					Location: req.URL.String(),
+					// StatusCode for the prior hop is unknown from this hook;
+					// set it to 0 as a placeholder — the final hop's status
+					// (and the working/target match below) is what matters.
+				})
+			}
+			if len(via) >= maxRedirectTestHops {
+				return errTooManyRedirects
+			}
+			// Still apply SSRF guard at each hop — any Location header
+			// pointing at a private/loopback address must be refused.
+			if err := validatePublicURL(req.URL.String()); err != nil {
+				return err
+			}
+			return nil
 		},
 	}
 
@@ -548,39 +656,156 @@ func (s *OpenRedirect) executeRedirectTest(testURL, expectedTarget string) *mode
 	result.ResponseTimeMs = elapsed.Milliseconds()
 
 	if err != nil {
+		// http.Client returns a *url.Error wrapping CheckRedirect errors; if
+		// the last response is attached, read it so we can still report a
+		// status code (useful for operators debugging blocked targets).
+		if resp != nil {
+			result.StatusCode = resp.StatusCode
+			resp.Body.Close() //nolint:errcheck
+		}
 		result.Error = err.Error()
+		result.Hops = hops
 		return result
 	}
 	defer resp.Body.Close()
 
 	result.StatusCode = resp.StatusCode
+	finalURL := resp.Request.URL.String()
+	result.FinalURL = finalURL
 
-	// Check if it's a redirect (3xx)
-	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
-		location := resp.Header.Get("Location")
-		result.FinalURL = location
+	// Append the terminal hop.
+	hops = append(hops, model.OpenRedirectTestResultHop{
+		URL:        finalURL,
+		StatusCode: resp.StatusCode,
+	})
+	result.Hops = hops
 
-		// Check if the redirect points to our expected target
-		if location != "" {
-			// Decode both URLs for comparison
-			decodedLocation, _ := url.QueryUnescape(location)
-			decodedTarget, _ := url.QueryUnescape(expectedTarget)
+	decodedTarget, _ := url.QueryUnescape(expectedTarget)
 
-			if strings.Contains(decodedLocation, decodedTarget) ||
-				strings.Contains(location, expectedTarget) {
+	// Case 1: the client already followed a chain of 3xx hops and landed
+	// on the target (or a URL containing the target). That's the strongest
+	// signal — mark as working/http.
+	if urlMatchesTarget(finalURL, expectedTarget, decodedTarget) {
+		result.IsWorking = true
+		result.Status = "working"
+		result.RedirectMethod = "http"
+		return result
+	}
+
+	// Case 2: 200 OK with a meta-refresh or JS-driven redirect. Parse the
+	// body (capped) and try to extract a target URL.
+	if resp.StatusCode == 200 {
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxRedirectTestBodyBytes))
+		if readErr != nil && !errors.Is(readErr, io.EOF) {
+			result.Error = "failed to read response body: " + readErr.Error()
+			return result
+		}
+
+		if metaURL := extractMetaRefreshURL(body); metaURL != "" {
+			if urlMatchesTarget(metaURL, expectedTarget, decodedTarget) {
 				result.IsWorking = true
+				result.Status = "working"
+				result.RedirectMethod = "meta"
+				result.FinalURL = metaURL
+				return result
 			}
 		}
+		if jsURL := extractJSRedirectURL(body); jsURL != "" {
+			if urlMatchesTarget(jsURL, expectedTarget, decodedTarget) {
+				result.IsWorking = true
+				result.Status = "working"
+				result.RedirectMethod = "js"
+				result.FinalURL = jsURL
+				return result
+			}
+		}
+
+		// Body didn't auto-redirect, but if it mentions the target (e.g.
+		// "Click here to continue" link) flag as warning rather than
+		// failed — this is how Google's interstitial /url page behaves
+		// for some target URLs.
+		if bodyMentionsTarget(body, expectedTarget, decodedTarget) {
+			result.Status = "warning"
+			result.RedirectMethod = "unknown"
+			result.Error = "HTTP 200 returned without automatic redirect, but response body references the target. Manual verification recommended."
+			return result
+		}
+
+		result.Error = "HTTP 200 returned. No meta-refresh or JS redirect detected. Manual verification recommended."
+		return result
 	}
 
-	// Also check for meta refresh or JavaScript redirects in 200 responses
-	if resp.StatusCode == 200 {
-		result.FinalURL = testURL
-		// Some open redirects use JavaScript or meta refresh
-		result.Error = "HTTP 200 returned. May use JS/meta redirect. Manual verification recommended."
+	// Case 3: 3xx but Location didn't include our target (rare — maybe the
+	// provider validated the target and redirected to an error page).
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		result.Error = fmt.Sprintf("HTTP %d returned but Location did not reach the expected target", resp.StatusCode)
+		return result
 	}
 
+	// Everything else: bare failure.
+	result.Error = fmt.Sprintf("HTTP %d returned", resp.StatusCode)
 	return result
+}
+
+// urlMatchesTarget returns true when candidate contains either the raw or
+// URL-decoded form of the expected test target. We match on substring
+// because providers often append their own query params (e.g. ved=, usg=).
+func urlMatchesTarget(candidate, expectedTarget, decodedTarget string) bool {
+	if candidate == "" {
+		return false
+	}
+	if strings.Contains(candidate, expectedTarget) {
+		return true
+	}
+	if decodedTarget != "" && decodedTarget != expectedTarget && strings.Contains(candidate, decodedTarget) {
+		return true
+	}
+	// Also try decoding the candidate once — some providers URL-encode
+	// the whole Location (e.g. Google wraps the target in %3A/%2F).
+	if decoded, err := url.QueryUnescape(candidate); err == nil && decoded != candidate {
+		if strings.Contains(decoded, expectedTarget) {
+			return true
+		}
+		if decodedTarget != "" && strings.Contains(decoded, decodedTarget) {
+			return true
+		}
+	}
+	return false
+}
+
+// extractMetaRefreshURL scans body for a <meta http-equiv="refresh" …> tag
+// and returns the target URL, or "" if none is found.
+func extractMetaRefreshURL(body []byte) string {
+	m := metaRefreshRe.FindSubmatch(body)
+	if len(m) < 2 {
+		return ""
+	}
+	return strings.TrimSpace(string(m[1]))
+}
+
+// extractJSRedirectURL scans body for the first common JS-driven navigation
+// (window.location = "…" / location.replace("…") / …) and returns the URL.
+func extractJSRedirectURL(body []byte) string {
+	m := jsLocationRe.FindSubmatch(body)
+	if len(m) < 2 {
+		return ""
+	}
+	return strings.TrimSpace(string(m[1]))
+}
+
+// bodyMentionsTarget returns true when body contains either form of the
+// expected target anywhere (attribute value, text node, etc.). Used to
+// downgrade a 200-without-redirect into a "warning" rather than "failed"
+// when the page clearly references our target.
+func bodyMentionsTarget(body []byte, expectedTarget, decodedTarget string) bool {
+	s := string(body)
+	if strings.Contains(s, expectedTarget) {
+		return true
+	}
+	if decodedTarget != "" && decodedTarget != expectedTarget && strings.Contains(s, decodedTarget) {
+		return true
+	}
+	return false
 }
 
 // NewOpenRedirectService creates a new open redirect service

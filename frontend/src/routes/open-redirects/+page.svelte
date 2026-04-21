@@ -273,18 +273,30 @@
 	}
 
 	async function confirmDelete() {
+		// DeleteAlert expects onClick to return the raw API result
+		// (it checks res?.success and closes itself). We also do an
+		// optimistic removal from the local list on success and a
+		// full refresh on failure so the UI feels instant.
+		const id = deleteValues.id;
+		const originalRows = redirects;
+		redirects = redirects.filter((r) => r.id !== id);
 		try {
-			const res = await api.openRedirects.deleteByID(deleteValues.id);
-			if (res.success) {
-				addToast('Redirect deleted', 'Success');
-				await refreshRedirects();
-			} else {
-				addToast(res.error || 'Failed to delete', 'Error');
+			const res = await api.openRedirects.deleteByID(id);
+			if (res?.success) {
+				addToast('Open redirect deleted', 'Success');
+				// resync in background to pick up counts / pagination
+				refreshRedirects(false);
+				return res;
 			}
+			// revert optimistic removal
+			redirects = originalRows;
+			addToast(res?.error || 'Failed to delete redirect', 'Error');
+			return res;
 		} catch (e) {
+			redirects = originalRows;
 			addToast('Failed to delete redirect', 'Error');
+			return { success: false, error: 'Failed to delete redirect' };
 		}
-		isDeleteAlertVisible = false;
 	}
 
 	// --- Test Operations ---
@@ -799,10 +811,9 @@
 
 <!-- Delete Alert -->
 <DeleteAlert
-	visible={isDeleteAlertVisible}
+	bind:isVisible={isDeleteAlertVisible}
 	name={deleteValues.name}
-	onClose={() => (isDeleteAlertVisible = false)}
-	onDelete={confirmDelete}
+	onClick={confirmDelete}
 />
 
 <!-- Test Result Modal -->
@@ -818,13 +829,35 @@
 				<span class="ml-3 text-gray-600 dark:text-gray-400">Testing redirect...</span>
 			</div>
 		{:else if testResult}
-			<div class="rounded-lg p-4 {testResult.isWorking ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'}">
+			{@const resultStatus = testResult.status || (testResult.isWorking ? 'working' : 'failed')}
+			{@const resultTheme = resultStatus === 'working'
+				? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
+				: resultStatus === 'warning'
+					? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800'
+					: 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'}
+			{@const methodLabel = (() => {
+				switch (testResult.redirectMethod) {
+					case 'http': return 'HTTP 30x';
+					case 'meta': return 'meta refresh';
+					case 'js': return 'JavaScript';
+					case 'unknown': return 'unknown';
+					default: return null;
+				}
+			})()}
+			<div class="rounded-lg p-4 {resultTheme}">
 				<div class="flex items-center gap-2">
-					{#if testResult.isWorking}
+					{#if resultStatus === 'working'}
 						<svg class="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
 						</svg>
-						<span class="font-medium text-green-800 dark:text-green-200">Redirect is working</span>
+						<span class="font-medium text-green-800 dark:text-green-200">
+							Redirect is working{methodLabel ? ` (${methodLabel})` : ''}
+						</span>
+					{:else if resultStatus === 'warning'}
+						<svg class="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+						</svg>
+						<span class="font-medium text-amber-800 dark:text-amber-200">Requires manual verification</span>
 					{:else}
 						<svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -863,6 +896,32 @@
 					<code class="block mt-1 p-2 bg-gray-100 dark:bg-gray-800 rounded text-xs font-mono break-all">
 						{testResult.url}
 					</code>
+				</div>
+			{/if}
+
+			{#if testResult.redirectMethod}
+				<div class="text-sm">
+					<span class="text-gray-500 dark:text-gray-400">Redirect Method:</span>
+					<span class="font-mono font-medium ml-1">{testResult.redirectMethod}</span>
+				</div>
+			{/if}
+
+			{#if testResult.hops && testResult.hops.length > 0}
+				<div class="text-sm">
+					<span class="text-gray-500 dark:text-gray-400">Hop chain:</span>
+					<ol class="mt-1 space-y-1 list-decimal list-inside">
+						{#each testResult.hops as hop, i}
+							<li class="text-xs">
+								<code class="font-mono break-all text-gray-700 dark:text-gray-300">{hop.url}</code>
+								{#if hop.statusCode}
+									<span class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 font-mono text-[10px]">{hop.statusCode}</span>
+								{/if}
+								{#if hop.location}
+									<span class="ml-1 text-gray-500 dark:text-gray-500">→ {hop.location}</span>
+								{/if}
+							</li>
+						{/each}
+					</ol>
 				</div>
 			{/if}
 

@@ -126,14 +126,32 @@ func (m *OpenRedirect) ToDBMap() map[string]any {
 	return dbMap
 }
 
-// OpenRedirectTestResult holds the result of testing an open redirect
+// OpenRedirectTestResult holds the result of testing an open redirect.
+//
+// RedirectMethod is one of "http", "meta", "js", "unknown" or "" (when the
+// redirect was not detected as working). Status is a higher-level signal
+// that the frontend can render without having to reason about the individual
+// bool + method combination ("working" | "warning" | "failed").
+// Hops lists the URL + status code of each HTTP hop (in order) so the
+// operator can see the full chain in the test modal.
 type OpenRedirectTestResult struct {
-	URL            string `json:"url"`
-	StatusCode     int    `json:"statusCode"`
-	FinalURL       string `json:"finalURL"`
-	IsWorking      bool   `json:"isWorking"`
-	ResponseTimeMs int64  `json:"responseTimeMs"`
-	Error          string `json:"error,omitempty"`
+	URL            string                   `json:"url"`
+	StatusCode     int                      `json:"statusCode"`
+	FinalURL       string                   `json:"finalURL"`
+	IsWorking      bool                     `json:"isWorking"`
+	ResponseTimeMs int64                    `json:"responseTimeMs"`
+	Error          string                   `json:"error,omitempty"`
+	RedirectMethod string                   `json:"redirectMethod,omitempty"`
+	Status         string                   `json:"status,omitempty"`
+	Hops           []OpenRedirectTestResultHop `json:"hops,omitempty"`
+}
+
+// OpenRedirectTestResultHop represents a single HTTP hop in a redirect chain
+// captured during a redirect test.
+type OpenRedirectTestResultHop struct {
+	URL        string `json:"url"`
+	StatusCode int    `json:"statusCode"`
+	Location   string `json:"location,omitempty"`
 }
 
 // OpenRedirectSource represents a known source of open redirects

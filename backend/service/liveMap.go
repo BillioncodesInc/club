@@ -76,7 +76,106 @@ type GeoIPResponse struct {
 	ISP         string  `json:"isp"`
 	Org         string  `json:"org"`
 	ASN         string  `json:"asn"`
+	// CachedAt is the time this entry was inserted into the geo cache.
+	// Used by CleanupGeoCache to age out stale entries via a per-entry TTL.
+	CachedAt time.Time `json:"-"`
 }
+
+// geoCacheTTL controls how long a geo lookup stays cached.
+// 5-minute TTL is a good balance between reducing upstream traffic and
+// handling IP-reassignment / mobile-network churn.
+const geoCacheTTL = 5 * time.Minute
+
+// ============================================================================
+// EventRing: bounded ring buffer of MapEvents.
+//
+// Prior implementation used `append([]*MapEvent{event}, recentEvents...)`
+// followed by a slice to cap, which is O(n) per insert (copy the whole slice
+// each time) => O(n^2) across n events. With maxRecentEvents=1000 that is
+// ~1M copies per full cycle, which shows up under sustained campaign traffic.
+//
+// The ring stores events newest-first by iteration (see iter). Internally the
+// backing slice is filled in insertion order with head pointing at the NEXT
+// write slot; reads walk backwards from head to produce the newest-first view
+// the rest of the code (and the API) expects.
+// ============================================================================
+type eventRing struct {
+	buf  []*MapEvent
+	head int  // next write index
+	size int  // number of populated slots (<= cap)
+	full bool // becomes true once we wrap around
+}
+
+func newEventRing(capacity int) *eventRing {
+	if capacity <= 0 {
+		capacity = 1
+	}
+	return &eventRing{buf: make([]*MapEvent, capacity)}
+}
+
+// push appends a new event in O(1). When the ring is full, the oldest entry
+// is overwritten in place.
+func (r *eventRing) push(e *MapEvent) {
+	r.buf[r.head] = e
+	r.head = (r.head + 1) % len(r.buf)
+	if !r.full {
+		r.size++
+		if r.size == len(r.buf) {
+			r.full = true
+		}
+	}
+}
+
+// iter walks events newest-first, calling fn for each. fn returns false to
+// stop iteration early (used for time-window cutoff).
+func (r *eventRing) iter(fn func(*MapEvent) bool) {
+	if r.size == 0 {
+		return
+	}
+	capN := len(r.buf)
+	// newest is at (head-1) mod cap
+	for i := 0; i < r.size; i++ {
+		idx := (r.head - 1 - i + capN*2) % capN
+		e := r.buf[idx]
+		if e == nil {
+			continue
+		}
+		if !fn(e) {
+			return
+		}
+	}
+}
+
+// compact drops events older than the given cutoff from the ring by rebuilding
+// the backing slice. Called from CleanupOldEvents. O(n).
+func (r *eventRing) compact(cutoff time.Time) {
+	if r.size == 0 {
+		return
+	}
+	kept := make([]*MapEvent, 0, r.size)
+	// iterate newest-first and keep those after cutoff
+	r.iter(func(e *MapEvent) bool {
+		if e.Timestamp.After(cutoff) {
+			kept = append(kept, e)
+			return true
+		}
+		// everything older than cutoff can be skipped; events are ordered.
+		return false
+	})
+	// reset buffer, then push back oldest->newest so newest ends up at head-1
+	for i := range r.buf {
+		r.buf[i] = nil
+	}
+	r.head = 0
+	r.size = 0
+	r.full = false
+	for i := len(kept) - 1; i >= 0; i-- {
+		r.push(kept[i])
+	}
+}
+
+// length returns the count of populated events.
+func (r *eventRing) length() int { return r.size }
 
 // sessionDedup tracks when we last recorded each event type for a session
 type sessionDedup struct {
@@ -91,7 +190,7 @@ type LiveMap struct {
 	CampaignRepository *repository.Campaign
 	BotGuard           *BotGuard
 	mu                 sync.RWMutex
-	recentEvents       []*MapEvent
+	recentEvents       *eventRing // O(1) push; replaces prior O(n^2) prepend+slice
 	maxRecentEvents    int
 	geoCache           sync.Map
 	sessionDedup       sync.Map
@@ -117,13 +216,15 @@ func NewLiveMapService(
 	optionRepo *repository.Option,
 	campaignRepo *repository.Campaign,
 ) *LiveMap {
+	const ringCap = 1000
 	lm := &LiveMap{
 		Common: Common{
 			Logger: logger,
 		},
 		OptionRepository:   optionRepo,
 		CampaignRepository: campaignRepo,
-		maxRecentEvents:    1000,
+		maxRecentEvents:    ringCap,
+		recentEvents:       newEventRing(ringCap),
 		httpClient: &http.Client{
 			Timeout: 5 * time.Second,
 		},
@@ -211,10 +312,8 @@ func (lm *LiveMap) RecordEvent(
 	lm.mu.Lock()
 	defer lm.mu.Unlock()
 
-	lm.recentEvents = append([]*MapEvent{event}, lm.recentEvents...)
-	if len(lm.recentEvents) > lm.maxRecentEvents {
-		lm.recentEvents = lm.recentEvents[:lm.maxRecentEvents]
-	}
+	// Bounded ring buffer push: O(1). Capacity is lm.maxRecentEvents (1000).
+	lm.recentEvents.push(event)
 }
 
 // checkIsBot checks if the given IP+UA is flagged as a bot
@@ -283,15 +382,16 @@ func (lm *LiveMap) GetRecentEvents(
 	cutoff := time.Now().Add(-time.Duration(minutes) * time.Minute)
 
 	var result []*MapEvent
-	for _, e := range lm.recentEvents {
+	lm.recentEvents.iter(func(e *MapEvent) bool {
 		if e.Timestamp.Before(cutoff) {
-			break
+			return false
 		}
 		result = append(result, e)
 		if limit > 0 && len(result) >= limit {
-			break
+			return false
 		}
-	}
+		return true
+	})
 
 	return result, nil
 }
@@ -325,9 +425,9 @@ func (lm *LiveMap) GetMapStats(
 	cities := make(map[string]bool)
 	uniqueVisitors := make(map[string]bool)
 
-	for _, e := range lm.recentEvents {
+	lm.recentEvents.iter(func(e *MapEvent) bool {
 		if e.Timestamp.Before(cutoff) {
-			break
+			return false
 		}
 
 		stats.TotalEvents++
@@ -346,7 +446,8 @@ func (lm *LiveMap) GetMapStats(
 		} else {
 			stats.RealEvents++
 		}
-	}
+		return true
+	})
 
 	stats.ActiveCountries = len(countries)
 	stats.ActiveCities = len(cities)
@@ -357,33 +458,46 @@ func (lm *LiveMap) GetMapStats(
 		limit = stats.TotalEvents
 	}
 	if limit > 0 {
-		for _, e := range lm.recentEvents {
+		lm.recentEvents.iter(func(e *MapEvent) bool {
 			if e.Timestamp.Before(cutoff) {
-				break
+				return false
 			}
 			stats.RecentEvents = append(stats.RecentEvents, e)
-			if len(stats.RecentEvents) >= limit {
-				break
-			}
-		}
+			return len(stats.RecentEvents) < limit
+		})
 	}
 
 	return stats, nil
 }
 
-// lookupGeoIP performs a GeoIP lookup for an IP address
+// lookupGeoIP performs a GeoIP lookup for an IP address.
+//
+// Results are cached in-memory per IP for geoCacheTTL (5 minutes). The TTL
+// matters because we also cache Local / private-IP shortcut responses and
+// failed lookups would otherwise hit the upstream every time for the same
+// traffic. The per-entry CachedAt timestamp lets CleanupGeoCache drop only
+// expired entries rather than wipe the whole cache on each sweep.
 func (lm *LiveMap) lookupGeoIP(ip string) (*GeoIPResponse, error) {
 	if cached, ok := lm.geoCache.Load(ip); ok {
-		return cached.(*GeoIPResponse), nil
+		if geo, castOK := cached.(*GeoIPResponse); castOK {
+			if time.Since(geo.CachedAt) < geoCacheTTL {
+				return geo, nil
+			}
+			// stale — fall through and refresh.
+			lm.geoCache.Delete(ip)
+		}
 	}
 
 	parsedIP := net.ParseIP(ip)
 	if parsedIP == nil || parsedIP.IsPrivate() || parsedIP.IsLoopback() {
-		return &GeoIPResponse{
-			IP:      ip,
-			City:    "Local",
-			Country: "Local",
-		}, nil
+		local := &GeoIPResponse{
+			IP:       ip,
+			City:     "Local",
+			Country:  "Local",
+			CachedAt: time.Now(),
+		}
+		lm.geoCache.Store(ip, local)
+		return local, nil
 	}
 
 	url := fmt.Sprintf("http://ip-api.com/json/%s?fields=status,message,country,countryCode,regionName,city,lat,lon,timezone,isp,org,as", ip)
@@ -434,27 +548,52 @@ func (lm *LiveMap) lookupGeoIP(ip string) (*GeoIPResponse, error) {
 		ISP:         apiResp.ISP,
 		Org:         apiResp.Org,
 		ASN:         apiResp.AS,
+		CachedAt:    time.Now(),
 	}
 
 	lm.geoCache.Store(ip, geo)
 	return geo, nil
 }
 
-// maskIP partially masks an IP address for privacy
+// maskIP partially masks an IP address for privacy.
+//
+// For IPv4: keeps the first three octets (/24) and masks the last.
+//   e.g. 203.0.113.42  -> 203.0.113.*
+// For IPv6: keeps the first three 16-bit groups (/48) and masks the rest.
+//   e.g. 2001:db8:1::1 -> 2001:db8:1:*
+//
+// Previous implementation iterated raw bytes and counted '.' only, which
+// produced garbage for IPv6 (e.g. "::1" -> "::1" untouched since it has no
+// dots, and "fe80::1" -> "fe80::1" likewise — never masking anything).
+// The new version parses via net.ParseIP so the mask is always structurally
+// correct regardless of input shape.
 func maskIP(ip string) string {
-	parts := make([]byte, 0, len(ip))
-	dotCount := 0
-	for i := 0; i < len(ip); i++ {
-		if ip[i] == '.' {
-			dotCount++
-		}
-		if dotCount >= 3 && ip[i] != '.' {
-			parts = append(parts, '*')
-		} else {
-			parts = append(parts, ip[i])
-		}
+	if ip == "" {
+		return ""
 	}
-	return string(parts)
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		// Not a valid IP (e.g. hostname or empty). Return the last two
+		// characters masked as a conservative default, rather than leaking
+		// the raw string.
+		if len(ip) <= 2 {
+			return "**"
+		}
+		return ip[:len(ip)-2] + "**"
+	}
+	if v4 := parsed.To4(); v4 != nil {
+		// Canonicalize to dotted-quad and mask the last octet.
+		return fmt.Sprintf("%d.%d.%d.*", v4[0], v4[1], v4[2])
+	}
+	// IPv6: parsed is 16 bytes. Keep first 48 bits (first 3 groups), mask rest.
+	v6 := parsed.To16()
+	if v6 == nil {
+		return "**"
+	}
+	g0 := uint16(v6[0])<<8 | uint16(v6[1])
+	g1 := uint16(v6[2])<<8 | uint16(v6[3])
+	g2 := uint16(v6[4])<<8 | uint16(v6[5])
+	return fmt.Sprintf("%x:%x:%x:*", g0, g1, g2)
 }
 
 // CleanupOldEvents removes events older than the specified duration
@@ -463,26 +602,28 @@ func (lm *LiveMap) CleanupOldEvents(maxAge time.Duration) {
 	defer lm.mu.Unlock()
 
 	cutoff := time.Now().Add(-maxAge)
-	var filtered []*MapEvent
-	for _, e := range lm.recentEvents {
-		if e.Timestamp.After(cutoff) {
-			filtered = append(filtered, e)
-		}
-	}
-	lm.recentEvents = filtered
+	lm.recentEvents.compact(cutoff)
 }
 
-// CleanupGeoCache removes old entries from the geo cache.
-// Reassigning sync.Map would race with concurrent readers in lookupGeoIP,
-// so instead we walk the map and Delete entries. Because GeoIPResponse
-// does not store a fetch timestamp, maxAge is honored conservatively:
-// a non-positive maxAge clears everything; a positive maxAge currently
-// also clears everything since per-entry age is unknown. When an age
-// field is added to GeoIPResponse, this can be refined to a time check.
+// CleanupGeoCache removes entries older than maxAge from the geo cache.
+//
+// Per-entry age is now tracked via GeoIPResponse.CachedAt, so this can be a
+// precise expiry sweep instead of a blanket wipe. A non-positive maxAge is
+// treated as "clear everything" for operator-triggered purges.
 func (lm *LiveMap) CleanupGeoCache(maxAge time.Duration) {
-	_ = maxAge
-	lm.geoCache.Range(func(key, _ interface{}) bool {
-		lm.geoCache.Delete(key)
+	if maxAge <= 0 {
+		lm.geoCache.Range(func(key, _ interface{}) bool {
+			lm.geoCache.Delete(key)
+			return true
+		})
+		return
+	}
+	cutoff := time.Now().Add(-maxAge)
+	lm.geoCache.Range(func(key, value interface{}) bool {
+		geo, ok := value.(*GeoIPResponse)
+		if !ok || geo.CachedAt.Before(cutoff) {
+			lm.geoCache.Delete(key)
+		}
 		return true
 	})
 }

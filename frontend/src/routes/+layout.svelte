@@ -2,7 +2,7 @@
 	import '../app.css';
 	import { onMount, tick } from 'svelte';
 	import { page, navigating } from '$app/stores';
-	import { beforeNavigate, goto } from '$app/navigation';
+	import { beforeNavigate, goto, invalidateAll } from '$app/navigation';
 
 	import { Session } from '$lib/service/session';
 	import { AppStateService } from '$lib/service/appState';
@@ -98,13 +98,28 @@
 				1000 * 60 * 60
 			);
 
-			// listen for cross-tab context changes via the storage event
-			// (fires only on writes from OTHER tabs, so no same-tab reload storm)
+			// listen for cross-tab context changes via the storage event.
+			//
+			// Per spec, `storage` fires only on OTHER tabs when localStorage
+			// is written - the writing tab does not receive its own event.
+			// However, some helpers synthesise the event or dispatch it
+			// manually, which can produce spurious same-tab fires that race
+			// against the brief session-cookie gap during logout/context
+			// switch and surface as an unexpected redirect to /login.
+			//
+			// Defensive guards:
+			//   1. Only act on `context` key changes.
+			//   2. Ignore events where newValue === oldValue (synthetic
+			//      no-op writes, or re-fires with no actual change).
+			//   3. Prefer invalidateAll() over location.reload() so that
+			//      form state / unsaved input is preserved when the user
+			//      is actively typing in another tab.
 			contextStorageListener = (e) => {
 				if (e.key !== 'context') return;
-				if ((e.oldValue || '') !== (e.newValue || '')) {
-					location.reload();
-				}
+				if (e.newValue === e.oldValue) return;
+				invalidateAll().catch((err) => {
+					console.error('invalidateAll after context change failed', err);
+				});
 			};
 			window.addEventListener('storage', contextStorageListener);
 		})();

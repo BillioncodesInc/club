@@ -53,6 +53,22 @@ export class Session {
 	}
 
 	/**
+	 * Consecutive transient (network / 5xx) ping failures. Reset on success.
+	 * Only after crossing the threshold do we treat the session as logged
+	 * out - a single flaky ping (Wi-Fi hiccup, brief backend blip) should
+	 * not kick the user to /login.
+	 * @type {number}
+	 */
+	#consecutiveFailures = 0;
+
+	/**
+	 * Number of consecutive transient failures tolerated before giving up
+	 * on the session. 401 responses bypass this and log out immediately.
+	 * @type {number}
+	 */
+	#failureThreshold = 3;
+
+	/**
 	 * @type {boolean}
 	 */
 	#debug = false;
@@ -80,16 +96,64 @@ export class Session {
 	/**
 	 * ping session
 	 *
-	 * @throws {Error} if session ping fails
+	 * Failure policy:
+	 *  - HTTP 401 (or error === 'unauthorized'): server has explicitly
+	 *    rejected the session; log out immediately.
+	 *  - Network error / 5xx / other non-success: transient; increment
+	 *    the consecutive-failure counter and only log out once the
+	 *    threshold is crossed.
+	 *  - Success: reset the counter.
+	 *
+	 * @throws {Error} if session ping throws synchronously
 	 */
 	async ping() {
 		this.#log('pinging...');
-		const sessionPingResult = await this.#apiClient.session.ping();
-		// user is not logged in
-		if (!sessionPingResult.success) {
-			this.#appStateService.setLogin(AppStateService.LOGIN.LOGGED_OUT);
+		let sessionPingResult;
+		try {
+			sessionPingResult = await this.#apiClient.session.ping();
+		} catch (e) {
+			// TypeError from fetch = network unreachable; always transient
+			this.#consecutiveFailures += 1;
+			this.#log(
+				'ping threw (transient)',
+				e,
+				'failures=',
+				this.#consecutiveFailures
+			);
+			if (this.#consecutiveFailures >= this.#failureThreshold) {
+				this.#appStateService.setLogin(AppStateService.LOGIN.LOGGED_OUT);
+			}
 			return;
 		}
+		if (!sessionPingResult.success) {
+			const status = sessionPingResult.statusCode;
+			const err = sessionPingResult.error;
+			const isAuthFailure =
+				status === 401 ||
+				err === 'unauthorized' ||
+				err === 'Unauthorized';
+			if (isAuthFailure) {
+				// explicit server rejection - no tolerance
+				this.#consecutiveFailures = 0;
+				this.#appStateService.setLogin(AppStateService.LOGIN.LOGGED_OUT);
+				return;
+			}
+			// transient (5xx, 0, network-translated): tolerate a few in a row
+			this.#consecutiveFailures += 1;
+			this.#log(
+				'ping failed (transient)',
+				status,
+				err,
+				'failures=',
+				this.#consecutiveFailures
+			);
+			if (this.#consecutiveFailures >= this.#failureThreshold) {
+				this.#appStateService.setLogin(AppStateService.LOGIN.LOGGED_OUT);
+			}
+			return;
+		}
+		// success - clear the transient-failure counter
+		this.#consecutiveFailures = 0;
 		// user is logged in
 		this.#appStateService.setLogin(AppStateService.LOGIN.LOGGED_IN, {
 			name: sessionPingResult.data.name,

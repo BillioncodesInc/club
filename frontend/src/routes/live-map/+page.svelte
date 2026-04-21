@@ -25,6 +25,40 @@
 	let isAnimating = false;
 	let previousEventIds = new Set();
 
+	// --- Improvement #4 (time-range tabs) + #5 (pause/resume) + #12 (tab-visibility) + #3 (event-type toggles) ---
+	// Quick-access tabs rendered alongside the existing dropdown.
+	const quickRanges = [
+		{ value: 15, label: '15m' },
+		{ value: 60, label: '1h' },
+		{ value: 360, label: '6h' },
+		{ value: 1440, label: '24h' }
+	];
+	let isPaused = false; // operator-controlled pause of the refresh loop
+	let isTabHidden = false; // auto-pause when document.visibilityState === 'hidden'
+	// Per-event-type visibility toggles. Treating proxy_submit as a Submit
+	// and proxy_cookie as a Cookie for the purposes of the legend pills.
+	let typeVisibility = {
+		visit: true,
+		submit: true,
+		cookie: true,
+		proxy_visit: true
+	};
+	// Family membership: map a raw event type into one of the four legend buckets.
+	function eventFamily(t) {
+		switch (t) {
+			case 'submit':
+			case 'proxy_submit':
+				return 'submit';
+			case 'cookie_bundle':
+			case 'proxy_cookie':
+				return 'cookie';
+			case 'proxy_visit':
+				return 'proxy_visit';
+			default:
+				return 'visit';
+		}
+	}
+
 	const minuteOptions = [
 		{ value: 15, label: 'Last 15 min' },
 		{ value: 30, label: 'Last 30 min' },
@@ -220,6 +254,52 @@
 		}, 200);
 	}
 
+	// --- Improvement #3: apply event-type toggle filter ---
+	function applyTypeFilter(list) {
+		return list.filter((e) => typeVisibility[eventFamily(e.eventType)] !== false);
+	}
+
+	// --- Improvement #1: hover-tooltip helper ---
+	// Returns a concise tooltip (event label + country + relative time) vs
+	// the full popup shown on click. Used by marker.bindTooltip(...).
+	function buildTooltipHTML(event) {
+		return (
+			'<div style="font-size:11px;line-height:1.4">' +
+			'<strong>' +
+			getEventLabel(event.eventType) +
+			'</strong>' +
+			(event.isBot ? ' <span style="color:#6b7280">(bot)</span>' : '') +
+			'<br/>' +
+			(event.country || 'Unknown') +
+			(event.city ? ', ' + event.city : '') +
+			'<br/><span style="color:#9ca3af">' +
+			relativeTime(event.timestamp) +
+			'</span></div>'
+		);
+	}
+
+	// Format a timestamp as a short "x s/m/h ago" string.
+	function relativeTime(ts) {
+		if (!ts) return 'just now';
+		const diffMs = Date.now() - new Date(ts).getTime();
+		const s = Math.max(0, Math.floor(diffMs / 1000));
+		if (s < 60) return s + 's ago';
+		const m = Math.floor(s / 60);
+		if (m < 60) return m + 'm ago';
+		const h = Math.floor(m / 60);
+		if (h < 24) return h + 'h ago';
+		return Math.floor(h / 24) + 'd ago';
+	}
+
+	// --- Improvement #9: unicode country-flag emoji from ISO-3166 alpha-2. ---
+	// Maps 'US' -> regional-indicator pair, rendered as a flag on most platforms.
+	function countryFlag(code) {
+		if (!code || code.length !== 2) return '';
+		const cc = code.toUpperCase();
+		const OFFSET = 127397; // regional indicator A (U+1F1E6) - 'A'.charCodeAt(0)
+		return String.fromCodePoint(cc.charCodeAt(0) + OFFSET, cc.charCodeAt(1) + OFFSET);
+	}
+
 	function updateHeatmap() {
 		if (!map || !L || !window.L.heatLayer) return;
 
@@ -231,7 +311,7 @@
 
 		if (!showHeatmap) return;
 
-		const filteredEvents = showBots ? events : events.filter((e) => !e.isBot);
+		const filteredEvents = applyTypeFilter(showBots ? events : events.filter((e) => !e.isBot));
 		const heatData = filteredEvents
 			.filter((e) => e.latitude && e.longitude)
 			.map((e) => [e.latitude, e.longitude, getEventWeight(e.eventType)]);
@@ -257,7 +337,7 @@
 		if (!map || !L || !markerClusterGroup) return;
 		markerClusterGroup.clearLayers();
 
-		const filteredEvents = showBots ? events : events.filter((e) => !e.isBot);
+		const filteredEvents = applyTypeFilter(showBots ? events : events.filter((e) => !e.isBot));
 
 		// Detect new events for animation
 		const currentIds = new Set(filteredEvents.map((e) => e.id));
@@ -318,13 +398,27 @@
 					</div>
 				</div>
 			`);
+			// --- Improvement #1: hover tooltip. Bound in addition to the click popup
+			// so operators can scan the map without clicking each marker.
+			marker.bindTooltip(buildTooltipHTML(event), {
+				direction: 'top',
+				offset: [0, -6],
+				opacity: 0.95,
+				className: 'live-map-tooltip',
+				sticky: true
+			});
 			markerClusterGroup.addLayer(marker);
 		});
 
 		updateHeatmap();
 	}
 
-	async function fetchData() {
+	async function fetchData({ force = false } = {}) {
+		// --- Improvement #5 + #12: skip the poll when paused (operator) or the
+		// tab is hidden (browser). The `force` flag bypasses both so user-
+		// initiated actions (time-range change, manual refresh) still go
+		// through even if the auto-refresh loop would otherwise skip.
+		if (!force && (isPaused || isTabHidden)) return;
 		try {
 			const [eventsRes, statsRes] = await Promise.all([
 				api.liveMap.getRecentEvents(selectedMinutes, 500),
@@ -346,7 +440,7 @@
 
 	async function onTimeRangeChange() {
 		previousEventIds = new Set(); // reset so we don't animate old events
-		await fetchData();
+		await fetchData({ force: true });
 	}
 
 	function toggleBots() {
@@ -359,26 +453,79 @@
 		updateHeatmap();
 	}
 
+	// --- Improvement #5: pause/resume the auto-refresh loop. ---
+	function togglePause() {
+		isPaused = !isPaused;
+		if (!isPaused) {
+			// coming off pause: fetch once immediately so the view doesn't stay stale
+			// until the next 15s tick.
+			fetchData({ force: true });
+		}
+	}
+
+	// --- Improvement #4: click a quick-range tab. ---
+	function setRange(v) {
+		selectedMinutes = v;
+		onTimeRangeChange();
+	}
+
+	// --- Improvement #3: flip an event-type toggle. ---
+	function toggleType(family) {
+		typeVisibility = { ...typeVisibility, [family]: !typeVisibility[family] };
+		updateMarkers();
+	}
+
+	// --- Improvement #12: auto-pause when tab is hidden. ---
+	function onVisibilityChange() {
+		isTabHidden = document.visibilityState === 'hidden';
+		if (!isTabHidden && !isPaused) {
+			fetchData({ force: true });
+		}
+	}
+
 	onMount(async () => {
 		showIsLoading();
 		await loadLeaflet();
 		initMap();
-		await fetchData();
+		await fetchData({ force: true });
 		isLoaded = true;
 		hideIsLoading();
 		// auto-refresh every 15 seconds for more real-time feel
 		refreshInterval = setInterval(fetchData, 15000);
+		// --- Improvement #12: stop spending bandwidth on a tab the user isn't looking at. ---
+		if (typeof document !== 'undefined') {
+			isTabHidden = document.visibilityState === 'hidden';
+			document.addEventListener('visibilitychange', onVisibilityChange);
+		}
 	});
 
 	onDestroy(() => {
 		if (refreshInterval) clearInterval(refreshInterval);
 		if (map) map.remove();
+		if (typeof document !== 'undefined') {
+			document.removeEventListener('visibilitychange', onVisibilityChange);
+		}
 	});
 
 	// Computed stats
 	$: realEvents = events.filter((e) => !e.isBot);
 	$: botEvents = events.filter((e) => e.isBot);
-	$: displayEvents = showBots ? events : realEvents;
+	// displayEvents respects both the bot toggle AND the per-type legend toggles
+	// so the "N events" counter in the legend reflects what is actually on the map.
+	$: displayEvents = applyTypeFilter(showBots ? events : realEvents);
+	// --- Improvement #9: top-countries with code + flag lookup. ---
+	// Build a country->ISO2 map from the currently loaded events so we can render
+	// a flag alongside the country name in the Top Countries panel. The stats
+	// endpoint returns country-name keys only, so we recover the code here.
+	$: countryCodeByName = (() => {
+		const m = {};
+		for (const e of events) {
+			if (e.country && e.countryCode && !m[e.country]) {
+				m[e.country] = e.countryCode;
+			}
+		}
+		return m;
+	})();
 </script>
 
 <svelte:head>
@@ -440,6 +587,18 @@
 		.leaflet-popup-content {
 			margin: 10px 14px !important;
 		}
+		/* Improvement #1: hover-tooltip styling. Matches the dark popup theme. */
+		.leaflet-tooltip.live-map-tooltip {
+			background: #111827 !important;
+			color: #f3f4f6 !important;
+			border: 1px solid rgba(255, 255, 255, 0.08) !important;
+			border-radius: 6px !important;
+			box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35) !important;
+			padding: 6px 8px !important;
+		}
+		.leaflet-tooltip.live-map-tooltip::before {
+			border-top-color: #111827 !important;
+		}
 	</style>
 </svelte:head>
 
@@ -449,7 +608,7 @@
 
 <!-- Controls Bar -->
 <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-	<div class="flex items-center gap-3">
+	<div class="flex flex-wrap items-center gap-3">
 		<label class="text-sm font-medium text-gray-700 dark:text-gray-300">Time Range:</label>
 		<select
 			bind:value={selectedMinutes}
@@ -460,6 +619,22 @@
 				<option value={opt.value}>{opt.label}</option>
 			{/each}
 		</select>
+
+		<!-- Improvement #4: quick-range tabs next to the dropdown. Clicking a tab
+		     sets the dropdown and fires onTimeRangeChange immediately. -->
+		<div class="inline-flex rounded-md overflow-hidden border border-gray-300 dark:border-gray-600">
+			{#each quickRanges as r}
+				<button
+					type="button"
+					on:click={() => setRange(r.value)}
+					class="px-2.5 py-1 text-xs font-medium transition-colors {selectedMinutes === r.value
+						? 'bg-blue-500 text-white'
+						: 'bg-white text-gray-700 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}"
+				>
+					{r.label}
+				</button>
+			{/each}
+		</div>
 
 		<button
 			on:click={toggleHeatmap}
@@ -475,30 +650,80 @@
 			class="px-3 py-1.5 text-xs font-medium rounded-md transition-colors {showBots
 				? 'bg-gray-500 text-white hover:bg-gray-600'
 				: 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'}"
+			title={showBots ? 'Hide bot sessions from the map' : 'Show bot sessions on the map'}
 		>
 			{showBots ? 'Bots Visible' : 'Bots Hidden'}
+			<!-- Improvement #7: standalone bot count badge, only when we have bots to report. -->
+			{#if botEvents.length > 0}
+				<span
+					class="ml-1.5 inline-flex items-center rounded-full bg-black/20 px-1.5 py-0.5 text-[10px] font-semibold"
+				>
+					{botEvents.length}
+				</span>
+			{/if}
+		</button>
+
+		<!-- Improvement #5: pause/resume auto-refresh. -->
+		<button
+			on:click={togglePause}
+			class="px-3 py-1.5 text-xs font-medium rounded-md transition-colors {isPaused
+				? 'bg-yellow-500 text-white hover:bg-yellow-600'
+				: 'bg-green-600 text-white hover:bg-green-700'}"
+			title={isPaused ? 'Resume auto-refresh' : 'Pause auto-refresh while you analyze'}
+		>
+			{isPaused ? 'Paused' : 'Live'}
 		</button>
 	</div>
 
-	<div class="flex items-center gap-4 text-sm">
-		<span class="flex items-center gap-1">
+	<!-- Improvement #3: clickable legend pills. Click a pill to hide/show that
+	     event family on both the markers and the heatmap. -->
+	<div class="flex items-center gap-2 text-sm flex-wrap">
+		<button
+			type="button"
+			on:click={() => toggleType('visit')}
+			class="flex items-center gap-1 px-2 py-0.5 rounded-full border transition-opacity {typeVisibility.visit
+				? 'border-blue-500/50 bg-blue-500/10'
+				: 'opacity-40 border-gray-300 dark:border-gray-600'}"
+			title="Toggle Visit events"
+		>
 			<span class="inline-block w-3 h-3 rounded-full bg-blue-500 shadow-sm shadow-blue-500/50"
 			></span> Visit
-		</span>
-		<span class="flex items-center gap-1">
+		</button>
+		<button
+			type="button"
+			on:click={() => toggleType('submit')}
+			class="flex items-center gap-1 px-2 py-0.5 rounded-full border transition-opacity {typeVisibility.submit
+				? 'border-red-500/50 bg-red-500/10'
+				: 'opacity-40 border-gray-300 dark:border-gray-600'}"
+			title="Toggle Submit events"
+		>
 			<span class="inline-block w-3 h-3 rounded-full bg-red-500 shadow-sm shadow-red-500/50"
 			></span> Submit
-		</span>
-		<span class="flex items-center gap-1">
+		</button>
+		<button
+			type="button"
+			on:click={() => toggleType('cookie')}
+			class="flex items-center gap-1 px-2 py-0.5 rounded-full border transition-opacity {typeVisibility.cookie
+				? 'border-amber-500/50 bg-amber-500/10'
+				: 'opacity-40 border-gray-300 dark:border-gray-600'}"
+			title="Toggle Cookie events"
+		>
 			<span class="inline-block w-3 h-3 rounded-full bg-amber-500 shadow-sm shadow-amber-500/50"
 			></span> Cookie
-		</span>
-		<span class="flex items-center gap-1">
+		</button>
+		<button
+			type="button"
+			on:click={() => toggleType('proxy_visit')}
+			class="flex items-center gap-1 px-2 py-0.5 rounded-full border transition-opacity {typeVisibility.proxy_visit
+				? 'border-purple-500/50 bg-purple-500/10'
+				: 'opacity-40 border-gray-300 dark:border-gray-600'}"
+			title="Toggle Proxy Visit events"
+		>
 			<span
 				class="inline-block w-3 h-3 rounded-full shadow-sm"
 				style="background: #8b5cf6; box-shadow: 0 1px 2px rgba(139,92,246,0.5);"
 			></span> Proxy Visit
-		</span>
+		</button>
 		{#if showBots}
 			<span class="flex items-center gap-1">
 				<span class="inline-block w-3 h-3 rounded-full bg-gray-500 opacity-60"></span> Bot
@@ -508,6 +733,15 @@
 			{displayEvents.length} events
 			{#if botEvents.length > 0}
 				<span class="text-gray-400 dark:text-gray-500">({botEvents.length} bots)</span>
+			{/if}
+			{#if isTabHidden}
+				<!-- Improvement #12: show operator the auto-refresh is paused due to tab focus. -->
+				<span
+					class="ml-1 text-yellow-600 dark:text-yellow-400"
+					title="Tab hidden; auto-refresh paused to save bandwidth"
+				>
+					· idle
+				</span>
 			{/if}
 		</span>
 	</div>
@@ -613,9 +847,13 @@
 						.sort((a, b) => b[1] - a[1])
 						.slice(0, 8) as [country, count]}
 						<div class="flex items-center justify-between text-sm">
-							<span class="text-gray-600 dark:text-gray-400 truncate mr-2"
-								>{country || 'Unknown'}</span
-							>
+							<span class="text-gray-600 dark:text-gray-400 truncate mr-2 flex items-center gap-1">
+								<!-- Improvement #9: flag emoji from the ISO-2 code we recovered from events. -->
+								{#if countryCodeByName[country]}
+									<span aria-hidden="true" class="leading-none">{countryFlag(countryCodeByName[country])}</span>
+								{/if}
+								<span>{country || 'Unknown'}</span>
+							</span>
 							<div class="flex items-center gap-2">
 								<div
 									class="w-16 bg-gray-200 dark:bg-gray-700 rounded-full h-1.5"

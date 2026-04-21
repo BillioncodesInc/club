@@ -167,6 +167,29 @@ func (r *Session) UpdateExpiry(
 	return nil
 }
 
+// UpdateIP updates the stored IP address on a session row. Used when a
+// session's client IP legitimately changes (NAT/CGNAT/VPN reconnect) so
+// the audit trail reflects the current peer address.
+func (r *Session) UpdateIP(
+	ctx context.Context,
+	sessionID *uuid.UUID,
+	ip string,
+) error {
+	row := map[string]any{
+		"ip_address": ip,
+	}
+	AddUpdatedAt(row)
+	result := r.DB.
+		Model(&database.Session{}).
+		Where("id = ?", sessionID.String()).
+		Updates(row)
+
+	if result.Error != nil {
+		return result.Error
+	}
+	return nil
+}
+
 // Expire expires a session
 func (r *Session) Expire(
 	ctx context.Context,
