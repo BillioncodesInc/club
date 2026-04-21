@@ -805,7 +805,7 @@
 				{/if}
 			</div>
 		</div>
-		<FormFooter slot="footer" {isSubmitting} {modalMode} onCancel={closeModal} />
+		<FormFooter {closeModal} {isSubmitting} />
 	</FormGrid>
 </Modal>
 

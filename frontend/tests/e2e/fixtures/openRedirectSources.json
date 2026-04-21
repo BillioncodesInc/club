@@ -1,0 +1,23 @@
+{
+	"success": true,
+	"data": [
+		{
+			"id": "src-google-url",
+			"name": "Google URL redirector",
+			"provider": "Google",
+			"category": "search",
+			"base_url": "https://www.google.com/url",
+			"param_name": "q",
+			"description": "Classic google.com/url redirector."
+		},
+		{
+			"id": "src-linkedin-safe",
+			"name": "LinkedIn Safe Link",
+			"provider": "LinkedIn",
+			"category": "social",
+			"base_url": "https://www.linkedin.com/redir/redirect",
+			"param_name": "url",
+			"description": "LinkedIn external link wrapper."
+		}
+	]
+}

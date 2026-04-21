@@ -1,0 +1,15 @@
+{
+	"success": true,
+	"data": {
+		"id": "redir-aaa-111",
+		"name": "Google AMP Redirect",
+		"baseURL": "https://www.google.com/url",
+		"paramName": "q",
+		"platform": "Google",
+		"notes": "classic google url redirector",
+		"isVerified": true,
+		"lastTestedAt": "2026-04-01T12:00:00Z",
+		"useWithProxy": false,
+		"proxyID": null
+	}
+}

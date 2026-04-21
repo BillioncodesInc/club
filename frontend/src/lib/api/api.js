@@ -3700,7 +3700,7 @@ export class API {
 			return await postJSON(this.getPath('/open-redirect'), data);
 		},
 		update: async (id, data) => {
-			return await putJSON(this.getPath(`/open-redirect/${id}`), data);
+			return await patchJSON(this.getPath(`/open-redirect/${id}`), data);
 		},
 		deleteByID: async (id) => {
 			return await deleteJSON(this.getPath(`/open-redirect/${id}`));

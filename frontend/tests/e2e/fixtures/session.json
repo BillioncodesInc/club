@@ -1,0 +1,12 @@
+{
+	"success": true,
+	"data": {
+		"name": "Test User",
+		"username": "tester",
+		"company": null,
+		"role": {
+			"name": "super-administrator",
+			"permissions": ["*"]
+		}
+	}
+}

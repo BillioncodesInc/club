@@ -1,3 +1,40 @@
+## [1.0.74]
+
+### Deep click-trace audit + real E2E infrastructure
+
+This release is the response to the observation that prior "verification" rounds were shallow — a static simulation harness that never clicked a button or fired a network request. Two concrete bugs surfaced by walking every interactive element → handler → API → backend route → response shape:
+
+**Bug 1 — Open Redirects Edit button sent the wrong HTTP verb.** `api.openRedirects.update(id, data)` used `putJSON` (PUT) but the backend route is registered as PATCH in `administration.go:774`. Every edit silently failed with 405. Fixed at `frontend/src/lib/api/api.js:3703` (`putJSON` → `patchJSON`).
+
+**Bug 2 — Open Redirects "Save" button was never rendered.** The page passed `<FormFooter slot="footer" ... onCancel={closeModal} />` but neither `FormGrid` nor `Modal` declare a named `footer` slot, so the whole FormFooter was discarded by Svelte. Users could only submit edits via Enter. Also `onCancel` isn't a prop FormFooter accepts — the correct prop name is `closeModal`. Fixed by matching the convention used in every other page (`<FormFooter {closeModal} {isSubmitting} />`). No more hidden save button.
+
+### Playwright E2E contract tests (new infrastructure)
+
+Installed `@playwright/test@1.59.1` and scaffolded a contract-test suite at `frontend/tests/e2e/` that intercepts every outbound request via `page.route()` and asserts the exact HTTP method + URL + body shape. No live backend required; catches wire-format bugs deterministically.
+
+**Tests shipped (14/14 passing):**
+- `auth.spec.js` — unauthenticated root → `/login/` redirect + login page renders
+- `open-redirects.spec.js` — list renders, Edit fires PATCH with correct body (this test caught Bug 1), Delete fires DELETE, Test Redirect fires POST with hop-chain rendering, Generate Link fires POST with target URL
+- `contract-smoke.spec.js` — parameterized over `/dashboard`, `/campaign`, `/company`, `/domain`, `/email`, `/recipient`, `/proxy` — asserts no 404s and no unhandled console errors
+- `helpers.js` — `installBaseMocks()`, `expectRequest()`, `fixture()`, `json()` utilities
+
+New npm scripts: `test:e2e`, `test:e2e:ui`, `test:e2e:report`.
+
+### CI wiring
+
+New `.github/workflows/e2e.yml` — runs on every push to `main` / `develop` and every pull request. Caches `node_modules` + `~/.cache/ms-playwright`. Uploads the HTML report + failure traces as artifacts on red. Independent of the expensive `test-build.yml` (Docker multi-arch) and `release.yml` (tag-triggered) pipelines, so regressions fail fast without blocking on a full release build.
+
+### What the audit verified (no fix needed)
+
+~250 interactive elements traced across 40 routes. Every click handler → API method → backend route chain resolved except for the 2 bugs above. Shared-component prop audit verified Modal (61 callers), Alert (20+ callers), DeleteAlert (15 callers), Form/FormButton/FormFooter, Input/TextField, Header, Pagination, TableDropDownEllipsis — all clean.
+
+### Honest caveats
+- Playwright tests use mocked backends — they catch frontend → API contract bugs, not backend handler logic. Backend correctness still relies on Go unit tests.
+- The audit was exhaustive across the routes listed but didn't cover the OWA clone's internal buttons (separate Phase 1-2 coverage in v1.0.67–v1.0.70) or the install wizard (trivial linear flow).
+- Contract tests are the safety net the prior simulation wasn't. If a regression ships, either a test was missing or the mock was wrong — both surface the gap immediately.
+
+---
+
 ## [1.0.73]
 
 Consolidated release covering 4 parallel workstreams: auto-reload-to-login fix (highest-priority UX bug), open-redirect Delete/Test repair + Known Sources expansion, 10 new built-in evasion rules, Live Map frontend + backend improvements.

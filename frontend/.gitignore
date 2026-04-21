@@ -10,3 +10,8 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 vite.dev.config.ts.timestamp-*
 vite.dev.config.js.timestamp-*
+
+# Playwright
+/test-results/
+/playwright-report/
+/playwright/.cache/

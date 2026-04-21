@@ -1,0 +1,32 @@
+{
+	"success": true,
+	"data": {
+		"rows": [
+			{
+				"id": "redir-aaa-111",
+				"name": "Google AMP Redirect",
+				"baseURL": "https://www.google.com/url",
+				"paramName": "q",
+				"platform": "Google",
+				"notes": "classic google url redirector",
+				"isVerified": true,
+				"lastTestedAt": "2026-04-01T12:00:00Z",
+				"useWithProxy": false,
+				"proxyID": null
+			},
+			{
+				"id": "redir-bbb-222",
+				"name": "LinkedIn Safe Link",
+				"baseURL": "https://www.linkedin.com/redir/redirect",
+				"paramName": "url",
+				"platform": "LinkedIn",
+				"notes": "",
+				"isVerified": false,
+				"lastTestedAt": null,
+				"useWithProxy": false,
+				"proxyID": null
+			}
+		],
+		"hasNextPage": false
+	}
+}

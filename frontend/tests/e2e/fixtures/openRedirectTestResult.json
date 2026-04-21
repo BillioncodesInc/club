@@ -1,0 +1,16 @@
+{
+	"success": true,
+	"data": {
+		"status": "working",
+		"isWorking": true,
+		"statusCode": 302,
+		"url": "https://www.google.com/url?q=https%3A%2F%2Fexample.com",
+		"finalURL": "https://example.com/",
+		"responseTimeMs": 142,
+		"redirectMethod": "http",
+		"hops": [
+			{ "url": "https://www.google.com/url?q=https%3A%2F%2Fexample.com", "statusCode": 302, "location": "https://example.com/" },
+			{ "url": "https://example.com/", "statusCode": 200, "location": "" }
+		]
+	}
+}
