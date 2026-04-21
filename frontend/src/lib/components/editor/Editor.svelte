@@ -1,9 +1,5 @@
 <script>
 	import { onMount, tick } from 'svelte';
-	import * as monaco from 'monaco-editor';
-	import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
-	import htmlWorker from 'monaco-editor/esm/vs/language/html/html.worker?worker';
-	import * as vimModule from 'monaco-vim';
 	import { BiMap } from '$lib/utils/maps';
 	import { previewQR as generateQR } from '$lib/utils/qrPreview';
 	import { vimModeEnabled } from '$lib/store/vimMode.js';
@@ -11,6 +7,14 @@
 		setupVimClipboardIntegration,
 		destroyVimClipboardIntegration
 	} from '$lib/utils/vimClipboard.js';
+
+	// monaco + vim + workers are loaded dynamically inside onMount so this heavy
+	// dependency does not bloat the initial bundle of routes that mount the editor
+	let monaco = null;
+	let vimModule = null;
+	let editorWorkerCtor = null;
+	let htmlWorkerCtor = null;
+	let isMonacoLoading = false;
 	/** @type {'domain'|'page'|'email'} */
 
 	export let contentType;
@@ -108,57 +112,84 @@
 
 	onMount(() => {
 		document.body.classList.add('overflow-hidden');
-		/* @ts-ignore */
-		self.MonacoEnvironment = {
-			getWorker: function (_, label) {
-				if (label === 'html') {
-					return new htmlWorker();
+		isMonacoLoading = true;
+
+		let cancelled = false;
+
+		(async () => {
+			// dynamic import: pulls monaco-editor (+ vim + workers) into the `monaco`
+			// chunk only when the editor actually mounts, keeping route bundles small
+			const [monacoMod, vimMod, editorWorkerMod, htmlWorkerMod] = await Promise.all([
+				import('monaco-editor'),
+				import('monaco-vim'),
+				import('monaco-editor/esm/vs/editor/editor.worker?worker'),
+				import('monaco-editor/esm/vs/language/html/html.worker?worker')
+			]);
+
+			if (cancelled || isDestroyed) return;
+
+			monaco = monacoMod;
+			vimModule = vimMod;
+			editorWorkerCtor = editorWorkerMod.default;
+			htmlWorkerCtor = htmlWorkerMod.default;
+
+			/* @ts-ignore */
+			self.MonacoEnvironment = {
+				getWorker: function (_, label) {
+					if (label === 'html') {
+						return new htmlWorkerCtor();
+					}
+					return new editorWorkerCtor();
 				}
-				return new editorWorker();
-			}
-		};
-		const editorOptions = {
-			value: value,
-			language: 'html',
-			theme: 'vs-dark',
-			automaticLayout: true,
-			minimap: {
-				enabled: false
-			},
-			fontSize: 13,
-			lineNumbers: 'on',
-			folding: true,
-			wordWrap: 'on',
-			contextmenu: true,
-			scrollbar: {
-				horizontal: 'hidden'
-			}
-		};
+			};
+			const editorOptions = {
+				value: value,
+				language: 'html',
+				theme: 'vs-dark',
+				automaticLayout: true,
+				minimap: {
+					enabled: false
+				},
+				fontSize: 13,
+				lineNumbers: 'on',
+				folding: true,
+				wordWrap: 'on',
+				contextmenu: true,
+				scrollbar: {
+					horizontal: 'hidden'
+				}
+			};
 
-		/* @ts-ignore - editorOptions is not complete */
-		editor = monaco.editor.create(editorContainer, editorOptions);
+			if (!editorContainer) return;
+			/* @ts-ignore - editorOptions is not complete */
+			editor = monaco.editor.create(editorContainer, editorOptions);
+			isMonacoLoading = false;
 
-		// vim mode will be initialized by reactive statement if needed
+			// vim mode will be initialized by reactive statement if needed
 
-		editor.getModel().onDidChangeContent((e) => {
-			if (previewRenderDelayID) {
-				clearTimeout(previewRenderDelayID);
-				previewRenderDelayID = null;
-			}
-			previewRenderDelayID = setTimeout(() => {
-				updatePreview();
-			}, previewRenderDelay);
-		});
-		updatePreview();
+			editor.getModel().onDidChangeContent((e) => {
+				if (previewRenderDelayID) {
+					clearTimeout(previewRenderDelayID);
+					previewRenderDelayID = null;
+				}
+				previewRenderDelayID = setTimeout(() => {
+					updatePreview();
+				}, previewRenderDelay);
+			});
+			updatePreview();
+		})();
 
 		return () => {
+			cancelled = true;
 			isDestroyed = true;
 			document.body.classList.remove('overflow-hidden');
 			// properly cleanup vim mode first
 			destroyVimMode();
 			if (editor) {
 				editor.dispose();
-				monaco.editor.getModels().forEach((model) => model.dispose());
+				if (monaco) {
+					monaco.editor.getModels().forEach((model) => model.dispose());
+				}
 				editor = null;
 			}
 		};
@@ -168,7 +199,7 @@
 	let vimModeInstance = null;
 
 	const initializeVimMode = () => {
-		if (localVimMode && editor && !vimModeInstance && !isDestroyed) {
+		if (localVimMode && editor && vimModule && monaco && !vimModeInstance && !isDestroyed) {
 			try {
 				const statusNode = vimStatusBar;
 				vimModeInstance = vimModule.initVimMode(editor, statusNode);
@@ -264,6 +295,9 @@
 
 	const updatePreview = async () => {
 		if (isRenderingPreview) {
+			return;
+		}
+		if (!editor) {
 			return;
 		}
 		const v = editor.getValue() ?? value;
@@ -498,6 +532,7 @@
 
 	const openFullPagePreview = async (e) => {
 		e.preventDefault();
+		if (!editor) return;
 		const v = editor.getValue();
 		value = v;
 		const content = await replaceTemplateVariables(v);
@@ -789,6 +824,13 @@
 					: 'w-full'}"
 			>
 				<div bind:this={editorContainer} class="h-full"></div>
+				{#if isMonacoLoading}
+					<div
+						class="absolute inset-0 flex items-center justify-center bg-slate-900/90 text-gray-200 text-sm"
+					>
+						Loading editor…
+					</div>
+				{/if}
 				{#if localVimMode}
 					<div
 						bind:this={vimStatusBar}

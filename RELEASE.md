@@ -1,3 +1,34 @@
+## [1.0.72]
+
+### Performance — lazy-loading + vendor chunking
+
+**Monaco editor is now lazy-loaded.** The biggest first-paint win of the session: `Editor.svelte` and `SimpleCodeEditor.svelte` both dynamically `import('monaco-editor')`, `import('monaco-vim')`, and their web workers inside `onMount` instead of at module scope. A "Loading editor…" overlay is shown until monaco resolves. Every route that embeds an editor (settings, api-sender, proxy, page, email, domain, campaign-template, campaign/[id], …) previously eagerly downloaded the ~3.8 MB monaco vendor before rendering — now monaco arrives only when the editor component mounts.
+
+**Vendor chunking in `vite.config.js`.** Added `build.rollupOptions.output.manualChunks`:
+- `monaco` — `monaco-editor`, `monaco-vim`
+- `leaflet` — `leaflet`, `leaflet.markercluster`, `leaflet.heat`
+- `d3` — all `d3*` packages
+- `editor-utils` — `papaparse`
+
+These separate caches mean a user who navigates `/campaign/[id]` → `/dashboard` gets the `d3` chunk cached once instead of inlined into each route.
+
+**Measurable deltas (top chunks, before → after):**
+| Chunk | Before | After |
+|---|---:|---:|
+| `/campaign/[id]` route | 269.71 kB | **201.02 kB** (−68.7 kB, −25%) |
+| `monaco` vendor | eager-loaded 3.8 MB | **4.4 MB but lazy** (~1.13 MB gzipped) |
+| `leaflet` vendor | already lazy | lazy, 189 kB (isolated) |
+| `d3` vendor | inlined per-route | **shared 68.4 kB** |
+| `editor-utils` (papaparse) | inlined per-route | **shared 20.1 kB** |
+
+All 60/60 frontend simulation tests still pass. SvelteKit static adapter unaffected.
+
+**Leaflet already lazy** (confirmed) — live-map's `loadLeaflet()` was dynamic-importing since v1.0.55; no other route statically imports any leaflet package.
+
+**Not touched this phase:** `/proxy` (246 kB) and `/cookie-store` (174 kB) route leaf bundles are dominated by large Svelte component source (ProxyConfigBuilder = 3913 lines; cookie-store = 3115 lines), not libraries. Splitting those needs component restructuring — out of scope for a chunking pass.
+
+---
+
 ## [1.0.71]
 
 ### Admin UI — design system, accessibility, responsive

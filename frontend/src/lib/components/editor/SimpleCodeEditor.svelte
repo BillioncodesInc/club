@@ -1,9 +1,5 @@
 <script>
 	import { onMount, tick } from 'svelte';
-	import * as monaco from 'monaco-editor';
-	import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
-	import jsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker';
-	import * as vimModule from 'monaco-vim';
 
 	import { vimModeEnabled } from '$lib/store/vimMode.js';
 	import {
@@ -11,6 +7,14 @@
 		destroyVimClipboardIntegration
 	} from '$lib/utils/vimClipboard.js';
 	import { setupProxyYamlCompletion } from '$lib/utils/proxyYamlCompletion.js';
+
+	// monaco + vim + workers are loaded dynamically inside onMount so this heavy
+	// dependency only lands in the user's bundle when the component is actually used
+	let monaco = null;
+	let vimModule = null;
+	let editorWorkerCtor = null;
+	let jsonWorkerCtor = null;
+	let isMonacoLoading = false;
 
 	export let value = '';
 	export let height = 'medium';
@@ -46,13 +50,16 @@
 
 	onMount(() => {
 		checkDarkMode();
+		isMonacoLoading = true;
+
+		let cancelled = false;
 
 		// Watch for dark mode changes
 		const observer = new MutationObserver(() => {
 			const newIsDark = document.documentElement.classList.contains('dark');
 			if (newIsDark !== isDark) {
 				isDark = newIsDark;
-				if (editor) {
+				if (editor && monaco) {
 					monaco.editor.setTheme(isDark ? 'vs-dark' : 'vs-light');
 				}
 			}
@@ -64,6 +71,7 @@
 		});
 
 		const cleanup = () => {
+			cancelled = true;
 			isDestroyed = true;
 			observer.disconnect();
 			// properly cleanup vim mode first
@@ -73,17 +81,35 @@
 				editor = null;
 			}
 		};
-		/* @ts-ignore */
-		self.MonacoEnvironment = {
-			getWorker: function (_, label) {
-				if (label === 'json') {
-					return new jsonWorker();
-				}
-				return new editorWorker();
-			}
-		};
 
-		const editorOptions = {
+		(async () => {
+			// dynamic import: monaco-editor + monaco-vim (+ workers) only arrive when
+			// this component actually mounts, keeping editor-free route bundles small
+			const [monacoMod, vimMod, editorWorkerMod, jsonWorkerMod] = await Promise.all([
+				import('monaco-editor'),
+				import('monaco-vim'),
+				import('monaco-editor/esm/vs/editor/editor.worker?worker'),
+				import('monaco-editor/esm/vs/language/json/json.worker?worker')
+			]);
+
+			if (cancelled || isDestroyed) return;
+
+			monaco = monacoMod;
+			vimModule = vimMod;
+			editorWorkerCtor = editorWorkerMod.default;
+			jsonWorkerCtor = jsonWorkerMod.default;
+
+			/* @ts-ignore */
+			self.MonacoEnvironment = {
+				getWorker: function (_, label) {
+					if (label === 'json') {
+						return new jsonWorkerCtor();
+					}
+					return new editorWorkerCtor();
+				}
+			};
+
+			const editorOptions = {
 			value: value || '',
 			language: language,
 			theme: 'vs-dark',
@@ -127,24 +153,27 @@
 			}
 		};
 
-		/* @ts-ignore - editorOptions is not complete */
-		editor = monaco.editor.create(editorContainer, editorOptions);
+			if (!editorContainer) return;
+			/* @ts-ignore - editorOptions is not complete */
+			editor = monaco.editor.create(editorContainer, editorOptions);
+			isMonacoLoading = false;
 
-		// vim mode will be initialized by reactive statement if needed
+			// vim mode will be initialized by reactive statement if needed
 
-		// Update value when editor content changes
-		editor.getModel().onDidChangeContent(() => {
-			value = editor.getValue();
-		});
+			// Update value when editor content changes
+			editor.getModel().onDidChangeContent(() => {
+				value = editor.getValue();
+			});
 
-		// Setup proxy YAML completion if enabled
-		if (enableProxyCompletion && language === 'yaml') {
-			try {
-				proxyCompletionProvider = setupProxyYamlCompletion(monaco);
-			} catch (error) {
-				console.warn('Failed to setup proxy YAML completion:', error);
+			// Setup proxy YAML completion if enabled
+			if (enableProxyCompletion && language === 'yaml') {
+				try {
+					proxyCompletionProvider = setupProxyYamlCompletion(monaco);
+				} catch (error) {
+					console.warn('Failed to setup proxy YAML completion:', error);
+				}
 			}
-		}
+		})();
 
 		return () => {
 			cleanup();
@@ -162,7 +191,7 @@
 	}
 
 	const initializeVimMode = () => {
-		if (localVimMode && editor && !vimModeInstance && !isDestroyed) {
+		if (localVimMode && editor && vimModule && monaco && !vimModeInstance && !isDestroyed) {
 			try {
 				const statusNode = vimStatusBar;
 				vimModeInstance = vimModule.initVimMode(editor, statusNode);
@@ -320,7 +349,7 @@
 			</div>
 		{/if}
 		<div
-			class="border-2 border-gray-800 w-full rounded-lg overflow-hidden"
+			class="border-2 border-gray-800 w-full rounded-lg overflow-hidden relative"
 			class:flex-1={isExpanded}
 			class:flex={isExpanded}
 			class:flex-col={isExpanded}
@@ -338,6 +367,13 @@
 						? `height: ${height === 'small' ? '224px' : height === 'medium' ? '294px' : '359px'}`
 						: ''}
 			></div>
+			{#if isMonacoLoading}
+				<div
+					class="absolute inset-0 flex items-center justify-center bg-slate-900/90 text-gray-200 text-sm pointer-events-none"
+				>
+					Loading editor…
+				</div>
+			{/if}
 			{#if localVimMode}
 				<div
 					bind:this={vimStatusBar}
