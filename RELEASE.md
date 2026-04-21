@@ -1,3 +1,44 @@
+## [1.0.70]
+
+### OWA clone — visual polish + responsive overhaul
+
+**Icons (lucide-svelte throughout):**
+All OWA inline hand-drawn SVGs replaced with tree-shaken `lucide-svelte` components, preserving sizes/classes. Mapping includes:
+- App rail: `Mail`, `Calendar`, `Users`, `ListTodo`
+- Folder tree: `Inbox`, `Send`, `FileText`, `OctagonAlert`, `Trash2`, `Archive`, `Folder`
+- Header: `X`, `Search`, `Settings`, `RefreshCw`, `SlidersHorizontal`
+- Bulk bar + row hover + reading pane toolbar: `Check`, `MailOpen`, `Flag`, `Archive`, `Trash2`, `Folder`, `Paperclip`, `Reply`, `ReplyAll`, `Forward`, `Ellipsis`, `ChevronLeft`, `ChevronRight`
+- Settings / compose / attachments: `Plus`, `Check`, `FileText`, `Download`
+- New: `Menu` (mobile hamburger), `PanelRightClose` / `PanelRightOpen` (reading-pane split/full toggle)
+
+**Row density (match real Outlook.web):**
+- Row padding: `12px 16px` → `8px 16px` with `min-height: 56px` to preserve touch targets
+- Avatar: `36×36` → `32×32`; font-size `0.75rem` → `0.6875rem`
+- Sender/time/subject/preview line-heights tightened to `1.2`–`1.25`
+- Preview clamped to single line with `text-overflow: ellipsis`
+
+**Reading pane full/split toggle:**
+New `owaReadingPaneFull` state (persisted to localStorage). Toolbar button cycles `PanelRightOpen` ↔ `PanelRightClose` icons; the `.owa-reading-full` CSS class hides the message list panel and gives the reading pane full width. App rail + folder sidebar stay visible.
+
+**Dark-mode auto-detect:**
+- `detectSystemPrefersDark()` helper wraps `matchMedia('(prefers-color-scheme: dark)')` with SSR-safe guard
+- First load with no preference picks `dark` or `blue` based on system setting
+- `matchMedia` change listener updates the theme live UNTIL the user explicitly picks one — `userPicked` flag in `owa_preferences` localStorage suppresses further auto-changes after that
+
+**Responsive (375px / 640px / 1024px tested):**
+- Desktop ≥ 1024px: layout unchanged
+- Tablet 640–1023px: app-rail 48→44px, sidebar 220→180px with compact folder-button padding, message list 360→300px, reading-pane action-bar labels hidden (icons only)
+- Mobile < 640px: app-rail hidden → `Menu` hamburger in header toggles a slide-in drawer backed by a tap-dismiss backdrop; message list full-width; reading pane absolute-overlays with a `ChevronLeft` back button; bulk-action bar wraps to icons only; row padding restored to ensure ≥44px touch targets
+- Horizontal-overflow guard: `.owa-fullscreen, .owa-body { max-width: 100vw; overflow-x: hidden; }` prevents any layout leak
+
+### Focused / Other tab wiring — DEFERRED
+Backend `InboxMessage` has no `InferenceClassification`/`IsFocused` field. Frontend tabs still toggle visual state for now; wiring is a single-line filter change once the backend exposes the field (tracked inline with a `NOTE:` comment above `visibleInboxMessages`).
+
+### Preserved end-to-end
+Phase 1–3 features — keyboard shortcuts, bulk actions, theme/background settings, client-side search, attachment downloads, skeleton loader, toast delegation — all untouched except presentational swaps.
+
+---
+
 ## [1.0.69]
 
 ### Modernization — icon + toast systems

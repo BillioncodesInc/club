@@ -19,6 +19,43 @@
 	import TableDropDownEllipsis from '$lib/components/table/TableDropDownEllipsis.svelte';
 	import DeleteAlert from '$lib/components/modal/DeleteAlert.svelte';
 	import { newTableURLParams } from '$lib/service/tableURLParams.js';
+	// v1.0.57 Phase 4 — lucide icons for the OWA clone (no new deps; lucide-svelte
+	// was added in Phase 3). Used only inside the OWA Inbox Modal; the CookieStore
+	// admin table below still uses its own inline SVGs.
+	import {
+		Mail,
+		Calendar,
+		Users,
+		ListTodo,
+		Inbox,
+		Send,
+		FileText,
+		Trash2,
+		OctagonAlert,
+		Folder,
+		Archive,
+		Flag,
+		Reply,
+		ReplyAll,
+		Forward,
+		MailOpen,
+		Check,
+		X,
+		Ellipsis,
+		Search,
+		Settings,
+		RefreshCw,
+		Paperclip,
+		Download,
+		ChevronLeft,
+		ChevronRight,
+		Plus,
+		PanelRightClose,
+		PanelRightOpen,
+		SlidersHorizontal,
+		Menu,
+		Circle
+	} from 'lucide-svelte';
 
 	// --- State ---
 	let stores = [];
@@ -128,12 +165,23 @@
 	let owaTheme = 'blue'; // blue, dark, teal, purple, orange, light
 	let owaBgImage = 'none'; // none, mountains, ocean, flowers, abstract, sunset, forest, city, northern-lights, desert, aurora
 	let owaShowSettings = false;
-	let owaFocusedTab = 'focused'; // focused, other
+	let owaFocusedTab = 'focused'; // focused, other — Phase 4: DEFERRED wiring, see note below
 	let owaDraftSubject = '';
 	let owaDraftBody = '';
 	let owaDraftTo = '';
 	let owaShowCompose = false;
 	let owaCachedInbox = {}; // { [storeId]: { messages, folders, timestamp } }
+	// v1.0.57 Phase 4: reading-pane full/split toggle. Persisted to localStorage.
+	let owaReadingPaneFull = false;
+	// v1.0.57 Phase 4: dark-mode auto-detect. userPickedTheme persists whether the
+	// user explicitly chose a theme in Settings; if not, we follow the system
+	// preference and react to changes via matchMedia.
+	let owaUserPickedTheme = false;
+	let owaSystemDarkMedia = null;
+	let owaSystemDarkHandler = null;
+	// v1.0.57 Phase 4: mobile sidebar toggle (hamburger). Desktop ignores this
+	// and always renders the sidebar; mobile uses it to open a drawer.
+	let owaMobileSidebarOpen = false;
 
 	const owaThemes = {
 		blue: { name: 'Blue', headerBg: 'linear-gradient(135deg, #0078d4 0%, #106ebe 100%)', accent: '#0078d4', sidebarActive: '#e6f2ff', sidebarActiveText: '#0078d4', sidebarActiveBorder: '#0078d4' },
@@ -158,12 +206,14 @@
 		{ id: 'aurora', name: 'Aurora', css: 'linear-gradient(135deg, rgba(0,30,60,0.95), rgba(0,100,150,0.8), rgba(100,200,100,0.6))' }
 	];
 
-	// App rail icons for the far-left sidebar
+	// App rail icons for the far-left sidebar. Phase 4 — migrated from
+	// inline-SVG strings to lucide-svelte components; we render with
+	// <svelte:component this={appIcon.icon} /> in the template.
 	const owaAppRailIcons = [
-		{ id: 'mail', label: 'Mail', active: true, svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 7l-10 7L2 7"/></svg>' },
-		{ id: 'calendar', label: 'Calendar', active: false, svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg>' },
-		{ id: 'people', label: 'People', active: false, svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>' },
-		{ id: 'todo', label: 'To Do', active: false, svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>' }
+		{ id: 'mail', label: 'Mail', active: true, icon: Mail },
+		{ id: 'calendar', label: 'Calendar', active: false, icon: Calendar },
+		{ id: 'people', label: 'People', active: false, icon: Users },
+		{ id: 'todo', label: 'To Do', active: false, icon: ListTodo }
 	];
 
 	// Load OWA preferences from localStorage
@@ -172,8 +222,24 @@
 			const saved = localStorage.getItem('owa_preferences');
 			if (saved) {
 				const prefs = JSON.parse(saved);
-				owaTheme = prefs.theme || 'blue';
+				// Phase 4 dark-mode auto-detect: only treat the saved theme as an
+				// explicit user choice if the saved payload explicitly says so
+				// (userPicked === true). Older saved payloads without the flag
+				// still count as explicit, since the user had to open Settings
+				// to create them.
+				owaUserPickedTheme = prefs.userPicked !== false;
+				if (owaUserPickedTheme) {
+					owaTheme = prefs.theme || 'blue';
+				} else {
+					owaTheme = detectSystemPrefersDark() ? 'dark' : (prefs.theme || 'blue');
+				}
 				owaBgImage = prefs.bgImage || 'none';
+				owaReadingPaneFull = !!prefs.readingPaneFull;
+			} else {
+				// No saved preferences — auto-detect system preference for initial
+				// theme, keep 'blue' as default if light.
+				owaUserPickedTheme = false;
+				owaTheme = detectSystemPrefersDark() ? 'dark' : 'blue';
 			}
 			const cachedDraft = localStorage.getItem('owa_draft');
 			if (cachedDraft) {
@@ -189,9 +255,22 @@
 		} catch (e) { /* ignore parse errors */ }
 	}
 
+	// Phase 4: detect system dark-mode preference in a SSR-safe way.
+	function detectSystemPrefersDark() {
+		try {
+			return typeof window !== 'undefined' && window.matchMedia
+				&& window.matchMedia('(prefers-color-scheme: dark)').matches;
+		} catch (e) { return false; }
+	}
+
 	function saveOWAPreferences() {
 		try {
-			localStorage.setItem('owa_preferences', JSON.stringify({ theme: owaTheme, bgImage: owaBgImage }));
+			localStorage.setItem('owa_preferences', JSON.stringify({
+				theme: owaTheme,
+				bgImage: owaBgImage,
+				readingPaneFull: owaReadingPaneFull,
+				userPicked: owaUserPickedTheme
+			}));
 		} catch (e) { /* ignore */ }
 	}
 
@@ -225,6 +304,9 @@
 
 	function setOWATheme(themeId) {
 		owaTheme = themeId;
+		// Phase 4: picking a theme from Settings is an explicit user choice;
+		// from now on we stop following the system preference.
+		owaUserPickedTheme = true;
 		saveOWAPreferences();
 	}
 
@@ -235,6 +317,56 @@
 
 	function toggleOWASettings() {
 		owaShowSettings = !owaShowSettings;
+	}
+
+	// Phase 4: split <-> full reading-pane toggle.
+	function toggleOWAReadingPaneFull() {
+		owaReadingPaneFull = !owaReadingPaneFull;
+		saveOWAPreferences();
+	}
+
+	// Phase 4: attach a matchMedia listener so the theme follows the system
+	// preference until the user explicitly picks one. We intentionally keep the
+	// listener active for the whole session; owaSystemDarkHandler reads the
+	// latest owaUserPickedTheme flag so later picks stop propagation.
+	function attachSystemThemeListener() {
+		try {
+			if (typeof window === 'undefined' || !window.matchMedia) return;
+			owaSystemDarkMedia = window.matchMedia('(prefers-color-scheme: dark)');
+			owaSystemDarkHandler = (e) => {
+				if (owaUserPickedTheme) return;
+				owaTheme = e.matches ? 'dark' : 'blue';
+				// Don't call saveOWAPreferences — we don't want this system-
+				// driven change to flip userPicked.
+				try {
+					localStorage.setItem('owa_preferences', JSON.stringify({
+						theme: owaTheme,
+						bgImage: owaBgImage,
+						readingPaneFull: owaReadingPaneFull,
+						userPicked: false
+					}));
+				} catch (err) { /* ignore */ }
+			};
+			// addEventListener is the modern API; Safari <14 used addListener.
+			if (owaSystemDarkMedia.addEventListener) {
+				owaSystemDarkMedia.addEventListener('change', owaSystemDarkHandler);
+			} else if (owaSystemDarkMedia.addListener) {
+				owaSystemDarkMedia.addListener(owaSystemDarkHandler);
+			}
+		} catch (e) { /* ignore */ }
+	}
+
+	function detachSystemThemeListener() {
+		try {
+			if (!owaSystemDarkMedia || !owaSystemDarkHandler) return;
+			if (owaSystemDarkMedia.removeEventListener) {
+				owaSystemDarkMedia.removeEventListener('change', owaSystemDarkHandler);
+			} else if (owaSystemDarkMedia.removeListener) {
+				owaSystemDarkMedia.removeListener(owaSystemDarkHandler);
+			}
+			owaSystemDarkMedia = null;
+			owaSystemDarkHandler = null;
+		} catch (e) { /* ignore */ }
 	}
 
 	function openOWACompose() {
@@ -255,13 +387,16 @@
 		{ id: 'deleteditems', displayName: 'Deleted Items', unreadItemCount: 0, icon: 'trash' }
 	];
 
-	// Folder icons
-	const folderIcons = {
-		inbox: `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/></svg>`,
-		send: `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>`,
-		draft: `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>`,
-		junk: `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>`,
-		trash: `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>`
+	// Folder icons mapping — Phase 4 migrated to lucide components.
+	// getFolderIcon() returns a component reference for <svelte:component/>.
+	const folderIconMap = {
+		inbox: Inbox,
+		send: Send,
+		draft: FileText,
+		junk: OctagonAlert,
+		trash: Trash2,
+		archive: Archive,
+		folder: Folder
 	};
 
 	// --- Lifecycle ---
@@ -269,6 +404,10 @@
 		refreshStores();
 		loadHealthSummary();
 		tableURLParams.onChange(refreshStores);
+		// Phase 4: pick up saved theme / auto-detect system dark mode on first
+		// load, then follow system changes until the user picks a theme.
+		loadOWAPreferences();
+		attachSystemThemeListener();
 	});
 
 	// --- Health Summary ---
@@ -733,6 +872,13 @@
 	// Tradeoff: we only filter what's already loaded — messages on other
 	// pagination pages won't appear until the user pages to them. Acceptable
 	// for v1; a backend query param would be the proper long-term fix.
+	//
+	// v1.0.57 Phase 4 NOTE — Focused / Other tab filtering is DEFERRED. Microsoft
+	// Graph exposes this state via InferenceClassification (focused | other), but
+	// our backend InboxMessage struct (backend/model/cookieStore.go) currently
+	// has no InferenceClassification / IsFocused field, and this phase is
+	// explicitly frontend-only. The tab still toggles visual state; wiring it
+	// to real data requires a backend model + API extension in a later phase.
 	$: visibleInboxMessages = inboxSearchActive && inboxSearch.trim()
 		? (() => {
 			const q = inboxSearch.trim().toLowerCase();
@@ -948,6 +1094,8 @@
 		if (owaContainerEl) {
 			try { owaContainerEl.removeEventListener('keydown', handleOWAKeydown); } catch (_) { /* ignore */ }
 		}
+		// Phase 4: tear down matchMedia listener.
+		detachSystemThemeListener();
 	});
 
 	let inboxLoadingStatus = '';
@@ -1290,12 +1438,13 @@
 
 	function getFolderIcon(folderId) {
 		const id = folderId?.toLowerCase();
-		if (id?.includes('inbox')) return folderIcons.inbox;
-		if (id?.includes('sent')) return folderIcons.send;
-		if (id?.includes('draft')) return folderIcons.draft;
-		if (id?.includes('junk') || id?.includes('spam')) return folderIcons.junk;
-		if (id?.includes('delete') || id?.includes('trash')) return folderIcons.trash;
-		return folderIcons.inbox;
+		if (id?.includes('inbox')) return folderIconMap.inbox;
+		if (id?.includes('sent')) return folderIconMap.send;
+		if (id?.includes('draft')) return folderIconMap.draft;
+		if (id?.includes('archive')) return folderIconMap.archive;
+		if (id?.includes('junk') || id?.includes('spam')) return folderIconMap.junk;
+		if (id?.includes('delete') || id?.includes('trash')) return folderIconMap.trash;
+		return folderIconMap.folder;
 	}
 
 	// --- Bulk Operations ---
@@ -1678,17 +1827,21 @@
 	<!-- OWA Top Header Bar -->
 	<div class="owa-header" style="background: {getOWAHeaderBg()}; background-size: cover;">
 		<div class="owa-header-left">
+			<!-- Mobile hamburger: toggles the folder sidebar drawer on < 640px -->
+			<button class="owa-header-btn owa-mobile-only" on:click={() => (owaMobileSidebarOpen = !owaMobileSidebarOpen)} title="Menu" aria-label="Toggle folder menu">
+				<Menu class="w-5 h-5" />
+			</button>
 			<button class="owa-header-btn" on:click={closeInboxModal} title="Close">
-				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+				<X class="w-5 h-5" />
 			</button>
 			<div class="owa-logo">
-				<svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M21.17 2.06A13.1 13.1 0 0019 1.87a12.94 12.94 0 00-7 2.05 12.94 12.94 0 00-7-2 13.1 13.1 0 00-2.17.19C1.35 2.35.5 3.62.5 4.95v11.85c0 1.75 1.37 3.22 3.12 3.27A11.26 11.26 0 0112 17.3a11.26 11.26 0 018.38 2.77c1.75-.05 3.12-1.52 3.12-3.27V4.95c0-1.33-.85-2.6-2.33-2.89z"/></svg>
+				<Mail class="w-5 h-5" />
 				<span class="owa-logo-text {owaTheme === 'light' ? 'text-gray-800' : 'text-white'}">Outlook</span>
 			</div>
 		</div>
 		<div class="owa-header-center">
 			<div class="owa-search-bar">
-				<svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path stroke-linecap="round" stroke-width="2" d="M21 21l-4.35-4.35"/></svg>
+				<Search class="w-4 h-4 text-gray-400" />
 				<input
 					type="text"
 					class="owa-search-input"
@@ -1702,10 +1855,10 @@
 		</div>
 		<div class="owa-header-right">
 			<button class="owa-header-btn" on:click={toggleOWASettings} title="Settings">
-				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>
+				<Settings class="w-5 h-5" />
 			</button>
 			<button class="owa-header-btn" on:click={refreshInbox} disabled={inboxLoading} title="Refresh">
-				<svg class="w-5 h-5 {inboxLoading ? 'animate-spin' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+				<RefreshCw class="w-5 h-5 {inboxLoading ? 'animate-spin' : ''}" />
 			</button>
 			<div class="owa-user-avatar" style="background-color: {getAvatarColor(inboxStoreName)}" title="{inboxStoreName}">
 				{getInitials(inboxStoreName)}
@@ -1713,7 +1866,9 @@
 		</div>
 	</div>
 
-	<div class="owa-body">
+	<div class="owa-body" class:owa-reading-full={owaReadingPaneFull} class:owa-mobile-sidebar-open={owaMobileSidebarOpen}>
+		<!-- Phase 4: backdrop below the mobile sidebar drawer; tap to close. -->
+		<div class="owa-mobile-backdrop" on:click={() => (owaMobileSidebarOpen = false)} role="presentation"></div>
 		<!-- App Rail (far left) -->
 		<div class="owa-app-rail">
 			{#each owaAppRailIcons as appIcon}
@@ -1722,7 +1877,9 @@
 					title={appIcon.label}
 					style="{appIcon.active ? `border-left-color: ${owaThemes[owaTheme]?.accent || '#0078d4'}` : ''}"
 				>
-					<span class="owa-rail-icon">{@html appIcon.svg}</span>
+					<span class="owa-rail-icon">
+						<svelte:component this={appIcon.icon} class="w-5 h-5" />
+					</span>
 				</button>
 			{/each}
 		</div>
@@ -1734,18 +1891,20 @@
 				style="background-color: {owaThemes[owaTheme]?.accent || '#0078d4'}"
 				on:click={() => { const store = stores.find(s => s.id === inboxStoreId); if (store) openSendModal(store); }}
 			>
-				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-				New mail
+				<Plus class="w-4 h-4" />
+				<span class="owa-compose-label">New mail</span>
 			</button>
 			<div class="owa-folder-list">
 				{#each inboxFolders as folder}
 					<button
 						class="owa-folder-btn {inboxFolder === folder.id ? 'active' : ''}"
-						on:click={() => switchFolder(folder.id)}
+						on:click={() => { switchFolder(folder.id); owaMobileSidebarOpen = false; }}
 						disabled={inboxLoading}
 						style="{inboxFolder === folder.id ? `background: ${owaThemes[owaTheme]?.sidebarActive || '#e6f2ff'}; color: ${owaThemes[owaTheme]?.sidebarActiveText || '#0078d4'}; border-left-color: ${owaThemes[owaTheme]?.sidebarActiveBorder || '#0078d4'}` : ''}"
 					>
-						<span class="owa-folder-icon">{@html getFolderIcon(folder.id)}</span>
+						<span class="owa-folder-icon">
+							<svelte:component this={getFolderIcon(folder.id)} class="w-4 h-4" />
+						</span>
 						<span class="owa-folder-name">{folder.displayName}</span>
 						{#if folder.unreadItemCount > 0}
 							<span class="owa-folder-count" style="color: {owaThemes[owaTheme]?.accent || '#0078d4'}">{folder.unreadItemCount}</span>
@@ -1770,7 +1929,7 @@
 					on:click={() => (owaFocusedTab = 'other')}
 				>Other</button>
 				<div class="owa-tab-filter">
-					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/></svg>
+					<SlidersHorizontal class="w-4 h-4" />
 				</div>
 			</div>
 
@@ -1796,40 +1955,42 @@
 					</div>
 				{:else if visibleInboxMessages.length === 0}
 					<div class="flex flex-col items-center justify-center py-16">
-						<svg class="w-16 h-16 mb-4" style="color: {owaTheme === 'dark' ? '#374151' : '#d1d5db'}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/></svg>
+						<Inbox class="w-16 h-16 mb-4" style="color: {owaTheme === 'dark' ? '#374151' : '#d1d5db'}" strokeWidth={1} />
 						<p class="text-sm" style="color: {owaTheme === 'dark' ? '#6b7280' : '#9ca3af'}">
 							{inboxSearchActive && inboxSearch.trim() ? 'No messages match your search' : 'Nothing here looks empty'}
 						</p>
 					</div>
 				{:else}
 					{#if selectedMessageIds.size > 0}
-						<!-- Bulk action bar: appears when any message is selected. -->
+						<!-- Bulk action bar: appears when any message is selected.
+						     Phase 4 — wraps on narrow viewports so it never forces
+						     horizontal overflow. Labels hide below 480px. -->
 						<div class="owa-bulk-action-bar">
 							<span class="owa-bulk-count">{selectedMessageIds.size} selected</span>
-							<button class="owa-bulk-btn" disabled={bulkMessageActionInFlight} on:click={() => runBulkMessageAction('markRead')} title="Mark read">
-								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
-								<span>Read</span>
+							<button class="owa-bulk-btn" disabled={bulkMessageActionInFlight} on:click={() => runBulkMessageAction('markRead')} title="Mark read" aria-label="Mark read">
+								<Check class="w-4 h-4" />
+								<span class="owa-bulk-btn-label">Read</span>
 							</button>
-							<button class="owa-bulk-btn" disabled={bulkMessageActionInFlight} on:click={() => runBulkMessageAction('markUnread')} title="Mark unread">
-								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" stroke-width="2"/></svg>
-								<span>Unread</span>
+							<button class="owa-bulk-btn" disabled={bulkMessageActionInFlight} on:click={() => runBulkMessageAction('markUnread')} title="Mark unread" aria-label="Mark unread">
+								<MailOpen class="w-4 h-4" />
+								<span class="owa-bulk-btn-label">Unread</span>
 							</button>
-							<button class="owa-bulk-btn" disabled={bulkMessageActionInFlight} on:click={() => runBulkMessageAction('flag')} title="Flag">
-								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v16m0-16h11l-2 4 2 4H4"/></svg>
-								<span>Flag</span>
+							<button class="owa-bulk-btn" disabled={bulkMessageActionInFlight} on:click={() => runBulkMessageAction('flag')} title="Flag" aria-label="Flag">
+								<Flag class="w-4 h-4" />
+								<span class="owa-bulk-btn-label">Flag</span>
 							</button>
-							<button class="owa-bulk-btn" disabled={bulkMessageActionInFlight} on:click={() => runBulkMessageAction('archive')} title="Archive">
-								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 8l1 12h14l1-12M4 8V6a2 2 0 012-2h12a2 2 0 012 2v2M10 13h4"/></svg>
-								<span>Archive</span>
+							<button class="owa-bulk-btn" disabled={bulkMessageActionInFlight} on:click={() => runBulkMessageAction('archive')} title="Archive" aria-label="Archive">
+								<Archive class="w-4 h-4" />
+								<span class="owa-bulk-btn-label">Archive</span>
 							</button>
-							<button class="owa-bulk-btn owa-bulk-btn-danger" disabled={bulkMessageActionInFlight} on:click={() => runBulkMessageAction('delete')} title="Delete">
-								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a2 2 0 012-2h2a2 2 0 012 2v3"/></svg>
-								<span>Delete</span>
+							<button class="owa-bulk-btn owa-bulk-btn-danger" disabled={bulkMessageActionInFlight} on:click={() => runBulkMessageAction('delete')} title="Delete" aria-label="Delete">
+								<Trash2 class="w-4 h-4" />
+								<span class="owa-bulk-btn-label">Delete</span>
 							</button>
 							<div class="owa-bulk-move-wrap">
-								<button class="owa-bulk-btn" disabled={bulkMessageActionInFlight} on:click={() => (owaShowBulkMoveMenu = !owaShowBulkMoveMenu)} title="Move to...">
-									<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v13a1 1 0 001 1h16a1 1 0 001-1V7M3 7l9-4 9 4M3 7h18"/></svg>
-									<span>Move</span>
+								<button class="owa-bulk-btn" disabled={bulkMessageActionInFlight} on:click={() => (owaShowBulkMoveMenu = !owaShowBulkMoveMenu)} title="Move to..." aria-label="Move to">
+									<Folder class="w-4 h-4" />
+									<span class="owa-bulk-btn-label">Move</span>
 								</button>
 								{#if owaShowBulkMoveMenu}
 									<div class="owa-move-menu">
@@ -1841,8 +2002,8 @@
 									</div>
 								{/if}
 							</div>
-							<button class="owa-bulk-btn-secondary" on:click={clearSelection} title="Clear selection">
-								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+							<button class="owa-bulk-btn-secondary" on:click={clearSelection} title="Clear selection" aria-label="Clear selection">
+								<X class="w-4 h-4" />
 							</button>
 						</div>
 					{/if}
@@ -1875,10 +2036,10 @@
 									<div class="owa-msg-preview">{msg.preview || ''}</div>
 								</div>
 								{#if msg.isFlagged}
-									<svg class="owa-msg-flag" fill="currentColor" stroke="currentColor" viewBox="0 0 24 24" style="color: #e06a2e"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v16m0-16h11l-2 4 2 4H4"/></svg>
+									<Flag class="owa-msg-flag" fill="currentColor" style="color: #e06a2e" />
 								{/if}
 								{#if msg.hasAttachments}
-									<svg class="owa-msg-attach" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
+									<Paperclip class="owa-msg-attach" />
 								{/if}
 							</button>
 							<!-- Per-row hover actions. These appear on hover via CSS. -->
@@ -1886,18 +2047,18 @@
 								<button class="owa-hover-btn" title={msg.isRead ? 'Mark unread' : 'Mark read'}
 									on:click|stopPropagation={() => toggleMessageRead(msg, !msg.isRead)}>
 									{#if msg.isRead}
-										<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" stroke-width="2"/></svg>
+										<MailOpen class="w-4 h-4" />
 									{:else}
-										<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+										<Check class="w-4 h-4" />
 									{/if}
 								</button>
 								<button class="owa-hover-btn" title={msg.isFlagged ? 'Unflag' : 'Flag'}
 									on:click|stopPropagation={() => toggleMessageFlag(msg, !msg.isFlagged)}>
-									<svg class="w-4 h-4" fill={msg.isFlagged ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24" style="color: {msg.isFlagged ? '#e06a2e' : 'inherit'}"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v16m0-16h11l-2 4 2 4H4"/></svg>
+									<Flag class="w-4 h-4" fill={msg.isFlagged ? 'currentColor' : 'none'} style="color: {msg.isFlagged ? '#e06a2e' : 'inherit'}" />
 								</button>
 								<button class="owa-hover-btn owa-hover-btn-danger" title="Delete"
 									on:click|stopPropagation={() => deleteSingleMessage(msg)}>
-									<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a2 2 0 012-2h2a2 2 0 012 2v3"/></svg>
+									<Trash2 class="w-4 h-4" />
 								</button>
 							</div>
 						</div>
@@ -1913,11 +2074,11 @@
 								{#if inboxTotalCount > 0} of {inboxTotalCount}{/if}
 							{/if}
 						</span>
-						<button class="owa-page-btn" on:click={prevInboxPage} disabled={inboxSkip === 0 || (inboxSearchActive && !!inboxSearch.trim())}>
-							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+						<button class="owa-page-btn" on:click={prevInboxPage} disabled={inboxSkip === 0 || (inboxSearchActive && !!inboxSearch.trim())} aria-label="Previous page">
+							<ChevronLeft class="w-4 h-4" />
 						</button>
-						<button class="owa-page-btn" on:click={nextInboxPage} disabled={inboxMessages.length < inboxLimit || (inboxSearchActive && !!inboxSearch.trim())}>
-							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+						<button class="owa-page-btn" on:click={nextInboxPage} disabled={inboxMessages.length < inboxLimit || (inboxSearchActive && !!inboxSearch.trim())} aria-label="Next page">
+							<ChevronRight class="w-4 h-4" />
 						</button>
 					</div>
 				{/if}
@@ -1937,47 +2098,52 @@
 			{:else if currentMessage}
 				<!-- Message Action Bar -->
 				<div class="owa-reading-actions">
+					<!-- Phase 4: mobile-only back button — clears the current
+					     message so the reading pane un-overlays the list. -->
+					<button class="owa-action-btn owa-mobile-only" on:click={() => (currentMessage = null)} title="Back to list" aria-label="Back to list">
+						<ChevronLeft class="w-4 h-4" />
+					</button>
 					<button class="owa-action-btn" on:click={() => openReplyModal(currentMessage)} title="Reply (r)">
-						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
-						Reply
+						<Reply class="w-4 h-4" />
+						<span class="owa-action-btn-label">Reply</span>
 					</button>
 					<button class="owa-action-btn" on:click={() => openReplyAllModal(currentMessage)} title="Reply All (a)">
-						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
-						Reply all
+						<ReplyAll class="w-4 h-4" />
+						<span class="owa-action-btn-label">Reply all</span>
 					</button>
 					<button class="owa-action-btn" on:click={() => openForwardModal(currentMessage)} title="Forward (f)">
-						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6"/></svg>
-						Forward
+						<Forward class="w-4 h-4" />
+						<span class="owa-action-btn-label">Forward</span>
 					</button>
 					<!-- Archive (e) -->
 					<button class="owa-action-btn" on:click={() => moveSingleMessage(currentMessage, 'archive')} title="Archive (e)">
-						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 8l1 12h14l1-12M4 8V6a2 2 0 012-2h12a2 2 0 012 2v2M10 13h4"/></svg>
-						Archive
+						<Archive class="w-4 h-4" />
+						<span class="owa-action-btn-label">Archive</span>
 					</button>
 					<!-- Delete (#) -->
 					<button class="owa-action-btn" on:click={() => deleteSingleMessage(currentMessage)} title="Delete (#)">
-						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a2 2 0 012-2h2a2 2 0 012 2v3"/></svg>
-						Delete
+						<Trash2 class="w-4 h-4" />
+						<span class="owa-action-btn-label">Delete</span>
 					</button>
 					<!-- Mark read/unread (u for unread+back) -->
 					<button class="owa-action-btn" on:click={() => toggleMessageRead(currentMessage, !currentMessage.isRead)} title={currentMessage.isRead ? 'Mark unread (u)' : 'Mark read'}>
 						{#if currentMessage.isRead}
-							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" stroke-width="2"/></svg>
-							Mark unread
+							<MailOpen class="w-4 h-4" />
+							<span class="owa-action-btn-label">Mark unread</span>
 						{:else}
-							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
-							Mark read
+							<Check class="w-4 h-4" />
+							<span class="owa-action-btn-label">Mark read</span>
 						{/if}
 					</button>
 					<!-- Flag toggle (s) -->
 					<button class="owa-action-btn" on:click={() => toggleMessageFlag(currentMessage, !currentMessage.isFlagged)} title={currentMessage.isFlagged ? 'Unflag (s)' : 'Flag (s)'}>
-						<svg class="w-4 h-4" fill={currentMessage.isFlagged ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24" style="color: {currentMessage.isFlagged ? '#e06a2e' : 'inherit'}"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v16m0-16h11l-2 4 2 4H4"/></svg>
-						{currentMessage.isFlagged ? 'Unflag' : 'Flag'}
+						<Flag class="w-4 h-4" fill={currentMessage.isFlagged ? 'currentColor' : 'none'} style="color: {currentMessage.isFlagged ? '#e06a2e' : 'inherit'}" />
+						<span class="owa-action-btn-label">{currentMessage.isFlagged ? 'Unflag' : 'Flag'}</span>
 					</button>
 					<div class="owa-move-wrap">
 						<button class="owa-action-btn" on:click={() => (owaShowMoveMenu = !owaShowMoveMenu)} title="Move to folder...">
-							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v13a1 1 0 001 1h16a1 1 0 001-1V7M3 7l9-4 9 4M3 7h18"/></svg>
-							Move
+							<Folder class="w-4 h-4" />
+							<span class="owa-action-btn-label">Move</span>
 						</button>
 						{#if owaShowMoveMenu}
 							<div class="owa-move-menu">
@@ -1990,8 +2156,18 @@
 						{/if}
 					</div>
 					<div class="flex-1"></div>
-					<button class="owa-action-btn" title="More actions">
-						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+					<!-- Phase 4: split / full toggle for the reading pane. -->
+					<button class="owa-action-btn" on:click={toggleOWAReadingPaneFull}
+						title={owaReadingPaneFull ? 'Exit full view (show message list)' : 'Full view (hide message list)'}
+						aria-label={owaReadingPaneFull ? 'Exit full view' : 'Full view'}>
+						{#if owaReadingPaneFull}
+							<PanelRightClose class="w-4 h-4" />
+						{:else}
+							<PanelRightOpen class="w-4 h-4" />
+						{/if}
+					</button>
+					<button class="owa-action-btn" title="More actions" aria-label="More actions">
+						<Ellipsis class="w-4 h-4" />
 					</button>
 				</div>
 
@@ -2029,11 +2205,11 @@
 								on:click={() => downloadAttachment(att)}
 								disabled={!att.id}
 								title={att.id ? `Download ${att.name || 'attachment'}` : 'Attachment download unavailable (no Graph API access)'}>
-								<svg class="w-4 h-4 flex-shrink-0" style="color: {owaTheme === 'dark' ? '#6b7280' : '#9ca3af'}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+								<FileText class="w-4 h-4 flex-shrink-0" style="color: {owaTheme === 'dark' ? '#6b7280' : '#9ca3af'}" />
 								<span class="text-sm truncate">{att.name || 'Attachment'}</span>
 								{#if att.size}<span class="text-xs opacity-50">{formatFileSize(att.size)}</span>{/if}
 								{#if att.id}
-									<svg class="w-3 h-3 flex-shrink-0 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V4"/></svg>
+									<Download class="w-3 h-3 flex-shrink-0 ml-1" />
 								{/if}
 							</button>
 						{/each}
@@ -2056,10 +2232,7 @@
 			{:else}
 				<!-- Empty state: no message selected -->
 				<div class="flex flex-col items-center justify-center h-full">
-					<svg class="w-24 h-24 mb-4" style="color: {owaTheme === 'dark' ? '#1e293b' : '#e5e7eb'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<rect x="2" y="4" width="20" height="16" rx="2" stroke-width="1"/>
-						<path d="M22 7l-10 7L2 7" stroke-width="1"/>
-					</svg>
+					<Mail class="w-24 h-24 mb-4" style="color: {owaTheme === 'dark' ? '#1e293b' : '#e5e7eb'}" strokeWidth={1} />
 					<p class="text-lg font-light" style="color: {owaTheme === 'dark' ? '#4b5563' : '#9ca3af'}">Select an item to read</p>
 					<p class="text-sm mt-1" style="color: {owaTheme === 'dark' ? '#374151' : '#d1d5db'}">Nothing is selected</p>
 				</div>
@@ -2071,8 +2244,8 @@
 		<div class="owa-settings-panel">
 			<div class="owa-settings-header">
 				<h3 class="text-base font-semibold" style="color: {owaTheme === 'dark' ? '#e5e7eb' : '#1f2937'}">Settings</h3>
-				<button class="owa-settings-close" on:click={() => (owaShowSettings = false)}>
-					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+				<button class="owa-settings-close" on:click={() => (owaShowSettings = false)} aria-label="Close settings">
+					<X class="w-5 h-5" />
 				</button>
 			</div>
 
@@ -2089,7 +2262,7 @@
 								title={theme.name}
 							>
 								{#if owaTheme === themeId}
-									<svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
+									<Check class="w-4 h-4 text-white" strokeWidth={3} />
 								{/if}
 							</button>
 						{/each}
@@ -2108,7 +2281,7 @@
 								title={bg.name}
 							>
 								{#if owaBgImage === bg.id}
-									<svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
+									<Check class="w-3 h-3 text-white" strokeWidth={3} />
 								{/if}
 								<span class="owa-bg-label">{bg.name}</span>
 							</button>
@@ -2422,14 +2595,18 @@
 		flex: 1; overflow-y: auto; position: relative;
 	}
 
-	/* Message Row */
+	/* Message Row — Phase 4 tighter density (matches real OWA ~8-10px vertical).
+	   Previously 12px vertical + 36px avatar; now 8px vertical + 32px avatar.
+	   On viewports < 640px we bump padding back up so each row still has a 44px
+	   touch target (WCAG 2.5.5). */
 	.owa-msg-row {
 		display: flex; align-items: flex-start; gap: 10px;
-		width: 100%; padding: 12px 16px;
+		width: 100%; padding: 8px 16px;
 		border: none; background: transparent;
 		cursor: pointer; text-align: left;
 		transition: background 0.1s;
 		border-bottom: 1px solid #f3f2f1;
+		min-height: 56px;
 	}
 	.owa-dark .owa-msg-row { border-color: #2a2a2a; }
 	.owa-msg-row:hover { background: #f5f5f5; }
@@ -2446,20 +2623,26 @@
 
 	.owa-unread-bar { width: 3px; min-height: 100%; border-radius: 2px; flex-shrink: 0; align-self: stretch; }
 	.owa-msg-avatar {
-		width: 36px; height: 36px; border-radius: 50%;
+		width: 32px; height: 32px; border-radius: 50%;
 		display: flex; align-items: center; justify-content: center;
-		color: white; font-size: 0.75rem; font-weight: 600;
+		color: white; font-size: 0.6875rem; font-weight: 600;
 		flex-shrink: 0;
 	}
 	.owa-msg-content { flex: 1; min-width: 0; }
-	.owa-msg-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-	.owa-msg-sender { font-size: 0.8125rem; color: #323130; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.owa-msg-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; line-height: 1.2; }
+	.owa-msg-sender { font-size: 0.8125rem; color: #323130; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.2; }
 	.owa-dark .owa-msg-sender { color: #e5e7eb; }
-	.owa-msg-time { font-size: 0.6875rem; color: #a19f9d; flex-shrink: 0; }
+	.owa-msg-time { font-size: 0.6875rem; color: #a19f9d; flex-shrink: 0; line-height: 1.2; }
 	.owa-dark .owa-msg-time { color: #6b7280; }
-	.owa-msg-subject { font-size: 0.8125rem; color: #323130; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px; }
+	.owa-msg-subject { font-size: 0.8125rem; color: #323130; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px; line-height: 1.25; }
 	.owa-dark .owa-msg-subject { color: #d1d5db; }
-	.owa-msg-preview { font-size: 0.75rem; color: #a19f9d; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+	/* Preview: single line with ellipsis (was allowed to wrap implicitly). */
+	.owa-msg-preview {
+		font-size: 0.75rem; color: #a19f9d;
+		overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+		margin-top: 1px; line-height: 1.25;
+		display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1;
+	}
 	.owa-dark .owa-msg-preview { color: #6b7280; }
 	.owa-msg-attach { width: 14px; height: 14px; color: #a19f9d; flex-shrink: 0; margin-top: 4px; }
 
@@ -2554,15 +2737,16 @@
 	.owa-attachment-chip-dl { cursor: pointer; }
 	.owa-attachment-chip-dl:disabled { cursor: not-allowed; opacity: 0.5; }
 
-	/* v1.0.56 Phase 2 – Skeleton loader for the inbox list */
+	/* v1.0.56 Phase 2 – Skeleton loader for the inbox list.
+	   Phase 4 — dimensions trimmed to match tightened message rows. */
 	.owa-skeleton-list { padding: 4px 0; }
 	.owa-msg-row-skeleton {
-		display: flex; align-items: center; gap: 12px;
-		padding: 14px 16px; border-bottom: 1px solid #f3f2f1;
+		display: flex; align-items: center; gap: 10px;
+		padding: 10px 16px; border-bottom: 1px solid #f3f2f1;
 	}
 	.owa-dark .owa-msg-row-skeleton { border-color: #2a2a2a; }
 	.owa-skeleton-avatar {
-		width: 36px; height: 36px; border-radius: 50%;
+		width: 32px; height: 32px; border-radius: 50%;
 		background: #e5e7eb; flex-shrink: 0;
 	}
 	.owa-dark .owa-skeleton-avatar { background: #2a2a2a; }
@@ -2601,9 +2785,9 @@
 	.owa-hover-btn-danger:hover { color: #c42b1c; }
 	.owa-dark .owa-hover-btn-danger:hover { color: #f87171; }
 
-	/* Selection checkbox overlay */
+	/* Selection checkbox overlay — Phase 4 sized to match 32px avatar. */
 	.owa-msg-select {
-		position: relative; width: 36px; height: 36px; flex-shrink: 0;
+		position: relative; width: 32px; height: 32px; flex-shrink: 0;
 		display: flex; align-items: center; justify-content: center;
 	}
 	.owa-msg-select input[type="checkbox"] {
@@ -2756,20 +2940,91 @@
 	}
 	.owa-dark .owa-account-card { background: #2a2a2a; border-color: #444; }
 
-	/* Responsive */
-	@media (max-width: 1024px) {
-		.owa-reading-pane { display: none; }
-		.owa-message-list-panel { flex: 1; width: auto; border-right: none; }
+	/* Phase 4 — reading pane full / split toggle. When .owa-reading-full is set
+	   on .owa-body, hide the message list so the reading pane gets the full
+	   remaining width. The app-rail + sidebar stay visible. */
+	.owa-body.owa-reading-full .owa-message-list-panel { display: none; }
+	.owa-body.owa-reading-full .owa-reading-pane { border-left: 1px solid #edebe9; }
+	.owa-dark .owa-body.owa-reading-full .owa-reading-pane { border-color: #333; }
+
+	/* Reading-pane action-btn label: hide on narrow viewports so the toolbar
+	   shrinks to icons only instead of wrapping or forcing overflow. */
+	.owa-action-btn-label { display: inline; }
+
+	/* Mobile hamburger is hidden by default; revealed only at < 640px. */
+	.owa-mobile-only { display: none; }
+
+	/* Backdrop behind mobile sidebar drawer. */
+	.owa-mobile-backdrop {
+		position: absolute; inset: 0; background: rgba(0,0,0,0.35);
+		z-index: 14; display: none;
 	}
-	@media (max-width: 768px) {
+	.owa-body.owa-mobile-sidebar-open .owa-mobile-backdrop { display: block; }
+
+	/* -----------------------------------------------------------------
+	   Phase 4 Responsive breakpoints:
+	     mobile  < 640px   - app rail hidden, sidebar becomes drawer,
+	                         reading pane fullscreen when open, tighter
+	                         action-bar icons-only, 44px touch targets.
+	     tablet  640-1023  - compact 44px app rail, 180px sidebar,
+	                         narrower message list, split view kept.
+	     desktop >= 1024   - original layout untouched.
+	   ----------------------------------------------------------------- */
+	@media (max-width: 1023px) {
+		/* Tablet: keep the app rail but narrower; compact sidebar. */
+		.owa-app-rail { width: 44px; }
+		.owa-sidebar { width: 180px; padding: 10px 6px; }
+		.owa-folder-btn { padding: 7px 10px; font-size: 0.75rem; gap: 8px; }
+		.owa-message-list-panel { width: 300px; }
+		/* Collapse verbose action labels to save horizontal space. */
+		.owa-reading-actions { padding: 6px 10px; }
+		.owa-action-btn-label { display: none; }
+	}
+
+	@media (max-width: 639px) {
+		/* Mobile: hide app rail entirely, use bottom/hamburger nav. */
 		.owa-app-rail { display: none; }
-		.owa-sidebar { width: 56px; padding: 8px 4px; }
-		.owa-folder-name { display: none; }
-		.owa-folder-count { display: none; }
-		.owa-compose-btn span { display: none; }
-		.owa-compose-btn { justify-content: center; padding: 8px; }
-		.owa-message-list-panel { width: auto; flex: 1; }
+		.owa-mobile-only { display: inline-flex; }
+
+		/* Sidebar becomes a slide-in drawer, hidden until toggled. */
+		.owa-sidebar {
+			position: absolute; left: 0; top: 0; bottom: 0; z-index: 15;
+			width: 240px; box-shadow: 2px 0 12px rgba(0,0,0,0.15);
+			transform: translateX(-100%); transition: transform 0.2s ease;
+			padding: 12px 8px;
+		}
+		.owa-body.owa-mobile-sidebar-open .owa-sidebar { transform: translateX(0); }
+		.owa-folder-name, .owa-folder-count { display: inline; }
+		.owa-compose-label { display: inline; }
+
+		/* Message list takes the full body width (minus possibly-open reading pane). */
+		.owa-message-list-panel { width: 100%; flex: 1; border-right: none; }
+
+		/* Reading pane covers the whole body when a message is open.
+		   The reading header's close button (X) returns to the list. */
+		.owa-reading-pane {
+			position: absolute; inset: 0; z-index: 12;
+			background: white; border-left: none;
+		}
+		.owa-dark .owa-reading-pane { background: #1e1e1e; }
+
+		/* Bulk action bar: icons-only, wraps cleanly. */
+		.owa-bulk-action-bar { flex-wrap: wrap; gap: 4px; padding: 6px 10px; }
+		.owa-bulk-btn-label { display: none; }
+		.owa-bulk-count { font-size: 0.75rem; }
+
+		/* Density: restore 44px min touch target while still tight. */
+		.owa-msg-row { padding: 10px 12px; min-height: 56px; }
+		.owa-hover-btn, .owa-page-btn, .owa-bulk-btn, .owa-action-btn { min-height: 32px; }
+
+		/* Header shrinks nicely. */
+		.owa-header { padding: 0 8px; gap: 4px; }
+		.owa-search-bar { max-width: none; }
+		.owa-header-center { margin: 0; }
 	}
+
+	/* Guard against horizontal overflow on every viewport. */
+	.owa-fullscreen, .owa-body { max-width: 100vw; overflow-x: hidden; }
 </style>
 
 <!-- Export Cookies Modal -->
